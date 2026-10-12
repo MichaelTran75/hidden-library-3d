@@ -1074,9 +1074,19 @@
     .cat .swap .vi::before { transition: none; transform: none; }
   }
 </style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script>
-  // wide screens with WebGL 2 get the 3D library; phones keep the page as it was
-  if (window.innerWidth > 768 && window.WebGL2RenderingContext) document.documentElement.classList.add('lib3d-capable');
+  // wide screens with WebGL 2 get the 3D library; phones keep the page as it was (and never download three.js)
+  if (window.innerWidth > 768 && window.WebGL2RenderingContext) {
+    document.documentElement.classList.add('lib3d-capable');
+    // fetch three.js (and the room's models) now, while the rest of the page loads
+    ['build/three.module.min.js', 'examples/jsm/loaders/GLTFLoader.js', 'examples/jsm/libs/meshopt_decoder.module.js',
+     'examples/jsm/lights/RectAreaLightUniformsLib.js', 'examples/jsm/lights/RectAreaLightTexturesLib.js',
+     'examples/jsm/utils/BufferGeometryUtils.js', 'examples/jsm/postprocessing/Pass.js'].forEach(function (u) {
+      var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = 'https://cdn.jsdelivr.net/npm/three@0.170.0/' + u; document.head.appendChild(l);
+    });
+    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g);
+  }
   // the room replaces the painted backgrounds: drop them before anything paints, so they are never downloaded
   (function () {
     var s = document.documentElement.style;
@@ -3094,18 +3104,17 @@
   - "Platano Tree" by gelmi.com.br - https://sketchfab.com/3d-models/platano-tree-ef48485b7c534acc905c0d9964c5fe7c
   Architecture, shelves and shelf books, pouf, bolsters, rug, lamps and plants are built in code.
 -->
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script id="lib-glb" type="application/octet-stream" data-src="lib.glb"></script>
 <script type="module">
 
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-
-if (innerWidth > 768 && window.WebGL2RenderingContext) {
+// three.js is fetched only where the room is shown (wide screens with WebGL 2): phones never download it. If it cannot
+// be fetched (offline, a blocked CDN) the page gets lib3d-failed and keeps its own card layout.
+const LIB = innerWidth > 768 && window.WebGL2RenderingContext ? await Promise.all([
+  import('three'), import('three/addons/loaders/GLTFLoader.js'), import('three/addons/libs/meshopt_decoder.module.js'),
+  import('three/addons/lights/RectAreaLightUniformsLib.js'), import('three/addons/utils/BufferGeometryUtils.js'), import('three/addons/postprocessing/Pass.js')
+]).catch(e => { console.warn('3D library unavailable', e); document.documentElement.classList.add('lib3d-failed'); return null; }) : null;
+if (LIB) {
+const [THREE, { GLTFLoader }, { MeshoptDecoder }, { RectAreaLightUniformsLib }, { mergeGeometries }, { FullScreenQuad }] = LIB;
 /* Hidden Library · 3D library (ver 01)
    On wide screens the reading room is the interface: the categories are shelf sections (labels with leader lines),
    a click opens the section's card, a book being played comes off the shelf. The page's own data, audio engine,
@@ -3117,7 +3126,9 @@ const body = document.body;
 const setLoad = () => {};
 const CANVAS = document.createElement('canvas'); CANVAS.id = 'lib3d'; CANVAS.setAttribute('aria-hidden', 'true'); body.prepend(CANVAS);
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const tick = () => new Promise(r => setTimeout(r, 0));
+// a pause in the long build, so the page stays responsive: a message to itself (unlike a timer or scheduler.yield it is
+// not held back to once a second while the tab is in the background, which made the build take seconds there)
+const tick = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
 
 /* ---------------------------------------------------------------- constants
    World: metres, x → right (bookshelf wall), y ↑, z → viewer. Camera of the
@@ -3210,13 +3221,24 @@ const renderer = new THREE.WebGLRenderer({ canvas: CANVAS, antialias: false, dep
 // the watercolour picture is made at 1 px per CSS px (it softens everything anyway) and scaled up to the canvas, which
 // holds device pixels: the sharp layer drawn over it (titles on the books, stars, the moon) stays crisp on high-DPI screens
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
-const RT_SCALE = 0.8;                         // the scene itself renders at 80 % and is upsampled by the paint pass
+// the scene itself renders at 80 % and is upsampled by the paint pass; a GPU that falls behind gets less (adaptQuality)
+let RT_SCALE = 0.8;
+try {   // a step down is remembered for a week (a laptop may only have been slowed for a while, e.g. on battery saving)
+  const q = JSON.parse(localStorage.getItem('hiddenLibrary.lib3dScale'));
+  if (q && q.s >= 0.5 && q.s < 0.8 && Date.now() - q.t < 7 * 864e5) RT_SCALE = q.s;
+} catch (e) { /* storage blocked or old value */ }
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;        // the room stands still: shadows are redrawn only when a book moves (shadowsDirty)
 let shadowsDirty = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NoToneMapping; // done in the final pass
 RectAreaLightUniformsLib.init();
+// The windows' area lights shine on everything as a diffuse glow; their glossy reflections (a second, as costly LTC
+// integral per light and pixel) are kept for the glass only (RECT_SPEC): on the rough wood, books and velvet they were
+// ~2 % of the picture and ~2 ms of a frame. The exposure is raised a touch to make up the light they gave.
+{ const spec = 'reflectedLight.directSpecular += lightColor * fresnel * LTC_Evaluate( normal, viewDir, position, mInv, rectCoords );';
+  if (THREE.ShaderChunk.lights_physical_pars_fragment.includes(spec))
+    THREE.ShaderChunk.lights_physical_pars_fragment = THREE.ShaderChunk.lights_physical_pars_fragment.replace(spec, '#ifdef RECT_SPEC\n' + spec + '\n#endif'); }
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 400);
 
@@ -3244,6 +3266,7 @@ function buildMaterials() {
   MAT.shelfBack = std({ map: TEX.oak, color: 0x5e4430, roughness: .85 });
   MAT.frame = std({ map: TEX.frame, roughness: .55 });
   MAT.glass = new THREE.MeshPhysicalMaterial({ color: 0xf2f7ee, roughness: .04, metalness: 0, transparent: true, opacity: .1, envMapIntensity: 1.2, depthWrite: false, side: THREE.DoubleSide });
+  MAT.glass.defines = { RECT_SPEC: '' };   // the panes keep the windows' reflections
   MAT.velvet = new THREE.MeshPhysicalMaterial({ color: 0x3d5638, roughness: .8, sheen: 1, sheenRoughness: .42, sheenColor: new THREE.Color(0x98ad85), side: THREE.DoubleSide });
   MAT.velvetDark = new THREE.MeshPhysicalMaterial({ color: 0x2b432b, roughness: .8, sheen: 1, sheenRoughness: .5, sheenColor: new THREE.Color(0x87a877), side: THREE.DoubleSide });
   MAT.mustard = new THREE.MeshPhysicalMaterial({ color: 0xb07a38, roughness: .75, sheen: .8, sheenRoughness: .5, sheenColor: new THREE.Color(0xf3d9a0), side: THREE.DoubleSide });
@@ -3963,15 +3986,20 @@ function buildOutside(assets) {
     if (!unseen(x, z, 1.6 * sc)) outside.add(shrub(x, z, sc, leafMat));
 }
 function lodLeaves(geo, keep, grow, seed = 5) {
-  // drop whole leaf cards (connected by index) and enlarge the survivors around their own centre
+  // drop whole leaf cards (connected by index) and enlarge the survivors around their own centre. A card is kept or
+  // dropped by a hash of where it stands (to a thousandth of the model's size), not by its order in the file, so the
+  // same leaves survive however the model is re-encoded.
   const idx = geo.index.array, pos = geo.attributes.position, n = pos.count; const par = new Int32Array(n); for (let i = 0; i < n; i++) par[i] = i;
   const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
   for (let t = 0; t < idx.length; t += 3) { const a = find(idx[t]), b = find(idx[t + 1]), c = find(idx[t + 2]); if (a !== b) par[b] = a; if (find(c) !== a) par[find(c)] = a; }
-  const r = rng(seed), kept = new Map(), out = [];
-  for (let t = 0; t < idx.length; t += 3) { const root = find(idx[t]); if (!kept.has(root)) kept.set(root, r() < keep); if (kept.get(root)) out.push(idx[t], idx[t + 1], idx[t + 2]); }
-  const sum = new Map(); for (let i = 0; i < n; i++) { const root = find(i); if (!kept.get(root)) continue; const s = sum.get(root) || [0, 0, 0, 0]; s[0] += pos.getX(i); s[1] += pos.getY(i); s[2] += pos.getZ(i); s[3]++; sum.set(root, s); }
+  const used = new Uint8Array(n); for (let t = 0; t < idx.length; t++) used[idx[t]] = 1;
+  const sum = new Map(); for (let i = 0; i < n; i++) { if (!used[i]) continue; const root = find(i), s = sum.get(root) || [0, 0, 0, 0]; s[0] += pos.getX(i); s[1] += pos.getY(i); s[2] += pos.getZ(i); s[3]++; sum.set(root, s); }
+  if (!geo.boundingBox) geo.computeBoundingBox(); const sz = geo.boundingBox.getSize(new THREE.Vector3()), q = 1000 / Math.max(sz.x, sz.y, sz.z, 1e-6);
+  const hash = (a, b, c) => { let h = Math.imul(a, 73856093) ^ Math.imul(b, 19349663) ^ Math.imul(c, 83492791) ^ Math.imul(seed, 2654435761); h = Math.imul(h ^ (h >>> 15), 2246822519); h = Math.imul(h ^ (h >>> 13), 3266489917); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  const kept = new Map(); for (const [root, s] of sum) kept.set(root, hash(Math.round(s[0] / s[3] * q), Math.round(s[1] / s[3] * q), Math.round(s[2] / s[3] * q)) < keep);
+  const out = []; for (let t = 0; t < idx.length; t += 3) if (kept.get(find(idx[t]))) out.push(idx[t], idx[t + 1], idx[t + 2]);
   const g = geo.clone(); const p2 = g.attributes.position;
-  for (let i = 0; i < n; i++) { const s = sum.get(find(i)); if (!s) continue; const cx = s[0] / s[3], cy = s[1] / s[3], cz = s[2] / s[3]; p2.setXYZ(i, cx + (p2.getX(i) - cx) * grow, cy + (p2.getY(i) - cy) * grow, cz + (p2.getZ(i) - cz) * grow); }
+  for (let i = 0; i < n; i++) { const root = find(i); if (!kept.get(root)) continue; const s = sum.get(root), cx = s[0] / s[3], cy = s[1] / s[3], cz = s[2] / s[3]; p2.setXYZ(i, cx + (p2.getX(i) - cx) * grow, cy + (p2.getY(i) - cy) * grow, cz + (p2.getZ(i) - cz) * grow); }
   g.setIndex(out); return g;
 }
 function shrub(x, z, s, mat) {
@@ -4175,7 +4203,7 @@ function flatBook(src, yaw = 0, s = 1) {
   const inner = new THREE.Group(); inner.add(m); inner.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(m); const c = b.getCenter(new THREE.Vector3());
   m.position.set(-c.x, -b.min.y, -c.z); const g = new THREE.Group(); g.add(inner); inner.rotation.y = yaw; g.userData.h = b.max.y - b.min.y; return g;
 }
-function buildFurniture(A) {
+async function buildFurniture(A) {   // async: it yields between its heavy parts so the page stays responsive while it loads
   const F = new THREE.Group(); room.add(F); const B = A.byName;
   // ---- sofa (re-arranged sectional, one mesh per part): local back at z=0, left end at x=0
   const sofa = new THREE.Group(); const S = 0.92; sofa.scale.setScalar(S);
@@ -4221,6 +4249,7 @@ function buildFurniture(A) {
   F.updateMatrixWorld(true);
   bakeContactAO(aoT, aoO);
   F.userData.sofa = sofa; LIGHTS.sofa = sofa;
+  await tick();
   // ---- coffee table (GLB, scaled to an oval) + wooden legs
   const tbl = new THREE.Group(); const tS = new THREE.Vector3(0.95 / 2, 0.42 / 0.907, 0.6 / 2);
   const topMat = B.ctable_top.material.clone(); topMat.color.setRGB(1.55, 1.2, 0.85); topMat.roughness = .55; topMat.metalness = 0; topMat.metalnessMap = topMat.roughnessMap = null;
@@ -4240,7 +4269,9 @@ function buildFurniture(A) {
   MAT.pouf = makeVelvet({ color: 0x30553c, sheen: 0xd6e6cf, sheenAmt: 1, sheenRough: 0.5, pleat: 0, crease: 1.1, allFaces: 1, freq: 1.6, ao: true });   // fine crumple shading between the modelled folds
   const pouf = new THREE.Mesh(poufGeometry(1.4, 1.22, 0.5), MAT.pouf);
   pouf.position.set(0.22, 0.008, -3.36); pouf.rotation.y = 0.1; pouf.castShadow = pouf.receiveShadow = true; F.add(pouf);
+  await tick();
   LIGHTS.rug = buildRug(F, pouf);
+  await tick();
   { const tg = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pouf.geometry.userData.seam, true), 420, 0.006, 6, true); const c = new Float32Array(tg.attributes.position.count * 3).fill(0.62); tg.setAttribute('color', new THREE.BufferAttribute(c, 3));
     const cord = new THREE.Mesh(tg, MAT.pouf); cord.castShadow = true; pouf.add(cord); }
   pouf.updateMatrixWorld(true);
@@ -4290,7 +4321,7 @@ const POST = {};
 const QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy,0.0,1.0); }';
 function buildPost() {
   POST.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(4, 4) });
-  const exposure = { value: 0.85 }, quad = (uniforms, fragmentShader) => new FullScreenQuad(new THREE.ShaderMaterial({ uniforms, vertexShader: QUAD_VS, fragmentShader, depthTest: false, depthWrite: false }));
+  const exposure = { value: 0.87 }, quad = (uniforms, fragmentShader) => new FullScreenQuad(new THREE.ShaderMaterial({ uniforms, vertexShader: QUAD_VS, fragmentShader, depthTest: false, depthWrite: false }));
   POST.tone = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });
   POST.toneQuad = quad({ tColor: { value: null }, exposure }, /* glsl */`
     precision highp float; uniform sampler2D tColor; uniform float exposure; varying vec2 vUv;
@@ -4405,14 +4436,15 @@ function resize() {
 /* ---------------------------------------------------------------- main */
 let A = null, booksMesh, motes;
 async function main() {
+  const bufP = getLibBuffer(); bufP.catch(() => {});   // the models download while the room is built
   setLoad(0.05); await tick();
   await buildTextures(); setLoad(0.25); buildMaterials();
   buildRoom(); setLoad(0.3);
   BOOK.atlas = buildSpineAtlas(); buildShelves(); booksMesh = buildBookInstances(); setLoad(0.45); await tick();
   buildLights(); buildPost();
-  const buf = await getLibBuffer(); setLoad(0.7); await tick();
+  const buf = await bufP; setLoad(0.7); await tick();
   A = await loadAssets(buf); setLoad(0.85);
-  buildFurniture(A); buildDecor(A); buildOutside(A); motes = dust();
+  await buildFurniture(A); await tick(); buildDecor(A); buildOutside(A); motes = dust(); await tick();
   // interior materials ignore fog
   scene.fog = new THREE.FogExp2(0xd6e2e6, 0.03);   // a light blue haze over the far trees, matching the sky
   room.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.fog = false); });
@@ -4455,8 +4487,11 @@ function applyNight(n) {
   const L = LIGHTS, D = NIGHT.day, U = POST.mat.uniforms; NIGHT.u.value = n;
   const sunWas = L.sun.visible; L.sun.intensity = D.sun * (1 - n); L.sun.visible = n < 0.999; if (L.sun.visible && !sunWas) shadowsDirty = true;
   L.hemi.intensity = lerp(D.hemi, 0.15, n); L.hemi.color.lerpColors(D.hemiC, NC.hemi, n); L.hemi.groundColor.lerpColors(D.hemiG, NC.hemiG, n);
-  L.rects.forEach((r, i) => { r.intensity = D.rects[i][0] * lerp(1, 0.22, n); r.color.lerpColors(D.rects[i][1], NC.win, n); });
-  scene.environmentIntensity = lerp(D.env, 0.09, n); scene.fog.color.lerpColors(D.fog, NC.fog, n);
+  // by full night the windows' area lights add only ~3 % of the picture yet cost more than all the other lights together:
+  // they go out with the sun, and a touch more sky light from the environment takes their place (measured to match)
+  const full = n >= 0.999;
+  L.rects.forEach((r, i) => { r.intensity = D.rects[i][0] * lerp(1, 0.22, n); r.color.lerpColors(D.rects[i][1], NC.win, n); r.visible = !full; });
+  scene.environmentIntensity = lerp(D.env, 0.09, n) + (full ? 0.02 : 0); scene.fog.color.lerpColors(D.fog, NC.fog, n);
   if (L.ring) L.ring.material.color.lerpColors(D.ring, NC.ring, n);
   L.table.userData.light.intensity = lerp(D.table, 7, n); L.table.userData.glow.material.opacity = lerp(D.tableGlow, 0.9, n);
   L.floor.userData.light.intensity = lerp(D.floor, 32, n); L.floor.userData.pt.intensity = lerp(D.floorPt, 5, n); L.floor.userData.glow.material.opacity = lerp(D.floorGlow, 0.95, n);
@@ -5114,7 +5149,7 @@ const clock = new THREE.Clock();
 // stir (the trees, a candle, clouds, the stars): they are drawn 15 times a second for a few seconds after the visitor
 // last moved or typed, then the room holds still as a picture until the next touch; nothing is drawn meanwhile.
 const FRAME_MS = 1000 / 15, STILL_AFTER = 6000;
-let lastInput = performance.now();
+let lastInput = performance.now(), hold = false, startedAt = Infinity;
 for (const t of ['pointermove', 'pointerdown', 'wheel', 'keydown', 'touchstart']) addEventListener(t, () => { lastInput = performance.now(); }, { capture: true, passive: true });
 let ready = false, on = false, needs = true, lastDraw = 0, lastTick = 0;
 function wanted() { return ready && innerWidth > 768; }
@@ -5137,7 +5172,7 @@ function draw() {
 }
 function loop(now) {
   const dt = THREE.MathUtils.clamp((now - (lastTick || now)) / 1000, 0, 0.1); lastTick = now;
-  if (!ready || !innerWidth || !innerHeight || document.hidden) return;
+  if (!ready || hold || !innerWidth || !innerHeight || document.hidden) return;
   const target = body.classList.contains('dark-mode') ? 1 : 0;
   if (NIGHT.p !== target) {
     NIGHT.p = on && !reduceMotion ? THREE.MathUtils.clamp(NIGHT.p + Math.sign(target - NIGHT.p) * dt / 4, 0, 1) : target;
@@ -5151,7 +5186,24 @@ function loop(now) {
     if (reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER) return;   // a still picture
     if (now - lastDraw < FRAME_MS - 2) return;
   }
-  lastDraw = now; needs = false; draw();
+  lastDraw = now; needs = false; draw(); adaptQuality(now, smooth);
+}
+// While things move every frame is drawn; if those frames keep coming slower than ~40 a second (a weaker GPU), the scene
+// picture steps down to 65 %, then 50 % of the CSS size (the watercolour pass hides most of the difference; titles,
+// stars and the moon stay sharp), and the choice is remembered for the next visit.
+const PERF = { last: 0, gaps: [], slow: 0 };
+function adaptQuality(now, smooth) {
+  if (!smooth) { PERF.last = 0; return; }
+  if (PERF.last && now - startedAt > 4000) { const g = now - PERF.last; if (g < 250) PERF.gaps.push(g); }
+  PERF.last = now;
+  if (PERF.gaps.length < 45) return;
+  const median = PERF.gaps.sort((a, b) => a - b)[22]; PERF.gaps.length = 0;
+  PERF.slow = median > 28 ? PERF.slow + 1 : 0;   // two slow stretches in a row: not a passing hiccup
+  if (PERF.slow >= 2 && RT_SCALE > 0.5) {
+    PERF.slow = 0;
+    RT_SCALE = RT_SCALE > 0.7 ? 0.65 : 0.5; resize(); needs = true;
+    try { localStorage.setItem('hiddenLibrary.lib3dScale', JSON.stringify({ s: RT_SCALE, t: Date.now() })); } catch (e) { /* storage blocked */ }
+  }
 }
 async function start() {
   await main();
@@ -5159,9 +5211,34 @@ async function start() {
   NIGHT.p = body.classList.contains('dark-mode') ? 1 : 0; applyNight(NIGHT.p);
   resize(); applyRefCamera();
   buildInterface();
-  if (renderer.compileAsync) await renderer.compileAsync(scene, camera).catch(() => {});
-  ready = true; draw(); updateOn();
+  await compileFor(scene);
+  ready = true; draw(); updateOn(); startedAt = performance.now();
   renderer.setAnimationLoop(loop);
+  (window.requestIdleCallback || (fn => setTimeout(fn, 500)))(() => precompileLightStates(), { timeout: 3000 });
+}
+// As night falls the lights change three ways (the ceiling spots come on, then the sun and the window lights go out),
+// and each change needs new shaders for every lit material: compiled up front in the background (KHR_parallel_shader_
+// compile), so the switch does not stall the page later. Nothing is drawn meanwhile (hold).
+// shaders are compiled for the target the scene really renders into (its colour space differs from the canvas'),
+// in parallel threads where the browser supports it
+async function compileFor(sc) {
+  if (!renderer.compileAsync) return;
+  renderer.setRenderTarget(POST.rt);
+  try { await renderer.compileAsync(sc, camera); } catch (e) { /* compiled on first use instead */ }
+  renderer.setRenderTarget(null);
+}
+async function precompileLightStates() {
+  if (!renderer.compileAsync) return;
+  const L = LIGHTS, was = { sun: L.sun.visible, rects: L.rects.map(r => r.visible), spots: NIGHT.spots.map(s => s.sp.visible) };
+  hold = true;
+  try {
+    for (const [sun, rects, spots] of [[true, true, false], [true, true, true], [false, false, true]]) {
+      L.sun.visible = sun; L.rects.forEach(r => { r.visible = rects; }); NIGHT.spots.forEach(s => { s.sp.visible = spots; });
+      await compileFor(scene);
+    }
+  } catch (e) { /* compiled on first use instead */ }
+  L.sun.visible = was.sun; L.rects.forEach((r, i) => { r.visible = was.rects[i]; }); NIGHT.spots.forEach((s, i) => { s.sp.visible = was.spots[i]; });
+  hold = false; needs = true;
 }
 
 /* ---------------------------------------------------------------- page hooks */
@@ -5174,10 +5251,10 @@ new MutationObserver(() => { needs = true; updateOn(); if (offMode() && UIS.mode
 new MutationObserver(() => { needs = true; }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { needs = true; });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, UIS, CAM, applyNight, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
+window.__lib3d = { state: () => ({ ready, hold, scale: RT_SCALE }), BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, UIS, CAM, applyNight, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
 (window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => start().catch(e => {
   console.warn('3D library unavailable', e); ready = false; updateOn(); document.documentElement.classList.add('lib3d-failed');
-}), { timeout: 2500 });
+}), { timeout: 800 });
 }
 </script>
 </body>
