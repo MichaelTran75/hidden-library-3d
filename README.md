@@ -17,8 +17,11 @@ The Hidden Library audiobook page as a 3D reading room: shelf sections with labe
 - "Coffee table" by borrealis: https://sketchfab.com/3d-models/coffee-table-74c6c897299242d297e4582a87d58c1d
 - "Books and magazines" by Naira: https://sketchfab.com/3d-models/books-and-magazines-d0b76eada5bd495abcdfb2b20e6f7ee6
 - "Isometric Library" by Kenti Sanchez: https://sketchfab.com/3d-models/isometric-library-a575e54efff54ad0b495ac7c2b1f6a91
+
+The garden's trees are rebuilt in code from measurements of these CC BY 4.0 models (adapted: their skeletons traced and thinned, leaf densities and card sizes measured, leaf textures redrawn; their meshes and textures are not shipped):
+
 - "Tree" by SomeKevin: https://sketchfab.com/3d-models/tree-66a8d0ef9b49415a9eaf6af216cb9bce
 - "Stylized Tree" by yonimantz: https://sketchfab.com/3d-models/stylized-tree-6d1aeea748f147789004bc03e1930d32
 - "Platano Tree" by gelmi.com.br: https://sketchfab.com/3d-models/platano-tree-ef48485b7c534acc905c0d9964c5fe7c
 
-Architecture, shelves and shelf books, pouf, bolsters, rug, lamps and plants are built in code.
+Architecture, shelves and shelf books, pouf, bolsters, rug, lamps, plants and trees are built in code.
