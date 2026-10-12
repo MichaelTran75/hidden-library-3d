@@ -3094,14 +3094,13 @@
   - "Platano Tree" by gelmi.com.br - https://sketchfab.com/3d-models/platano-tree-ef48485b7c534acc905c0d9964c5fe7c
   Architecture, shelves and shelf books, pouf, bolsters, rug, lamps and plants are built in code.
 -->
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
 <script id="lib-glb" type="application/octet-stream" data-src="lib.glb"></script>
 <script type="module">
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
@@ -3153,6 +3152,7 @@ function fbm(x, y, oct = 4, px = 256, py = 256) { let s = 0, a = 0.5, f = 1, n =
 function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 function ctex(c, { srgb = true, rep = true } = {}) { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
 const hsl = (h, s, l) => new THREE.Color().setHSL(h / 360, s, l);
+const _px = new THREE.Color(), hslPx = (h, s, l) => _px.setHSL(h / 360, s, l);   // per-pixel painters: no allocation
 
 /* Box with world-scaled UVs: v runs along the longest in-plane side, 1 UV = `tile` metres */
 function boardGeo(w, h, d, tile = 1) {
@@ -3183,7 +3183,7 @@ function woodPlanks({ w = 512, h = 2048, planks = 6, hue = 33, sat = .52, light 
     let l = seg.l * (0.86 + 0.22 * streak) * (0.93 + 0.08 * ring);
     const edge = Math.min(lx, pw - lx), endD = Math.min(Math.abs(yy - seg.a), Math.abs(seg.b - yy));
     if (edge < 1.2 || endD < 1.2) l *= gap; else if (edge < 4) l *= 0.94 + 0.015 * edge;
-    const col = hsl(seg.hu + (streak - .5) * 4, seg.s, Math.min(.92, l));
+    const col = hslPx(seg.hu + (streak - .5) * 4, seg.s, Math.min(.92, l));
     const o = (y * w + x) * 4; d[o] = col.r * 255; d[o + 1] = col.g * 255; d[o + 2] = col.b * 255; d[o + 3] = 255;
   }
   g.putImageData(img, 0, 0); return c;
@@ -3193,7 +3193,7 @@ function grainTex({ w = 256, h = 1024, hue = 32, sat = .55, light = .58, seed = 
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const u = x / w, v = y / h; const wob = fbm(u * 3 + seed, v * 2, 3, 3, 2) * 2.2;
     const s = fbm(u * 18 + wob, v * 3, 4, 18, 3); const ring = 0.5 + 0.5 * Math.sin((u * 7 + wob * 1.6) * 6.283);
-    const col = hsl(hue + (s - .5) * 5, sat, light * (0.84 + 0.24 * s) * (0.94 + 0.07 * ring));
+    const col = hslPx(hue + (s - .5) * 5, sat, light * (0.84 + 0.24 * s) * (0.94 + 0.07 * ring));
     const o = (y * w + x) * 4; d[o] = col.r * 255; d[o + 1] = col.g * 255; d[o + 2] = col.b * 255; d[o + 3] = 255;
   }
   g.putImageData(img, 0, 0); return c;
@@ -3205,20 +3205,20 @@ function noiseTex(w, h, f, { base = [235, 228, 214], amp = 30, oct = 5, seed = 0
 }
 
 /* ---------------------------------------------------------------- renderer */
-const renderer = new THREE.WebGLRenderer({ canvas: CANVAS, antialias: false, powerPreference: 'high-performance' });
+// the canvas itself needs no depth or stencil buffer: the scene renders into its own target, everything after is flat
+const renderer = new THREE.WebGLRenderer({ canvas: CANVAS, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
 // the watercolour picture is made at 1 px per CSS px (it softens everything anyway) and scaled up to the canvas, which
 // holds device pixels: the sharp layer drawn over it (titles on the books, stars, the moon) stays crisp on high-DPI screens
 renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
 const RT_SCALE = 0.8;                         // the scene itself renders at 80 % and is upsampled by the paint pass
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate = false;        // the room stands still: shadows are redrawn only when a book moves (shadowsDirty)
+let shadowsDirty = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.NoToneMapping; // done in the final pass
 RectAreaLightUniformsLib.init();
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 400);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; controls.dampingFactor = 0.08; controls.rotateSpeed = 0.45; controls.zoomSpeed = 0.7;
-controls.screenSpacePanning = true; controls.minDistance = 0.4; controls.maxDistance = 9; controls.enabled = false;   // background: no camera input
 
 /* ---------------------------------------------------------------- materials */
 const TEX = {};
@@ -3226,7 +3226,7 @@ async function buildTextures() {
   TEX.floor = ctex(woodPlanks({ hue: 28, sat: .55, light: .5, vary: .06, seed: 3 }));
   TEX.floor.repeat.set(1 / 1.08, 1 / 4.32);
   await tick();
-  TEX.ceil = ctex(woodPlanks({ w: 512, h: 2048, planks: 8, hue: 27, sat: .5, light: .42, vary: .035, seed: 11, gap: .6, grain: 1.4 }));
+  TEX.ceil = ctex(woodPlanks({ w: 256, h: 1024, planks: 8, hue: 27, sat: .5, light: .42, vary: .035, seed: 11, gap: .6, grain: 1.4 }));   // mostly out of view: half size
   TEX.ceil.repeat.set(1 / 1.08, 1 / 4.32);
   await tick();
   TEX.oak = ctex(grainTex({ hue: 29, sat: .5, light: .5 }));
@@ -3915,6 +3915,10 @@ function buildOutside(assets) {
     const near = d < 16; add(pick(near ? ['A', 'A', 'C', 'B'] : ['A', 'A', 'A', 'C']), x, z, 0.85 + r() * 0.45, near ? 2.8 : 4.5);
   }
   for (const k of ['A', 'B', 'C']) spots[k] = spots[k].filter(p => !blocksSky(k, p.x, p.z, p.s));   // placed as before, then cleared (the rest keep their places)
+  // trees no view can see are not drawn at all: the whole crown stands behind the solid shelf wall and the roof (the room's
+  // x and z ranges: only the front glass, behind every view, looks at it), or behind the viewer's plane
+  const unseen = (x, z, rad) => (x - rad > R.xL && z - rad > R.zB + 0.2) || z - rad > -0.3;
+  for (const k of ['A', 'B', 'C']) spots[k] = spots[k].filter(p => !unseen(p.x, p.z, dims[k].rad * T[k].scale * p.s * 1.05));
   // a few young trees in that garden, far enough and small enough that their crowns stop below the moon (~9° up)
   for (const [k, az, d, top, ry] of [['A', 9, 30, 8.5, 1.1], ['C', 19, 24, 8.8, 4.0], ['B', 24.5, 17, 9.0, 2.3]]) {
     const a = az * Math.PI / 180, h = REF.eye.y + 0.12 + d * Math.tan(top * Math.PI / 180);
@@ -3956,7 +3960,7 @@ function buildOutside(assets) {
   // shrubs right outside the glass
   const leafMat = T.A.parts.find(p => p.leaf).material;
   for (const [x, z, sc] of [[-2.0, -1.0, 1.2], [-2.2, -6.0, 1.1], [-2.5, -8.3, 1.4], [-1.9, 1.3, 1.0], [-4.8, -4.6, 0.9], [-5.0, -7.4, 1.3], [-4.6, -0.6, 1.0], [-0.4, -9.9, 1.3], [1.3, -9.8, 1.1], [2.8, -10.1, 1.2], [-1.9, -10.2, 1.3], [-3.6, -9.5, 1.2], [-0.8, 3.6, 1.1], [1.8, 3.9, 1.0], [-6.2, -10.8, 1.5], [-6.8, 0.2, 1.4], [-6.6, -3.2, 1.3], [4.2, -12.4, 1.4]])
-    outside.add(shrub(x, z, sc, leafMat));
+    if (!unseen(x, z, 1.6 * sc)) outside.add(shrub(x, z, sc, leafMat));
 }
 function lodLeaves(geo, keep, grow, seed = 5) {
   // drop whole leaf cards (connected by index) and enlarge the survivors around their own centre
@@ -4278,75 +4282,82 @@ function dust() {
 
 /* ---------------------------------------------------------------- post: watercolour */
 const POST = {};
+/* The watercolour picture is made in three passes:
+   1. tone: the scene's colours through the tone curve, once per pixel (the paint pass reads each one ~50 times);
+   2. paper: the noise fields that only depend on the screen position (wobble, pigment, fibres, blotches, paper grain),
+      baked when the window size changes instead of being recomputed every frame;
+   3. paint: Kuwahara smoothing, ink edges and the paper, reading the two above.                                  */
+const QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy,0.0,1.0); }';
 function buildPost() {
   POST.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(4, 4) });
-  POST.mat = new THREE.ShaderMaterial({
-    uniforms: { tColor: { value: null }, tDepth: { value: null }, res: { value: new THREE.Vector2() }, time: { value: 0 }, mode: { value: 1 }, exposure: { value: 0.85 }, near: { value: 0.05 }, far: { value: 400 }, frame: { value: new THREE.Vector4(0, 0, 1, 1) }, paper: { value: new THREE.Color(0xf4efe4) }, deckle: { value: 0 }, lift: { value: 0.88 }, veil: { value: 0.06 } },
-    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy,0.0,1.0); }',
-    fragmentShader: /* glsl */`
-      precision highp float;
-      uniform sampler2D tColor, tDepth; uniform vec2 res; uniform float time, mode, exposure, near, far; uniform vec4 frame; uniform vec3 paper; uniform float deckle, lift, veil;
-      varying vec2 vUv;
-      vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
-      vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
-      vec3 tm(vec3 c){ return toS(aces(c*exposure*0.85)); }
-      float h21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
-      float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h21(i),h21(i+vec2(1,0)),f.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x), f.y); }
-      float fb(vec2 p){ float s=0.0,a=0.5; for(int i=0;i<5;i++){ s+=a*vn(p); p*=2.03; a*=0.5; } return s; }
-      float ld(float d){ float z=d*2.0-1.0; return 2.0*near*far/(far+near-z*(far-near)); }
-      vec3 samp(vec2 uv){ return tm(texture2D(tColor, uv).rgb); }
-      void main(){
-        vec2 px = vUv*res; vec2 fpx = (px - frame.xy)/frame.zw;            // 0..1 inside the picture frame
-        if (fpx.x<0.0||fpx.y<0.0||fpx.x>1.0||fpx.y>1.0){ gl_FragColor = vec4(paper,1.0); return; }
-        vec2 uv = fpx; vec2 tx = 1.0/frame.zw;
-        if (mode < 0.5) { vec3 c = samp(uv); gl_FragColor = vec4(c,1.0); return; }
-        // --- wobble (pigment pushed by paper)
-        float sc = frame.w/1000.0;
-        vec2 w = vec2(fb(px*0.012+3.1), fb(px*0.012+7.7)) - 0.5; vec2 uvw = uv + w*tx*3.5*sc;
-        // --- 4-sector Kuwahara (radius 3)
-        vec3 m[4]; vec3 s2[4]; for(int k=0;k<4;k++){ m[k]=vec3(0.0); s2[k]=vec3(0.0); }
-        for(int j=-3;j<=3;j++) for(int i=-3;i<=3;i++){
-          vec3 c = samp(uvw + vec2(float(i),float(j))*tx*1.25*sc);
-          if(i<=0&&j<=0){ m[0]+=c; s2[0]+=c*c; } if(i>=0&&j<=0){ m[1]+=c; s2[1]+=c*c; }
-          if(i<=0&&j>=0){ m[2]+=c; s2[2]+=c*c; } if(i>=0&&j>=0){ m[3]+=c; s2[3]+=c*c; } }
-        vec3 col = vec3(0.0); float best = 1e9;
-        for(int k=0;k<4;k++){ vec3 mu = m[k]/16.0; vec3 v = abs(s2[k]/16.0 - mu*mu); float sv = v.r+v.g+v.b; if (sv<best){ best=sv; col=mu; } }
-        // --- edges: depth + colour sobel
-        float d00=ld(texture2D(tDepth,uvw+vec2(-1,-1)*tx*sc).r), d10=ld(texture2D(tDepth,uvw+vec2(0,-1)*tx*sc).r), d20=ld(texture2D(tDepth,uvw+vec2(1,-1)*tx*sc).r);
-        float d01=ld(texture2D(tDepth,uvw+vec2(-1,0)*tx*sc).r), d11=ld(texture2D(tDepth,uvw).r), d21=ld(texture2D(tDepth,uvw+vec2(1,0)*tx*sc).r);
-        float d02=ld(texture2D(tDepth,uvw+vec2(-1,1)*tx*sc).r), d12=ld(texture2D(tDepth,uvw+vec2(0,1)*tx*sc).r), d22=ld(texture2D(tDepth,uvw+vec2(1,1)*tx*sc).r);
-        float gx = (d20+2.0*d21+d22)-(d00+2.0*d01+d02), gy = (d02+2.0*d12+d22)-(d00+2.0*d10+d20);
-        float de = clamp(length(vec2(gx,gy))/max(d11,0.3)*6.0 - 0.25, 0.0, 1.0);
-        vec3 a1 = samp(uvw+vec2(1.5,0)*tx*sc), a2 = samp(uvw-vec2(1.5,0)*tx*sc), a3 = samp(uvw+vec2(0,1.5)*tx*sc), a4 = samp(uvw-vec2(0,1.5)*tx*sc);
-        float ce = length(a1-a2)+length(a3-a4);
-        float ink = max(de*0.85, smoothstep(0.25,0.65,ce)*0.38) * (0.55 + 0.6*fb(px*0.05)) * smoothstep(16.0, 8.5, d11);
-        // --- watercolour transparency: lift + slight desaturation, pigment granulation, edge darkening
-        float lum = dot(col, vec3(0.299,0.587,0.114));
-        col = mix(vec3(lum), col, 1.08);
-        float gran = fb(px*0.35) - 0.5; float fib = fb(vec2(px.x*0.9, px.y*0.08)) - 0.5;
-        col *= 1.0 + gran*0.10*(1.0-lum) + fib*0.03;
-        col *= 1.0 - smoothstep(0.08,0.5,ce)*0.10;
-        float bloom = fb(px*0.004+11.0);
-        col = mix(col, col*col*1.06 + 0.02, 0.10 + 0.1*bloom);       // wet-in-wet blotches
-        col = mix(vec3(dot(col, vec3(0.299,0.587,0.114))), col, 0.9);
-        col = 1.0 - (1.0 - col)*lift;                                    // paper shows through (less at night)
-        col = mix(col, col*vec3(1.02,1.0,0.95), 0.6);                   // warm paper tint
-        col = mix(col, vec3(0.24,0.17,0.11), ink*0.55);                  // brown ink line
-        // paper texture
-        float pp = fb(px*0.6)*0.6 + fb(px*0.08)*0.4; col *= 0.96 + pp*0.07;
-        // deckled border: fade to paper near the frame edge
-        vec2 e = min(fpx, 1.0-fpx) * frame.zw / frame.w; float edge = min(e.x, e.y);
-        float bl = smoothstep(0.004, 0.035 + 0.03*fb(px*0.01), edge + (fb(px*0.03)-0.5)*0.03);
-        col = mix(paper*(0.97+pp*0.05), col, mix(1.0, bl, deckle));
-        gl_FragColor = vec4(col*(1.0-veil),1.0);
-      }`,
-    depthTest: false, depthWrite: false,
-  });
-  POST.quad = new FullScreenQuad(POST.mat);
+  const exposure = { value: 0.85 }, quad = (uniforms, fragmentShader) => new FullScreenQuad(new THREE.ShaderMaterial({ uniforms, vertexShader: QUAD_VS, fragmentShader, depthTest: false, depthWrite: false }));
+  POST.tone = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });
+  POST.toneQuad = quad({ tColor: { value: null }, exposure }, /* glsl */`
+    precision highp float; uniform sampler2D tColor; uniform float exposure; varying vec2 vUv;
+    vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+    vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
+    void main(){ gl_FragColor = vec4(toS(aces(texture2D(tColor, vUv).rgb*exposure*0.85)), 1.0); }`);
+  const nearest = { depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
+  POST.n1 = new THREE.WebGLRenderTarget(4, 4, nearest); POST.n2 = new THREE.WebGLRenderTarget(4, 4, nearest);
+  POST.bakeQuad = quad({ res: { value: new THREE.Vector2() }, which: { value: 0 } }, /* glsl */`
+    precision highp float; uniform vec2 res; uniform float which; varying vec2 vUv;
+    float h21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+    float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f); return mix(mix(h21(i),h21(i+vec2(1,0)),f.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x), f.y); }
+    float fb(vec2 p){ float s=0.0,a=0.5; for(int i=0;i<5;i++){ s+=a*vn(p); p*=2.03; a*=0.5; } return s; }
+    void main(){ vec2 px = vUv*res;
+      if (which < 0.5) gl_FragColor = vec4(fb(px*0.012+3.1), fb(px*0.012+7.7), fb(px*0.05), fb(px*0.35));                  // wobble x, y · ink · pigment
+      else gl_FragColor = vec4(fb(vec2(px.x*0.9, px.y*0.08)), fb(px*0.004+11.0), fb(px*0.6)*0.6 + fb(px*0.08)*0.4, 1.0);   // fibres · blotches · paper
+    }`);
+  POST.quad = quad({ tTone: { value: POST.tone.texture }, tDepth: { value: null }, tN1: { value: POST.n1.texture }, tN2: { value: POST.n2.texture },
+    res: { value: new THREE.Vector2(1, 1) }, near: { value: 0.05 }, far: { value: 400 }, exposure, lift: { value: 0.88 }, veil: { value: 0.06 } }, /* glsl */`
+    precision highp float;
+    uniform sampler2D tTone, tDepth, tN1, tN2; uniform vec2 res; uniform float near, far, lift, veil;
+    varying vec2 vUv;
+    float ld(float d){ float z=d*2.0-1.0; return 2.0*near*far/(far+near-z*(far-near)); }
+    vec3 samp(vec2 uv){ return texture2D(tTone, uv).rgb; }
+    void main(){
+      vec2 tx = 1.0/res; float sc = res.y/1000.0;
+      vec4 n1 = texture2D(tN1, vUv), n2 = texture2D(tN2, vUv);
+      // --- wobble (pigment pushed by paper)
+      vec2 uvw = vUv + (n1.xy - 0.5)*tx*3.5*sc;
+      // --- 4-sector Kuwahara (radius 3)
+      vec3 m[4]; vec3 s2[4]; for(int k=0;k<4;k++){ m[k]=vec3(0.0); s2[k]=vec3(0.0); }
+      for(int j=-3;j<=3;j++) for(int i=-3;i<=3;i++){
+        vec3 c = samp(uvw + vec2(float(i),float(j))*tx*1.25*sc);
+        if(i<=0&&j<=0){ m[0]+=c; s2[0]+=c*c; } if(i>=0&&j<=0){ m[1]+=c; s2[1]+=c*c; }
+        if(i<=0&&j>=0){ m[2]+=c; s2[2]+=c*c; } if(i>=0&&j>=0){ m[3]+=c; s2[3]+=c*c; } }
+      vec3 col = vec3(0.0); float best = 1e9;
+      for(int k=0;k<4;k++){ vec3 mu = m[k]/16.0; vec3 v = abs(s2[k]/16.0 - mu*mu); float sv = v.r+v.g+v.b; if (sv<best){ best=sv; col=mu; } }
+      // --- edges: depth + colour sobel
+      float d00=ld(texture2D(tDepth,uvw+vec2(-1,-1)*tx*sc).r), d10=ld(texture2D(tDepth,uvw+vec2(0,-1)*tx*sc).r), d20=ld(texture2D(tDepth,uvw+vec2(1,-1)*tx*sc).r);
+      float d01=ld(texture2D(tDepth,uvw+vec2(-1,0)*tx*sc).r), d11=ld(texture2D(tDepth,uvw).r), d21=ld(texture2D(tDepth,uvw+vec2(1,0)*tx*sc).r);
+      float d02=ld(texture2D(tDepth,uvw+vec2(-1,1)*tx*sc).r), d12=ld(texture2D(tDepth,uvw+vec2(0,1)*tx*sc).r), d22=ld(texture2D(tDepth,uvw+vec2(1,1)*tx*sc).r);
+      float gx = (d20+2.0*d21+d22)-(d00+2.0*d01+d02), gy = (d02+2.0*d12+d22)-(d00+2.0*d10+d20);
+      float de = clamp(length(vec2(gx,gy))/max(d11,0.3)*6.0 - 0.25, 0.0, 1.0);
+      vec3 a1 = samp(uvw+vec2(1.5,0)*tx*sc), a2 = samp(uvw-vec2(1.5,0)*tx*sc), a3 = samp(uvw+vec2(0,1.5)*tx*sc), a4 = samp(uvw-vec2(0,1.5)*tx*sc);
+      float ce = length(a1-a2)+length(a3-a4);
+      float ink = max(de*0.85, smoothstep(0.25,0.65,ce)*0.38) * (0.55 + 0.6*n1.z) * smoothstep(16.0, 8.5, d11);
+      // --- watercolour transparency: lift + slight desaturation, pigment granulation, edge darkening
+      float lum = dot(col, vec3(0.299,0.587,0.114));
+      col = mix(vec3(lum), col, 1.08);
+      col *= 1.0 + (n1.w - 0.5)*0.10*(1.0-lum) + (n2.x - 0.5)*0.03;
+      col *= 1.0 - smoothstep(0.08,0.5,ce)*0.10;
+      col = mix(col, col*col*1.06 + 0.02, 0.10 + 0.1*n2.y);           // wet-in-wet blotches
+      col = mix(vec3(dot(col, vec3(0.299,0.587,0.114))), col, 0.9);
+      col = 1.0 - (1.0 - col)*lift;                                    // paper shows through (less at night)
+      col = mix(col, col*vec3(1.02,1.0,0.95), 0.6);                   // warm paper tint
+      col = mix(col, vec3(0.24,0.17,0.11), ink*0.55);                  // brown ink line
+      col *= 0.96 + n2.z*0.07;                                         // paper texture
+      gl_FragColor = vec4(col*(1.0-veil),1.0);
+    }`);
+  POST.mat = POST.quad.material;
   POST.out = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });   // the finished picture, at CSS resolution
-  POST.blit = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: POST.out.texture } }, depthTest: false, depthWrite: false,
-    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-    fragmentShader: 'uniform sampler2D t; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv); }' }));
+  POST.blit = quad({ t: { value: POST.out.texture } }, 'uniform sampler2D t; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv); }');
+}
+function bakePaper(w, h) {   // the screen-fixed noise of the paint pass, for this window size
+  POST.n1.setSize(w, h); POST.n2.setSize(w, h); const U = POST.bakeQuad.material.uniforms; U.res.value.set(w, h);
+  for (const [rt, which] of [[POST.n1, 0], [POST.n2, 1]]) { U.which.value = which; renderer.setRenderTarget(rt); POST.bakeQuad.render(renderer); }
+  renderer.setRenderTarget(null);
 }
 
 /* ---------------------------------------------------------------- views
@@ -4385,8 +4396,9 @@ function applyRefCamera() { CAM.cur = homeView(); CAM.k = 1; applyView(CAM.cur);
 function resize() {
   const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setSize(innerWidth, innerHeight, false);   // device pixels (the sharp layer)
-  POST.rt.setSize(Math.max(1, Math.round(w * RT_SCALE)), Math.max(1, Math.round(h * RT_SCALE)));                   // the scene, at 80 %
-  POST.out.setSize(w, h); POST.mat.uniforms.res.value.set(w, h); POST.mat.uniforms.frame.value.set(0, 0, w, h);    // the watercolour, at CSS px
+  const rw = Math.max(1, Math.round(w * RT_SCALE)), rh = Math.max(1, Math.round(h * RT_SCALE));
+  POST.rt.setSize(rw, rh); POST.tone.setSize(rw, rh);                                                              // the scene, at 80 %
+  POST.out.setSize(w, h); POST.mat.uniforms.res.value.set(w, h); bakePaper(w, h);                                  // the watercolour, at CSS px
   placeMoon();
 }
 
@@ -4441,7 +4453,7 @@ function buildNightLights() {
 }
 function applyNight(n) {
   const L = LIGHTS, D = NIGHT.day, U = POST.mat.uniforms; NIGHT.u.value = n;
-  L.sun.intensity = D.sun * (1 - n); L.sun.visible = n < 0.999;
+  const sunWas = L.sun.visible; L.sun.intensity = D.sun * (1 - n); L.sun.visible = n < 0.999; if (L.sun.visible && !sunWas) shadowsDirty = true;
   L.hemi.intensity = lerp(D.hemi, 0.15, n); L.hemi.color.lerpColors(D.hemiC, NC.hemi, n); L.hemi.groundColor.lerpColors(D.hemiG, NC.hemiG, n);
   L.rects.forEach((r, i) => { r.intensity = D.rects[i][0] * lerp(1, 0.22, n); r.color.lerpColors(D.rects[i][1], NC.win, n); });
   scene.environmentIntensity = lerp(D.env, 0.09, n); scene.fog.color.lerpColors(D.fog, NC.fog, n);
@@ -4815,6 +4827,7 @@ function placeMoon() {   // in the left glass, between the posts at z −6.6 and
 }
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
+  shadowsDirty = true;
   booksMesh.setMatrixAt(bk.idx, amount === null ? ZERO : new THREE.Matrix4().makeTranslation(bk.normal.x * amount, 0, bk.normal.z * amount).multiply(bk.m0));
   booksMesh.instanceMatrix.needsUpdate = true;
 }
@@ -5097,7 +5110,12 @@ function buildInterface() {
 
 /* ---------------------------------------------------------------- render loop */
 const clock = new THREE.Clock();
-const FRAME_MS = 1000 / 20;                    // at rest only slow sway, a candle and the record move; the glass panels above re-blur per frame
+// While something moves (camera, a book, a glow, the night falling) every frame is drawn. At rest only small things
+// stir (the trees, a candle, clouds, the stars): they are drawn 15 times a second for a few seconds after the visitor
+// last moved or typed, then the room holds still as a picture until the next touch; nothing is drawn meanwhile.
+const FRAME_MS = 1000 / 15, STILL_AFTER = 6000;
+let lastInput = performance.now();
+for (const t of ['pointermove', 'pointerdown', 'wheel', 'keydown', 'touchstart']) addEventListener(t, () => { lastInput = performance.now(); }, { capture: true, passive: true });
 let ready = false, on = false, needs = true, lastDraw = 0, lastTick = 0;
 function wanted() { return ready && innerWidth > 768; }
 function updateOn() {
@@ -5106,12 +5124,13 @@ function updateOn() {
 }
 function draw() {
   const t = clock.getElapsedTime();
-  WIND.t.value = t; POST.mat.uniforms.time.value = t;
+  WIND.t.value = t;
   if (motes) motes.visible = false;
   if (LIGHTS.candle) { const f = LIGHTS.candle.userData.flame; f.scale.y = 2 + Math.sin(t * 13) * .25 + Math.sin(t * 7.3) * .2; }
-  renderer.setRenderTarget(POST.rt); renderer.render(scene, camera); renderer.setRenderTarget(null);
-  POST.mat.uniforms.tColor.value = POST.rt.texture; POST.mat.uniforms.tDepth.value = POST.rt.depthTexture;
-  POST.mat.uniforms.mode.value = 1; POST.mat.uniforms.near.value = camera.near; POST.mat.uniforms.far.value = camera.far;
+  if (shadowsDirty) { renderer.shadowMap.needsUpdate = true; shadowsDirty = false; }
+  renderer.setRenderTarget(POST.rt); renderer.render(scene, camera);
+  POST.toneQuad.material.uniforms.tColor.value = POST.rt.texture; renderer.setRenderTarget(POST.tone); POST.toneQuad.render(renderer);
+  const U = POST.mat.uniforms; U.tDepth.value = POST.rt.depthTexture; U.near.value = camera.near; U.far.value = camera.far;
   renderer.setRenderTarget(POST.out); POST.quad.render(renderer); renderer.setRenderTarget(null); POST.blit.render(renderer);
   drawWords();
   layoutOverlay();
@@ -5126,10 +5145,12 @@ function loop(now) {
   }
   if (!on) return;
   const t = clock.getElapsedTime();
-  const smooth = stepCam(dt) | stepBooks(dt, t) | stepGlow(dt);      // motion that needs every frame
-  const resting = (body.classList.contains('is-idle') || reduceMotion) && !smooth;
-  if (resting && !needs) return;
-  if (!smooth && !needs && now - lastDraw < FRAME_MS - 2) return;
+  const books = stepBooks(dt, t); if (books) shadowsDirty = true;
+  const smooth = stepCam(dt) | books | stepGlow(dt);      // motion that needs every frame
+  if (!smooth && !needs) {
+    if (reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER) return;   // a still picture
+    if (now - lastDraw < FRAME_MS - 2) return;
+  }
   lastDraw = now; needs = false; draw();
 }
 async function start() {
@@ -5138,6 +5159,7 @@ async function start() {
   NIGHT.p = body.classList.contains('dark-mode') ? 1 : 0; applyNight(NIGHT.p);
   resize(); applyRefCamera();
   buildInterface();
+  if (renderer.compileAsync) await renderer.compileAsync(scene, camera).catch(() => {});
   ready = true; draw(); updateOn();
   renderer.setAnimationLoop(loop);
 }
