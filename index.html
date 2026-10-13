@@ -4883,6 +4883,7 @@ const tint3 = (out, day, warm, blue, night, S) => out.copy(day).lerp(warm, S.war
 function applyHour(e, az) {
   const L = LIGHTS, D = NIGHT.day, U = POST.mat.uniforms, S = hourState(e, HOUR.S), n = S.n;
   HOUR.e = e; HOUR.az = az; NIGHT.u.value = S.stars;
+  FLY.u.value = smooth(3, -5, e);
   // the sun: where, what colour, how strong
   const dir = sunDirAt(e, az, TMPV.set(0, 0, 0)), moved = dir.distanceToSquared(HOUR.dir) > 1e-8; HOUR.dir.copy(dir);
   L.sun.position.copy(D.sunT).addScaledVector(dir, 12.5);
@@ -5218,6 +5219,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
     const on = !bk.away && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;   // too narrow to read (the whole room in view): none
   }
   if (OVER.sky) { const night = NIGHT.u.value > 0.005; OVER.sky.visible = night; if (night) { any = true; OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); } }
+  if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   drawDeck();
   if (!any) return;
@@ -5270,6 +5272,39 @@ function buildNightSky() {
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
   moon.visible = false;   // until its picture has loaded
   sky.add(moon); OVER.moon = moon; placeMoon();
+}
+/* ---- fireflies: from dusk on, forty-odd drift through the room and flash, drawn sharp over the picture like the stars
+   (the paint pass would smear points this small) and hidden behind whatever the room puts in front of them. Each one
+   wanders slowly around its own spot (three unrelated sways, so no two paths repeat together) and flashes on its own
+   beat: a ~0.7 s yellow-green pulse every 3 to 7 s, with a dimmer glow in between. They come out as the sun goes under
+   the trees (3° to −5°). All the motion is in the vertex shader: nothing on the CPU per frame. */
+const FLY = { u: { value: 0 }, t: { value: 0 }, pts: null, on: false };
+function buildFireflies() {
+  const n = 44, home = new Float32Array(n * 3), sway = new Float32Array(n * 4), beat = new Float32Array(n * 3), r = rng(77);
+  for (let i = 0; i < n; i++) {
+    // over the floor between the glass and the shelf, most below eye height, a few up in the tall room
+    home.set([lerp(R.xL + 0.55, R.xS - 0.5, r()), 0.35 + Math.pow(r(), 1.6) * 2.6, lerp(R.zB + 0.7, R.zF - 1.2, Math.pow(r(), 0.8))], i * 3);
+    sway.set([0.25 + r() * 0.35, 0.12 + r() * 0.25, 0.3 + r() * 0.5, r() * 100], i * 4);   // reach x, y, z (m), phase
+    beat.set([3 + r() * 4, r() * 10, 0.6 + r() * 0.4], i * 3);                               // period (s), phase, size
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(home, 3)); g.setAttribute('aSway', new THREE.BufferAttribute(sway, 4)); g.setAttribute('aBeat', new THREE.BufferAttribute(beat, 3));
+  const pts = new THREE.Points(g, new THREE.ShaderMaterial({
+    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: FLY.t, uOn: FLY.u },
+    vertexShader: `attribute vec4 aSway; attribute vec3 aBeat; uniform float uTime, uOn; uniform vec2 uRes; varying float vB;
+      void main(){ float t = uTime + aSway.w, k = 0.6 + 0.4 * fract(aSway.w * 7.13);
+        vec3 p = position + vec3(sin(t * 0.23 * k) + 0.45 * sin(t * 0.61 + 1.3), sin(t * 0.37 * k + 2.0) + 0.35 * sin(t * 1.7), sin(t * 0.17 * k + 4.0) + 0.4 * cos(t * 0.53)) * aSway.xyz;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
+        float ph = fract((uTime + aBeat.y) / aBeat.x), flash = smoothstep(0.0, 0.05, ph) * (1.0 - smoothstep(0.05, 0.05 + 0.7 / aBeat.x, ph));
+        vB = (0.3 + 0.9 * flash) * uOn;
+        gl_PointSize = clamp(0.22 * aBeat.z * projectionMatrix[1][1] * 0.5 * uRes.y / -mv.z, 6.0, 90.0); }`,
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; varying float vB;
+      void main(){ if (gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 4e-6) discard;
+        float d = length(gl_PointCoord - 0.5) * 2.0, core = smoothstep(0.16, 0.03, d), halo = pow(max(1.0 - d, 0.0), 3.0);
+        float a = (core + 0.7 * halo) * vB; if (a < 0.004) discard;
+        gl_FragColor = vec4(mix(vec3(0.62, 0.95, 0.22), vec3(1.0, 1.0, 0.78), core) * a, 1.0); }`,
+    transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
+  pts.frustumCulled = false; pts.visible = false; OVER.scene.add(pts); FLY.pts = pts;
 }
 // the page's moon pictures (its MOON_IMGS: 8 phase buckets, new moon first), used when its sky clock has not shown one yet
 const MOON_IDS = ['35cea205e90443258d2aeaa54414881a', '60161204787446faa5348897ff9578ef', '60161204787446faa5348897ff9578ef', 'f2c8bd9a09d54d75b97bd8ef98842611',
@@ -5714,7 +5749,8 @@ const clock = new THREE.Clock();
 const FRAME_MS = 1000 / 15, STILL_AFTER = 6000;
 let lastInput = performance.now(), hold = false, startedAt = Infinity;
 for (const t of ['pointermove', 'pointerdown', 'wheel', 'keydown', 'touchstart']) addEventListener(t, () => { lastInput = performance.now(); }, { capture: true, passive: true });
-let ready = false, on = false, needs = true, lastDraw = 0, lastTick = 0;
+let ready = false, on = false, needs = true, lastDraw = 0, lastSharp = 0, lastTick = 0;
+const SHARP_MS = 1000 / 30;
 function wanted() { return ready && innerWidth > 768; }
 function updateOn() {
   const w = wanted(); if (w === on) return;
@@ -5744,14 +5780,15 @@ function loop(now) {
   const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
-    if (still && DECK.ok && DECK.speed > 0 && !body.classList.contains('is-idle')) {   // the record turns on a still room: redraw just it
-      if (now - lastDraw >= FRAME_MS - 2) { lastDraw = now; drawSharp(); }
+    // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
+    // between the room's own frames too), which costs a blit and a few points
+    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on);
+    if (still || now - lastDraw < FRAME_MS - 2) {
+      if (live && now - lastSharp >= (FLY.on ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }
       return;
     }
-    if (still) return;   // a still picture
-    if (now - lastDraw < FRAME_MS - 2) return;
   }
-  lastDraw = now; needs = false; draw(); adaptQuality(now, smooth);
+  lastDraw = lastSharp = now; needs = false; draw(); adaptQuality(now, smooth);
 }
 // While things move every frame is drawn; if those frames keep coming slower than ~40 a second (a weaker GPU), the scene
 // picture steps down to 65 %, then 50 % of the CSS size (the watercolour pass hides most of the difference; titles,
@@ -5772,7 +5809,7 @@ function adaptQuality(now, smooth) {
 }
 async function start() {
   await main();
-  buildNightLights(); buildNightSky();
+  buildNightLights(); buildNightSky(); buildFireflies();
   const at = /[?&]at=(\d{1,2}):(\d{2})/.exec(location.search); if (at) { const d = new Date(); d.setHours(+at[1], +at[2], 0, 0); HOUR.pin = d; }
   { const t = hourTarget(); applyHour(t.e, t.az); }
   resize(); applyRefCamera();
