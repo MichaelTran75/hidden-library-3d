@@ -4,7 +4,7 @@ The Hidden Library audiobook page as a 3D reading room: shelf sections with labe
 
 **Live:** https://michaeltran75.github.io/hidden-library-3d/
 
-- `index.html`: the page (three.js 0.170 from jsDelivr); `lib.glb`: the room's models, loaded next to it.
+- `index.html`: the page (three.js 0.170 from jsDelivr); `lib3d.js`: the 3D room (a module, fetched only on screens that show the room); `lib.glb`: the room's models, loaded next to it.
 - Built from `3D Library ver 01/src` (`build.py --pages`); publish with `./publish.sh "message"`.
 - Phones (≤ 768 px) and browsers without WebGL 2 get the original card layout.
 
