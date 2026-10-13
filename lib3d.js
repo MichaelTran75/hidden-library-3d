@@ -285,6 +285,7 @@ const PAL = {
 /* fill one shelf cell; o = left-bottom-front corner, along = unit axis to the right, out = spine normal (into the room) */
 function fillCell(o, along, out, len, hgt, dep, pal, opt = {}) {
   const up = new THREE.Vector3(0, 1, 0); const B = new THREE.Matrix4().makeBasis(along, up, out).setPosition(o);
+  if (opt.cell) { opt.cell.B = B; opt.cell.len = len; }   // for refitCell
   const maxH = Math.min(hgt - 0.02, 0.34); const gapChance = opt.gaps ?? 0.05, stackChance = opt.stack ?? 0.05;
   const T = (x, y, z) => new THREE.Matrix4().makeTranslation(x, y, z);
   const push = (M, col, v, up = false) => BOOK.list.push({ m: B.clone().multiply(M), c: new THREE.Color(col).offsetHSL(0, rr(-.04, .04), rr(-.05, .04)), v, up, cell: opt.cell || null });
@@ -317,6 +318,39 @@ function fillCell(o, along, out, len, hgt, dep, pal, opt = {}) {
       BOOK.list[lastUp.idx].m = B.clone().multiply(M); BOOK.list[lastUp.idx].lean = true;
     }
   }
+}
+/* a cell packed again after some of its books changed size (a book of the page takes the thickness of its pages): the
+   books keep their order and the gaps between them; what no longer fits at the right end is put away (only books that
+   play nothing). sizes: Map of BOOK.list index -> { t, h }; keep: indices never put away. Returns the indices it moved. */
+const ZERO_M = new THREE.Matrix4().makeScale(0, 0, 0);
+function refitCell(cell, sizes, keep = new Set()) {
+  const inv = cell.B.clone().invert(), L = new THREE.Matrix4(), v = new THREE.Vector3(), ents = [];
+  BOOK.list.forEach((b, idx) => {
+    if (b.cell !== cell || b.hidden) return;
+    L.multiplyMatrices(inv, b.m); let x0 = Infinity, x1 = -Infinity;
+    for (let k = 0; k < 8; k++) { const x = v.set(k & 1 ? 0.5 : -0.5, k & 2 ? 1 : 0, k & 4 ? -1 : 0).applyMatrix4(L).x; x0 = Math.min(x0, x); x1 = Math.max(x1, x); }
+    ents.push({ idx, b, x0, x1 });
+  });
+  ents.sort((a, b) => a.x0 - b.x0);
+  const slots = [];   // runs of books side by side; a stack lying flat is one run
+  for (const e of ents) { const s = slots[slots.length - 1]; if (s && e.x0 < s.x1 - 1e-4) { s.ents.push(e); s.x1 = Math.max(s.x1, e.x1); } else slots.push({ ents: [e], x0: e.x0, x1: e.x1 }); }
+  slots.forEach((s, k) => { s.gap = k ? Math.max(0, s.x0 - slots[k - 1].x1) : 0; const e = s.ents.find(e => sizes.has(e.idx)); s.item = e || null; s.keep = s.ents.some(e => keep.has(e.idx) || sizes.has(e.idx));
+    s.grow = e ? sizes.get(e.idx).t - (e.x1 - e.x0) : 0; s.w = s.x1 - s.x0 + s.grow; });
+  const lay = () => { let x = slots.length ? slots[0].x0 : 0; for (const s of slots) { if (s.out) continue; s.nx0 = x + (s === slots[0] ? 0 : s.gap); x = s.nx0 + s.w; } return x; };
+  while (lay() > cell.len - 0.002) { const s = [...slots].reverse().find(s => !s.out && !s.keep); if (!s) break; s.out = true; }
+  const along = new THREE.Vector3().setFromMatrixColumn(cell.B, 0), moved = [];
+  for (const s of slots) for (const e of s.ents) {
+    if (s.out) { e.b.m.copy(ZERO_M); e.b.hidden = true; moved.push(e.idx); continue; }
+    if (s.item === e) {   // an upright book: its frame in the cell is a translation and a scale
+      const sz = sizes.get(e.idx); L.multiplyMatrices(inv, e.b.m); const z = L.elements[14], d = v.setFromMatrixColumn(L, 2).length();
+      e.b.m.multiplyMatrices(cell.B, new THREE.Matrix4().makeTranslation(s.nx0 + (e.x0 - s.x0) + sz.t / 2, 0, z).multiply(new THREE.Matrix4().makeScale(sz.t, sz.h, d)));
+    } else {   // a book leaning on the resized one moves with its right side
+      const dx = s.nx0 - s.x0 + (s.item && e.x0 > s.item.x0 ? s.grow : 0);
+      e.b.m.premultiply(new THREE.Matrix4().makeTranslation(along.x * dx, along.y * dx, along.z * dx));
+    }
+    moved.push(e.idx);
+  }
+  return moved;
 }
 function buildBookInstances() {
   const geo = bookGeometry(); const n = BOOK.list.length;
@@ -2235,6 +2269,53 @@ function focusView(sec) {
   return { pos, tgt, fov: fov0, shift };
 }
 function researchView() { return { pos: new V3(0.55, 1.95, -4.4), tgt: new V3(0.55, 1.8, -8.3), fov: 46, shift: 0 }; }
+/* ---- the page's books in both languages, with their page counts
+   The page lists its books under their Vietnamese titles (a few under their English ones). Here each also has its
+   original English title (a Vietnamese book: a translation), its author and year where the page gives none, and its
+   page count: the median over the work's editions on Open Library (looked up 13/10/2026), else the publisher's or a
+   bookseller's listing. The spines, covers and the card follow the page's language switch; a book's thickness
+   follows its pages (see spineOf), so a long book stands out on the shelf as it would. A book the page adds later
+   and this table lacks keeps the page's title and the shelf book it was given. */
+const BOOK_INFO = [
+  // the title as the page has it, the English title (and the full one), author · year when the page lacks them, pages
+  // (t: a thickness in metres where there are no pages to go by; h: a height, for a book of a larger format)
+  { page: 'Nguyên lý Pareto: 80/20', en: 'The 80/20 Principle', full: 'The 80/20 Principle: The Secret to Achieving More with Less', by: 'Richard Koch · 1997', pages: 283 },
+  { page: 'Lịch Sử Mô Hình DISC. Từ Lý Thuyết Đến Ứng Dụng', en: 'The DISC Model: From Theory to Practice', pages: null, t: 0.012 },   // a talk: no printed edition found; a slim booklet
+  { page: '"Damn Right!" Bí Ẩn Charlie Munger', en: 'Damn Right!', full: 'Damn Right! Behind the Scenes with Berkshire Hathaway Billionaire Charlie Munger', pages: 304 },
+  { page: 'Paths to Wealth Through Common Stocks', en: 'Paths to Wealth Through Common Stocks', pages: 214 },
+  { page: 'Money Masters of Our Time', en: 'Money Masters of Our Time', pages: 400 },
+  { page: "The Innovator's Dilemma", en: "The Innovator's Dilemma", full: "The Innovator's Dilemma: When New Technologies Cause Great Firms to Fail", pages: 286 },
+  { page: 'Phong cách NVIDIA: Chiến lược và Văn hóa dẫn đầu AI', en: 'The Nvidia Way', full: 'The Nvidia Way: Jensen Huang and the Making of a Tech Giant', by: 'Tae Kim · 2024', pages: 272 },   // W. W. Norton
+  { page: 'A. Charlie Munger: Poor Charlie’s Almanack Tư Duy Đa Chiều', en: "Poor Charlie's Almanack", full: "Poor Charlie's Almanack: The Wit and Wisdom of Charles T. Munger", by: 'Charles T. Munger, ed. Peter D. Kaufman · 2005', pages: 512, h: 0.31 },   // a large-format book
+  { page: 'Khuyến Học', en: 'An Encouragement of Learning', pages: 192 },   // Fukuzawa's Gakumon no susume, tr. David A. Dilworth
+  { page: 'Động lực và Nhân cách', en: 'Motivation and Personality', pages: 400 },
+  { page: 'Phi Lý Trí', en: 'Predictably Irrational', full: 'Predictably Irrational: The Hidden Forces That Shape Our Decisions', pages: 368 },
+  { page: 'Tâm lý học Hài hước', en: 'Quirkology', full: 'Quirkology: How We Discover the Big Truths in Small Things', pages: 322 },
+  { page: 'Tư duy như một kẻ lập dị', en: 'Think Like a Freak', pages: 274 },
+  { page: 'Khi nào cướp nhà băng', en: 'When to Rob a Bank', full: 'When to Rob a Bank: …And 131 More Warped Suggestions and Well-Intended Rants', pages: 400 },
+  { page: 'Quy Luật Bản Chất Con Người', en: 'The Laws of Human Nature', pages: 617 },
+  { page: 'Tâm lý học về tiền', en: 'The Psychology of Money', full: 'The Psychology of Money: Timeless Lessons on Wealth, Greed, and Happiness', pages: 288 },
+  { page: 'Think again', en: 'Think Again', full: "Think Again: The Power of Knowing What You Don't Know", pages: 320 },
+  { page: '[Mô hình kinh tế]', en: '[Economic models]', pages: null },   // a heading on the page, not a book
+  { page: 'Súng, Vi Trùng và Thép', en: 'Guns, Germs, and Steel', full: 'Guns, Germs, and Steel: The Fates of Human Societies', pages: 528 },
+  { page: 'Sự giàu có và nghèo đói của các Quốc gia', en: 'The Wealth and Poverty of Nations', full: 'The Wealth and Poverty of Nations: Why Some Are So Rich and Some So Poor', pages: 650 },
+  { page: 'Những Tù Nhân Của Địa Lý', en: 'Prisoners of Geography', full: 'Prisoners of Geography: Ten Maps That Explain Everything About the World', pages: 291 },
+  { page: 'Quốc Gia Thăng Trầm', en: 'The Rise and Fall of Nations', full: 'The Rise and Fall of Nations: Forces of Change in the Post-Crisis World', pages: 466 },
+  { page: 'Trò chơi quyền lực', en: 'The Power Game', full: 'The Power Game: The Past, Present and Future of the World Order', pages: 370 },   // Omega+ 2024 (no English edition)
+  { page: 'Người thợ đồng hồ mù', en: 'The Blind Watchmaker', pages: 368 },
+  { page: 'Lược Sử Thời Gian', en: 'A Brief History of Time', pages: 241 },
+  { page: 'Deep Simplicity', en: 'Deep Simplicity', full: 'Deep Simplicity: Bringing Order to Chaos and Complexity', pages: 304 },
+];
+const bookKey = s => String(s || '').normalize('NFC').replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
+const BOOK_BY_TITLE = new Map(BOOK_INFO.map(b => [bookKey(b.page), b]));
+const bookInfo = it => (it && BOOK_BY_TITLE.get(bookKey(it.title))) || null;
+const pageLang = () => document.documentElement.getAttribute('data-lang') === 'vi' ? 'vi' : 'en';
+// the title in a language: Vietnamese as the page writes it, English from the table (else the page's)
+const titleIn = (it, lang = pageLang()) => { const b = bookInfo(it); return lang === 'en' && b ? b.en : it.title; };
+// the page's author · year, or the table's where the page has none (or only the year)
+const byOf = it => { const b = bookInfo(it); return b && b.by && (!it.by || /^\d{3,4}$/.test(it.by.trim())) ? b.by : it.by || ''; };
+// a book's thickness from its pages: ~0.06 mm a page (about 420 pages to the inch, common book paper) and ~4 mm of covers
+const spineOf = pages => 0.004 + pages * 0.00006;
 /* ---- categories and items, read from the page's own (hidden) cards */
 function readCategories() {
   return [...document.querySelectorAll('#pages .page .cat')].map(el => {
@@ -2281,7 +2362,9 @@ function gatherBooks(slot, cols) {
     const cl = b.cell; if (!cl || !b.up || b.lean || cl.shelf !== slot.shelf) return;
     if (cl.i < cols[0] || cl.i > cols[1] || cl.j < rows[0] || cl.j > rows[1]) return;
     const t = new V3().setFromMatrixColumn(b.m, 0).length(), h = new V3().setFromMatrixColumn(b.m, 1).length(), d = new V3().setFromMatrixColumn(b.m, 2).length();
-    if (t < 0.022 || h < 0.2) return;
+    // the tall shelf's books take the thickness of their pages anyway, so any upright book will do there: more of them in
+    // a cell, fewer cells to a section, a closer view and wider spines
+    if (t < (slot.shelf === 'R' ? 0.012 : 0.022) || h < 0.2) return;
     const p = new V3().setFromMatrixPosition(b.m);
     if (slot.bookCut) { const xa = SHELF.B.X[cols[0]], xb = SHELF.B.X[cols[1] + 1]; if (p.x < xa + (xb - xa) * slot.bookCut) return; }
     cand.push({ idx, t, h, d, key: -cl.j * 100 + (slot.shelf === 'R' ? p.z : p.x) });
@@ -2327,9 +2410,12 @@ function buildSections() {
     const glow = new THREE.Mesh(new THREE.PlaneGeometry(box.w - 0.02, box.h - 0.02), gm); glow.position.copy(box.back); glow.rotation.y = box.rotY; glow.renderOrder = 3; room.add(glow); sec.glowMesh = glow;
     const plate = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.024, 0.006), plateMat); plate.position.copy(box.plate).addScaledVector(box.normal, 0.004); plate.rotation.y = box.rotY; room.add(plate);
     // the widest spines read best: of the books on offer take the thickest ones, keeping their order on the shelf
-    if (cand.length > items.length) { const keep = new Set([...cand].sort((a, b) => b.t - a.t).slice(0, items.length)); cand = cand.filter(c => keep.has(c)); }
+    // (on the tall shelf a category's books stand together, the run of books in the middle of its cells: they take the
+    // thickness of their pages, and the camera comes as close as that run allows)
+    const together = slot.shelf === 'R', first = Math.max(0, Math.floor((cand.length - items.length) / 2));
+    if (!together && cand.length > items.length) { const keep = new Set([...cand].sort((a, b) => b.t - a.t).slice(0, items.length)); cand = cand.filter(c => keep.has(c)); }
     items.forEach((it, k) => {
-      const c0 = cand[Math.floor((k + 0.5) * cand.length / items.length)]; if (!c0) return;
+      const c0 = together ? cand[first + k] : cand[Math.floor((k + 0.5) * cand.length / items.length)]; if (!c0) return;
       const bl = BOOK.list[c0.idx], hsl = {}; bl.c.getHSL(hsl, THREE.SRGBColorSpace);
       if (hsl.l < 0.45) {   // a book that will be read in front of the camera is never a very dark one (lifted on the shelf too)
         bl.c.setHSL(hsl.h, Math.min(hsl.s, 0.5), 0.45, THREE.SRGBColorSpace); booksMesh.setColorAt(c0.idx, bl.c); booksMesh.instanceColor.needsUpdate = true;
@@ -2339,6 +2425,26 @@ function buildSections() {
       // an invisible box over the shelf book: the pointer finds it to select its row in the card, a click plays it
       const hit = new THREE.Mesh(BOOK_BOX, HIDDEN); hit.matrixAutoUpdate = false; hit.matrix.copy(bk.m0); hit.userData.book = bk; booksMesh.parent.add(hit); bk.hit = hit;
     });
+    // each book of the page takes the thickness of its pages (and a book's height): its cells are packed again
+    const byCell = new Map(), keep = new Set(sec.books.map(bk => bk.idx));
+    for (const bk of sec.books) {
+      const info = bookInfo(bk.it), cl = BOOK.list[bk.idx].cell; if (!info || !(info.pages || info.t) || !cl || !cl.B) continue;
+      // heights of trade books, 20.5 to 24.5 cm, in the order the shelf's random ones had (0.2 to 0.34 m)
+      const h = info.h || 0.205 + Math.min(1, Math.max(0, (bk.h - 0.2) / 0.14)) * 0.04;
+      (byCell.get(cl) || byCell.set(cl, new Map()).get(cl)).set(bk.idx, { t: info.pages ? spineOf(info.pages) : info.t, h });
+    }
+    for (const [cl, sizes] of byCell) {
+      for (const i of refitCell(cl, sizes, keep)) booksMesh.setMatrixAt(i, BOOK.list[i].m);
+      for (const [i, sz] of sizes) { const bk = sec.books.find(b => b.idx === i); bk.t = sz.t; bk.h = sz.h; }
+    }
+    if (byCell.size) {
+      booksMesh.instanceMatrix.needsUpdate = true; setShadowsDirty(true);
+      for (const bk of sec.books) { bk.m0.copy(BOOK.list[bk.idx].m); bk.hit.matrix.copy(bk.m0); }
+    }
+    if (together && box.focus && sec.books.length) {   // the view frames the books themselves
+      let z0 = Infinity, z1 = -Infinity; for (const bk of sec.books) { const z = bk.m0.elements[14]; z0 = Math.min(z0, z - bk.t / 2); z1 = Math.max(z1, z + bk.t / 2); }
+      box.focus.z = (z0 + z1) / 2; box.focusW = z1 - z0 + 0.12;
+    }
     UIS.secs.push(sec); UIS.byId.set(sec.id, sec); for (const c of sec.cats) UIS.byCat.set(c.id, sec);
   }
 }
@@ -2393,14 +2499,14 @@ function wordsCanvas(W, H, bk) {   // ink that suits the cover, with a soft halo
 function coverWords(bk) {   // the title as large as fits above the author (italics) and the year
   const W = 576, H = Math.round(W * bk.h / bk.d), { c, g } = wordsCanvas(W, H, bk), serif = `Georgia, 'Times New Roman', serif`, halo = g.shadowBlur;
   g.textBaseline = 'alphabetic';
-  const parts = bk.it.by ? bk.it.by.split(/\s+·\s+/) : [], year = parts.length && /^\d{3,4}$/.test(parts[parts.length - 1]) ? parts.pop() : '', who = parts.join(' · ');
+  const by = byOf(bk.it), parts = by ? by.split(/\s+·\s+/) : [], year = parts.length && /^\d{3,4}$/.test(parts[parts.length - 1]) ? parts.pop() : '', who = parts.join(' · ');
   const bs = Math.round(W * 0.072), ys = Math.round(W * 0.056);
   g.font = `italic ${bs}px ${serif}`; const wl = who ? wrapText(g, who, W - 110) : [];
   const yearY = H - W * 0.15, lastWho = year ? yearY - ys * 1.45 : yearY;
   const top = wl.length ? lastWho - (wl.length - 1) * bs * 1.2 - bs : year ? yearY - ys : H - W * 0.1;
   let size = Math.round(W * 0.118), lines = [];
   const bottom = () => H * 0.2 + size + (lines.length - 1) * size * 1.16 + size * 0.55;
-  for (;; size -= 2) { g.font = `600 ${size}px ${serif}`; lines = wrapText(g, bk.it.title, W - 104); if (size <= 22 || (lines.length <= 5 && bottom() < top - W * 0.05)) break; }
+  for (;; size -= 2) { g.font = `600 ${size}px ${serif}`; lines = wrapText(g, titleIn(bk.it), W - 104); if (size <= 22 || (lines.length <= 5 && bottom() < top - W * 0.05)) break; }
   const y0 = H * 0.2 + size; lines.forEach((l, k) => g.fillText(l, W / 2, y0 + k * size * 1.16));
   g.shadowBlur = 0; g.globalAlpha = 0.65; g.fillRect(W / 2 - 44, bottom(), 88, 3); g.globalAlpha = 1; g.shadowBlur = halo;
   if (year) { g.font = `500 ${ys}px ${serif}`; g.fillText(year, W / 2, yearY); }
@@ -2411,8 +2517,8 @@ function spineWords(bk) {   // the title along the spine, as large as the spine 
   if (bk.spineTex) return bk.spineTex;
   const W = 64, H = Math.max(64, Math.round(W * bk.h / bk.t)), { c, g } = wordsCanvas(W, H, bk), font = n => `600 ${n}px Inter, 'Helvetica Neue', Arial, sans-serif`;
   g.shadowBlur = 4; g.translate(W / 2, H / 2); g.rotate(Math.PI / 2); g.textBaseline = 'middle';
-  const room = H * 0.88 - 6, two = bk.t >= 0.05;   // a thick spine takes two lines
-  let size = Math.round(W * (two ? 0.4 : 0.62)), txt = bk.it.title; g.font = font(size);
+  const room = H * 0.88 - 6, two = bk.t >= 0.028;   // a thick spine (from ~400 pages) takes two lines
+  let size = Math.round(W * (two ? 0.4 : 0.62)), txt = titleIn(bk.it); g.font = font(size);
   while (g.measureText(txt).width > room * (two ? 2 : 1) && size > Math.round(W * (two ? 0.34 : 0.5))) { size -= 1; g.font = font(size); }
   const fit = (t, k) => { while (g.measureText(t).width * k > room && t.length > 4) t = t.slice(0, -2).trimEnd() + '…'; return t; };
   // a soft strip under the words, in the tone opposite the ink, so they read over any printed pattern on the spine
@@ -2436,6 +2542,17 @@ function shelfSpine(bk) {   // the same title on the book standing in its place 
   m.matrix.copy(bk.m0).multiply(new THREE.Matrix4().makeTranslation(0, 0.5, 0.002 / bk.d)); OVER.scene.add(m); return (bk.shelfSpine = m);
 }
 const _sa = new V3(), _sb = new V3();
+// the page's language switched: the words on the books drawn so far are drawn again in the other language
+function relabelBooks() {
+  for (const sec of UIS.secs) for (const bk of sec.books) {
+    if (bk.spineTex) { bk.spineTex.dispose(); bk.spineTex = null; }
+    if (bk.shelfSpine) bk.shelfSpine.material.uniforms.map.value = spineWords(bk);
+    if (bk.words) {
+      const [cover, spine] = bk.words.children; cover.material.uniforms.map.value.dispose();
+      cover.material.uniforms.map.value = coverWords(bk); spine.material.uniforms.map.value = spineWords(bk);
+    }
+  }
+}
 function spinePx(bk) {   // how wide the spine shows on screen, in pixels
   _sa.set(-0.5, 0.5, 0).applyMatrix4(bk.m0).project(camera); _sb.set(0.5, 0.5, 0).applyMatrix4(bk.m0).project(camera);
   if (Math.abs(_sa.z) > 1 || Math.abs(_sb.z) > 1) return 0;
@@ -2816,10 +2933,14 @@ function renderCard(sec) {
   UIEL.items.innerHTML = sec.items.map((it, k) => {
     if (it.head) return `<li class="l3-sub" data-cat="${esc(it.cat)}"><span class="en">${esc(it.en)}</span><span class="vi">${esc(it.vi)}</span><i>${it.count}</i></li>`;
     if (it.sep) return '<li class="l3-sep" role="separator"></li>';
-    const title = it.href ? `<a href="${esc(it.href)}" target="_blank" rel="noopener noreferrer">${esc(it.title)}</a>` : esc(it.title);
+    // the title in the page's language (English: the original title, its full form on hover), the author and the pages
+    const info = bookInfo(it), en = titleIn(it, 'en'), name = en === it.title ? esc(it.title) : `<span class="en">${esc(en)}</span><span class="vi">${esc(it.title)}</span>`;
+    const full = info && info.full ? ` title="${esc(info.full)}"` : '';
+    const title = it.href ? `<a href="${esc(it.href)}" target="_blank" rel="noopener noreferrer"${full}>${name}</a>` : full ? `<span${full}>${name}</span>` : name;
+    const by = byOf(it), pages = info && info.pages ? `<span class="en">${info.pages} pages</span><span class="vi">${info.pages} trang</span>` : '';
     const chips = it.chips.map((c, ci) => c.href ? `<a class="l3-chip" href="${esc(c.href)}" target="_blank" rel="noopener noreferrer">${esc(c.label)} ↗</a>` : `<button type="button" class="l3-chip" data-chip="${ci}">${esc(c.label)}</button>`).join('');
     const play = it.src ? `<button type="button" class="l3-play" aria-label="Play / Phát: ${esc(it.title)}"><svg class="i ic-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="i ic-pause" aria-hidden="true"><use href="#i-pause"/></svg></button>` : '<span class="l3-noplay"></span>';
-    return `<li class="l3-item${it.src ? ' has-audio' : ''}" data-k="${k}">${play}<div class="l3-main"><span class="l3-t${it.bold ? ' is-bold' : ''}">${title}</span>${it.by ? `<span class="l3-by">${esc(it.by)}</span>` : ''}${chips ? `<div class="l3-chips">${chips}</div>` : ''}</div><span class="l3-time"></span></li>`;
+    return `<li class="l3-item${it.src ? ' has-audio' : ''}" data-k="${k}">${play}<div class="l3-main"><span class="l3-t${it.bold ? ' is-bold' : ''}">${title}</span>${by || pages ? `<span class="l3-by">${esc(by)}${by && pages ? ' · ' : ''}${pages}</span>` : ''}${chips ? `<div class="l3-chips">${chips}</div>` : ''}</div><span class="l3-time"></span></li>`;
   }).join('');
   refreshCard();
 }
@@ -3097,7 +3218,7 @@ addEventListener('resize', () => {
   setNeeds(true); updateOn();
 });
 new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mode !== 'home') closeCard(); }).observe(body, { attributes: true, attributeFilter: ['class'] });
-new MutationObserver(() => { setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
+new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
 window.__lib3d = { clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
