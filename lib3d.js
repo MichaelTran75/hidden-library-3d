@@ -2187,6 +2187,7 @@ function applyHour(e, az) {
   MAT.shade.emissiveIntensity = lerp(D.shade, 2.4, k);
   for (const sp of NIGHT.spots) { sp.sp.intensity = 55 * sp.k * k; sp.sp.visible = k > 0.001; sp.disc.material.color.setRGB(0.1, 0.086, 0.07).lerp(NC.disc, k); }
   // the eye opens a little as the light goes
+  petsForHour(S);
   U.exposure.value = lerp(D.exposure * (1 + 0.25 * (1 - Math.min(amb, 1))), 1.0, n); U.lift.value = lerp(D.lift, 0.96, n); U.veil.value = lerp(D.veil, 0.07, n);
 }
 const TMPV = new THREE.Vector3();
@@ -2693,6 +2694,119 @@ function buildFireflies() {
     transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
   pts.frustumCulled = false; pts.visible = false; OVER.scene.add(pts); FLY.pts = pts;
 }
+/* ---------------------------------------------------------------- the cat (and a chicken)
+   A black cat with white paws lives in the room ("Cat Walk", CC BY-NC 4.0: its mesh and skeleton; see the credits). By
+   day it lies on the floor in front of the stump table by the left glass, awake, head up; at night it sleeps curled up
+   on the chaise. The poses are made on its own skeleton: each bone is aimed (turned about its joint, in world space,
+   so the line to its next joint takes a chosen direction; parents first) in the cat's frame (forward +z, up +y, left
+   +x); then the cat is laid on its right side and set down on the surface. By day a chicken ("Chicken", CC BY 4.0)
+   stands outside that glass, as in the painting. Both come from pets.glb (src/tools/pets/pack.mjs), fetched once the
+   room shows. While the room is drawn the cat breathes (and by day its tail sways) and the chicken pecks. */
+const PETS = { ok: false, cat: null, holder: null, chicken: null, bones: {}, poses: {}, state: null, sway: null };
+// where it stays: the floor in front of the stump table (by day), the chaise of the sofa (by night); yaw turns its nose
+const CAT_SPOT = { day: { x: -0.25, z: -5.5, yaw: -Math.PI / 2 - 0.25 }, night: { x: 1.6, z: -5.95, yaw: 0.6 } };   // whole in the home view
+const CHICKEN_SPOT = { x: -1.7, z: -5.05, yaw: 0.35, h: 0.42 };   // the model faces its +x; yaw 0 looks at the glass
+const CAT_POSES = {
+  // awake, lying on its side: back nearly straight, head up and looking ahead, front legs reaching, tail along the floor
+  day: { spine: [4, 6, 8, 10, [0.45, -0.05, 0.89], [0.75, 0.05, 0.66]], head: [[0, 0, 1], -55],
+    arm: [[0, -0.8, 0.6], [0, -0.42, 0.91], [0, -0.15, 0.99]], leg: [[0, -0.72, 0.69], [0, -0.5, -0.87], [0, -0.8, 0.6]],
+    tail: [[-0.3, 0, -0.95], [-0.15, -0.3, -0.94], [0, -0.7, -0.71], [0, -0.95, -0.3]] },
+  // asleep, curled into a ring: back bent round, head tucked toward the hind legs, legs folded in, tail wrapped round
+  night: { spine: [32, 68, 104, 142, 176, 206], head: [[1, 0, 0], 45],
+    arm: [[0, 0.3, -0.95], [0, -0.95, -0.3], [0, -0.6, 0.8]], leg: [[0, -0.55, 0.83], [0, -0.35, -0.94], [0, -0.5, 0.87]],
+    tail: [[-0.3, 0.1, -0.95], [-0.3, -0.5, -0.81], [-0.25, -0.93, -0.25], [-0.2, -0.8, 0.56]] },
+};
+const _pq = new THREE.Quaternion(), _r = new THREE.Quaternion(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
+function aimBone(b, child, dir) {
+  b.updateWorldMatrix(true, true);
+  _a.setFromMatrixPosition(child.matrixWorld).sub(_b.setFromMatrixPosition(b.matrixWorld)).normalize();
+  _r.setFromUnitVectors(_a, _b.set(...dir).normalize()); b.parent.getWorldQuaternion(_pq);
+  b.quaternion.premultiply(_pq.clone().invert().multiply(_r).multiply(_pq)); b.updateWorldMatrix(false, true);
+}
+function turnBone(b, axis, deg) {
+  b.updateWorldMatrix(true, false); b.parent.getWorldQuaternion(_pq);
+  b.quaternion.premultiply(_pq.clone().invert().multiply(_r.setFromAxisAngle(_b.set(...axis).normalize(), deg * Math.PI / 180)).multiply(_pq)); b.updateWorldMatrix(false, true);
+}
+// a pose, worked out on the cat at the origin and kept as its bones' rotations and its root's place
+function catPose(P) {
+  const B = PETS.bones, root = PETS.cat, rest = PETS.rest;
+  for (const [k, q] of rest) k.quaternion.copy(q);
+  root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
+  const arc = th => [0, -Math.sin(th * Math.PI / 180), Math.cos(th * Math.PI / 180)];   // bent th degrees toward the belly
+  const chain = (names, dirs) => names.slice(0, -1).forEach((k, i) => aimBone(B[k], B[names[i + 1]], dirs[i]));
+  chain(['Spine', 'Spine1', 'Spine2', 'Spine3', 'Neck', 'Neck1', 'Head'], P.spine.map(a => typeof a === 'number' ? arc(a) : a));
+  turnBone(B.Head, ...P.head);
+  for (const s of ['L', 'R']) {
+    chain([s + '-UpperArm', s + '-Forearm', s + '-Hand', s + '-Finger0'], P.arm);
+    chain([s + '-Thigh', s + '-Calf', s + '-Foot', s + '-Toe0'], P.leg);
+  }
+  chain(['Tail', 'Tail1', 'Tail2', 'Tail3', 'TailNub'], P.tail);
+  root.rotation.z = Math.PI / 2; root.updateMatrixWorld(true);   // onto its right side
+  const box = new THREE.Box3().setFromObject(root, true); root.position.y = -box.min.y; root.updateMatrixWorld(true);
+  return { q: [...rest.keys()].map(b => [b, b.quaternion.clone()]), pos: root.position.clone(), quat: root.quaternion.clone() };
+}
+// the surface under a point: the first thing a ray from above meets (the floor if nothing)
+function surfaceAt(x, z) {
+  const ray = new THREE.Raycaster(new THREE.Vector3(x, 2.5, z), new THREE.Vector3(0, -1, 0), 0, 3); ray.camera = camera;   // (sprites ask for it)
+  const hit = ray.intersectObject(room, true).find(h => h.object.isMesh && h.object.visible && h.point.y < 1.2);
+  return hit ? hit.point.y : 0;
+}
+async function getPetsBuffer() {   // inline (base64) in the one-file build, a file next to the page on GitHub Pages
+  const el = document.getElementById('pets-glb');
+  if (el && el.dataset.src) { const r = await fetch(el.dataset.src); if (!r.ok) throw new Error('pets.glb ' + r.status); return r.arrayBuffer(); }
+  if (el && el.textContent.trim().length > 100) return (await fetch('data:application/octet-stream;base64,' + el.textContent.trim())).arrayBuffer();
+  return null;
+}
+async function loadPets() {
+  const buf = await getPetsBuffer(); if (!buf) return;
+  const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(buf, '');
+  const cat = gltf.scene.getObjectByName('cat'), chicken = gltf.scene.getObjectByName('chicken');
+  if (!cat) return;
+  cat.removeFromParent(); const body = new THREE.Group(); body.add(cat); body.scale.setScalar(0.01);   // the model is in centimetres
+  cat.traverse(o => {
+    const k = o.name.replace(/^cat_bip-/, '').replace(/_\d+$/, ''); if (/^cat_bip-/.test(o.name)) PETS.bones[k] = o;
+    if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.frustumCulled = false; [].concat(o.material).forEach(m => { m.fog = false; }); }
+  });
+  PETS.cat = body; PETS.rest = new Map(Object.values(PETS.bones).map(b => [b, b.quaternion.clone()]));
+  PETS.poses.day = catPose(CAT_POSES.day); PETS.poses.night = catPose(CAT_POSES.night);
+  const holder = new THREE.Group(); holder.add(body); PETS.holder = holder;
+  for (const k of ['day', 'night']) { const s = CAT_SPOT[k]; s.y = surfaceAt(s.x, s.z); }
+  if (chicken) {   // stands on the lawn outside the left glass, about 42 cm tall
+    chicken.removeFromParent(); chicken.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(chicken), size = box.getSize(new THREE.Vector3()), k = CHICKEN_SPOT.h / size.y;
+    const g = new THREE.Group(); chicken.scale.multiplyScalar(k); chicken.position.set(-(box.min.x + box.max.x) / 2 * k, -box.min.y * k, -(box.min.z + box.max.z) / 2 * k);
+    const peck = new THREE.Group(); peck.add(chicken); g.add(peck);   // it pecks about its feet
+    g.position.set(CHICKEN_SPOT.x, -0.12, CHICKEN_SPOT.z); g.rotation.y = CHICKEN_SPOT.yaw;
+    chicken.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    PETS.chicken = g;
+  }
+  // its shaders compiled in the background, for the target the room renders into, before it appears
+  const tmp = new THREE.Group(); tmp.add(holder); if (PETS.chicken) tmp.add(PETS.chicken); scene.add(tmp);
+  if (renderer.compileAsync) { renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(tmp, camera, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
+  scene.remove(tmp); room.add(holder); if (PETS.chicken) scene.add(PETS.chicken);
+  PETS.ok = true; PETS.state = null; petsForHour(HOUR.S);
+}
+// by day on the floor (and the chicken outside), by night asleep on the chaise
+function petsForHour(S) {
+  if (!PETS.ok) return;
+  const state = S.n > 0.5 ? 'night' : 'day'; if (state === PETS.state) return;
+  PETS.state = state; const P = PETS.poses[state], s = CAT_SPOT[state];
+  for (const [b, q] of P.q) b.quaternion.copy(q);
+  PETS.cat.position.copy(P.pos); PETS.cat.quaternion.copy(P.quat);
+  PETS.holder.position.set(s.x, s.y, s.z); PETS.holder.rotation.y = s.yaw; PETS.holder.scale.set(1, 1, 1);
+  PETS.sway = state === 'day' ? [PETS.bones.Tail2, PETS.bones.Tail2.quaternion.clone()] : null;
+  if (PETS.chicken) PETS.chicken.visible = state === 'day';
+  setShadowsDirty(true); setNeeds(true);
+}
+// small life while the room is drawn: breathing (a sleeper slower), the tail's tip by day, the chicken pecking
+const _sw = new THREE.Quaternion(), _x = new THREE.Vector3(1, 0, 0);
+function stepPets(t) {
+  if (!PETS.ok || reduceMotion) return;
+  const night = PETS.state === 'night', br = Math.sin(t * (night ? 1.9 : 2.6));
+  PETS.holder.scale.set(1, 1 + (night ? 0.022 : 0.012) * br, 1 + (night ? 0.012 : 0.006) * br);
+  if (PETS.sway) PETS.sway[0].quaternion.copy(PETS.sway[1]).multiply(_sw.setFromAxisAngle(_x, 0.22 * Math.sin(t * 0.9) * Math.sin(t * 0.23)));
+  if (PETS.chicken && PETS.chicken.visible) { const p = Math.max(0, Math.sin(t * 1.7)) ** 6; PETS.chicken.children[0].rotation.z = -0.4 * p; }
+}
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
   setShadowsDirty(true);
@@ -3141,6 +3255,7 @@ function draw() {
   const t = clock.getElapsedTime();
   WIND.t.value = t;
   if (motes) motes.visible = false;
+  stepPets(t);
   if (LIGHTS.candle) { const f = LIGHTS.candle.userData.flame; f.scale.y = 2 + Math.sin(t * 13) * .25 + Math.sin(t * 7.3) * .2; }
   if (shadowsDirty) { renderer.shadowMap.needsUpdate = true; setShadowsDirty(false); }
   renderer.setRenderTarget(POST.rt); renderer.render(scene, camera);
@@ -3198,6 +3313,7 @@ async function start() {
   await compileFor(scene);
   ready = true; draw(); updateOn(); startedAt = performance.now();
   renderer.setAnimationLoop(loop);
+  loadPets().catch(e => console.warn('pets unavailable', e));   // the cat and the chicken, once the room shows
   (window.requestIdleCallback || (fn => setTimeout(fn, 500)))(() => precompileLightStates(), { timeout: 3000 });
 }
 // As night falls the lights change three ways (the ceiling spots come on, the sun goes down, then the window lights go out),
@@ -3238,7 +3354,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
+window.__lib3d = { PETS, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
 (window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => start().catch(e => {
   console.warn('3D library unavailable', e); setReady(false); updateOn(); document.documentElement.classList.add('lib3d-failed');
 }), { timeout: 800 });

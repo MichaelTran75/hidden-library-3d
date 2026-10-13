@@ -4,7 +4,7 @@ The Hidden Library audiobook page as a 3D reading room: shelf sections with labe
 
 **Live:** https://michaeltran75.github.io/hidden-library-3d/
 
-- `index.html`: the page (three.js 0.170 from jsDelivr); `lib3d.js`: the 3D room (a module, fetched only on screens that show the room); `lib.glb`: the room's models, loaded next to it.
+- `index.html`: the page (three.js 0.170 from jsDelivr); `lib3d.js`: the 3D room (a module, fetched only on screens that show the room); `lib.glb`: the room's models, loaded next to it; `pets.glb`: the cat and the chicken, fetched once the room shows.
 - Built from `3D Library ver 01/src` (`build.py --pages`); publish with `./publish.sh "message"`.
 - Phones (≤ 768 px) and browsers without WebGL 2 get the original card layout.
 
@@ -25,3 +25,8 @@ The garden's trees are rebuilt in code from measurements of these CC BY 4.0 mode
 - "Platano Tree" by gelmi.com.br: https://sketchfab.com/3d-models/platano-tree-ef48485b7c534acc905c0d9964c5fe7c
 
 Architecture, shelves and shelf books, pouf, bolsters, rug, lamps, plants and trees are built in code.
+
+The cat and the chicken (`pets.glb`: re-posed in code, decimated, re-materialled, compressed):
+
+- "Cat Walk" by LostBoyz2078: https://sketchfab.com/3d-models/cat-walk-915680200c064815bba75e008ba9efb5 (CC BY-NC 4.0, https://creativecommons.org/licenses/by-nc/4.0/: non-commercial use only)
+- "Chicken" by pooiloui2: https://sketchfab.com/3d-models/chicken-98830a78e8c54354a7fbe5ca8346fbf9 (CC BY 4.0)
