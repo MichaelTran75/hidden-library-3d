@@ -1,12 +1,10 @@
-
 // three.js is fetched only where the room is shown (wide screens with WebGL 2): phones never download it. If it cannot
 // be fetched (offline, a blocked CDN) the page gets lib3d-failed and keeps its own card layout.
 const LIB = innerWidth > 768 && window.WebGL2RenderingContext ? await Promise.all([
-  import('three'), import('three/addons/loaders/GLTFLoader.js'), import('three/addons/libs/meshopt_decoder.module.js'),
-  import('three/addons/lights/RectAreaLightUniformsLib.js'), import('three/addons/utils/BufferGeometryUtils.js'), import('three/addons/postprocessing/Pass.js')
+  import('three'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/lights/RectAreaLightUniformsLib.js'), import('three/addons/loaders/GLTFLoader.js'), import('three/addons/postprocessing/Pass.js'), import('three/addons/utils/BufferGeometryUtils.js')
 ]).catch(e => { console.warn('3D library unavailable', e); document.documentElement.classList.add('lib3d-failed'); return null; }) : null;
 if (LIB) {
-const [THREE, { GLTFLoader }, { MeshoptDecoder }, { RectAreaLightUniformsLib }, { mergeGeometries }, { FullScreenQuad }] = LIB;
+const [THREE, { MeshoptDecoder }, { RectAreaLightUniformsLib }, { GLTFLoader }, { FullScreenQuad }, { mergeGeometries }] = LIB;
 /* Hidden Library · 3D library (ver 01)
    On wide screens the reading room is the interface: the categories are shelf sections (labels with leader lines),
    a click opens the section's card, a book being played comes off the shelf. The page's own data, audio engine,
@@ -36,7 +34,6 @@ const R = {
   caseD: 0.36,
 };
 const REF = { w: 1562, h: 2000, f: 1520, px: 730, py: 960, eye: new THREE.Vector3(0, 1.75, 0) };
-
 /* ---------------------------------------------------------------- utils */
 function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const rand = rng(20261012);
@@ -69,7 +66,6 @@ function boardGeo(w, h, d, tile = 1) {
   return g;
 }
 function place(geo, x, y, z, ry = 0) { const g = geo.clone(); if (ry) g.rotateY(ry); g.translate(x, y, z); return g; }
-
 /* ---------------------------------------------------------------- textures */
 function woodPlanks({ w = 512, h = 2048, planks = 6, hue = 33, sat = .52, light = .60, vary = .07, seed = 3, gap = 0.42, grain = 1 } = {}) {
   const c = canvas(w, h), g = c.getContext('2d'), img = g.createImageData(w, h), d = img.data; const r = rng(seed);
@@ -106,7 +102,6 @@ function noiseTex(w, h, f, { base = [235, 228, 214], amp = 30, oct = 5, seed = 0
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const n = fbm(x / w * f + seed, y / h * f, oct, f, f) - .5; const o = (y * w + x) * 4; d[o] = base[0] + n * amp; d[o + 1] = base[1] + n * amp; d[o + 2] = base[2] + n * amp * 1.1; d[o + 3] = 255; }
   g.putImageData(img, 0, 0); return c;
 }
-
 /* ---------------------------------------------------------------- renderer */
 // the canvas itself needs no depth or stencil buffer: the scene renders into its own target, everything after is flat
 const renderer = new THREE.WebGLRenderer({ canvas: CANVAS, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
@@ -134,6 +129,9 @@ RectAreaLightUniformsLib.init();
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 400);
 
+// other modules change these through a setter (an imported binding is read-only)
+function setShadowsDirty(v) { shadowsDirty = v; }
+function setRtScale(v) { RT_SCALE = v; }
 /* ---------------------------------------------------------------- materials */
 const TEX = {};
 async function buildTextures() {
@@ -173,7 +171,6 @@ function buildMaterials() {
   MAT.stone = std({ color: 0x8c8a84, roughness: .9 });
   MAT.terracotta = std({ color: 0xa9643f, roughness: .85 });
 }
-
 /* ---------------------------------------------------------------- room */
 const room = new THREE.Group(); scene.add(room);
 function buildRoom() {
@@ -223,7 +220,6 @@ function buildRoom() {
   // right solid wall (behind bookshelf)
   const rw = new THREE.Mesh(boardGeo(0.1, R.H, L, 1), MAT.oakDark); rw.position.set(R.xW + 0.05, R.H / 2, (R.zB + R.zF) / 2); rw.receiveShadow = rw.castShadow = true; room.add(rw);   // it keeps out the morning sun
 }
-
 /* ---------------------------------------------------------------- books (instanced) */
 const BOOK = { list: [], atlas: null };
 const SPINES = 12;
@@ -330,7 +326,6 @@ function buildBookInstances() {
   geo.setAttribute('aVar', new THREE.InstancedBufferAttribute(va, 1));
   mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; room.add(mesh); return mesh;
 }
-
 /* ---------------------------------------------------------------- shelves */
 const SHELF = {};
 function buildShelves() {
@@ -370,7 +365,6 @@ function buildShelves() {
   }
   const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.oak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
 }
-
 /* ---------------------------------------------------------------- decor on shelves
    Every decorated cell of the tall shelf holds a piece of its own, no two alike: a catalogue of vessels, pictures,
    figures, instruments, plants and small things is shuffled and dealt one per cell. Each piece is built in its own
@@ -806,7 +800,6 @@ function buildDecor(assets) {
   for (let i = 0; i < n; i++) rand();
   DECOR.used = Math.min(DECOR.length, deck.length);
 }
-
 /* ---------------------------------------------------------------- pouf */
 /* Floor cushion (bean bag) with folds. Physics notes behind the design: wrinkles appear where the cover is
    compressed in-plane and buckles (bending stiffness sets the fold width); a seat dent compresses the fabric
@@ -906,7 +899,6 @@ function poufGeometry(W = 1.4, D = 1.22, H = 0.52, seed = 31) {
   g.userData.seam = seam; g.computeBoundingSphere();
   return g;
 }
-
 /* ---------------------------------------------------------------- rug
    Ivory hand-tufted wool rug: ~12 mm cut pile on a 4 mm cotton/latex backing, serged edge (yarn overcast round
    the border). Pile = shells (Lengyel, Praun, Finkelstein & Hoppe 2001; NVIDIA "Fur: Shells and Fins"): offset
@@ -1069,7 +1061,6 @@ function buildRug(parent, pouf) {
   g.userData = { shells, base, bind, tuft: tuft.vol };
   return g;
 }
-
 /* ---------------------------------------------------------------- small furniture */
 function stumpTable() {
   const g = new THREE.Group();
@@ -1145,7 +1136,6 @@ function candleJar() {
   const flame = new THREE.Mesh(new THREE.SphereGeometry(.007, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd28a })); flame.scale.y = 2; flame.position.y = .052; g.add(flame); g.userData.flame = flame;
   return g;
 }
-
 /* ---------------------------------------------------------------- outside */
 const outside = new THREE.Group(); scene.add(outside);
 function buildOutside(assets) {
@@ -1289,7 +1279,6 @@ function shrub(x, z, s, mat) {   // cards of A's first sprig, stem down (the old
     m.compose(new THREE.Vector3(x + Math.cos(a) * rad, -0.12 + h * 0.75, z + Math.sin(a) * rad), new THREE.Quaternion().setFromEuler(new THREE.Euler((r() - .5) * 1.2, r() * 6.28, (r() - .5) * 1.2)), new THREE.Vector3(sc, sc, sc)); im.setMatrixAt(i, m); }
   return im;
 }
-
 /* ---------------------------------------------------------------- lights */
 const LIGHTS = {};
 function buildLights() {
@@ -1307,7 +1296,6 @@ function buildLights() {
     fragmentShader: 'varying vec3 p; void main(){ vec3 c = p.y>0.0 ? mix(vec3(0.55,0.62,0.48), vec3(0.9,0.93,0.9), smoothstep(0.0,0.6,p.y)) : mix(vec3(0.55,0.42,0.28), vec3(0.35,0.26,0.18), -p.y); if (p.x < -0.2) c *= 1.25; gl_FragColor = vec4(c,1.0);}' }));
   env.add(s); const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(env, 0.02).texture; scene.environmentIntensity = 0.55;
 }
-
 /* ---------------------------------------------------------------- trees, built in code
    The garden's three trees, rebuilt from measurements of the GLB models they replace (credits in the page): A and C
    on skeletons traced from those models, B on its twelve limbs; leaves placed by the old models' leaf densities (cells
@@ -1633,7 +1621,6 @@ async function makeTrees() {
   trees.C = treeC(rng(303));
   return trees;
 }
-
 /* ---------------------------------------------------------------- assets (GLB) */
 async function loadAssets(buf) {
   const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
@@ -1903,7 +1890,6 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   // some GLB hardcovers face-out on the shelf
   return F;
 }
-
 /* ---------------------------------------------------------------- dust motes */
 function dust() {
   const n = 600; const g = new THREE.BufferGeometry(); const p = new Float32Array(n * 3); const r = rng(3);
@@ -1912,7 +1898,6 @@ function dust() {
   const m = new THREE.PointsMaterial({ color: 0xfff3d6, size: 0.012, transparent: true, opacity: .55, depthWrite: false, fog: false });
   const pts = new THREE.Points(g, m); scene.add(pts); return pts;
 }
-
 /* ---------------------------------------------------------------- post: watercolour */
 const POST = {};
 /* The watercolour picture is made in three passes:
@@ -1992,7 +1977,6 @@ function bakePaper(w, h) {   // the screen-fixed noise of the paint pass, for th
   for (const [rt, which] of [[POST.n1, 0], [POST.n2, 1]]) { U.which.value = which; renderer.setRenderTarget(rt); POST.bakeQuad.render(renderer); }
   renderer.setRenderTarget(null);
 }
-
 /* ---------------------------------------------------------------- views
    The camera moves between views: home (the painting's framing, cropped like a cover background; it holds still
    under the pointer), one view per shelf section (the section on the right of the screen, its card on the left) and
@@ -2017,7 +2001,7 @@ function applyView(v) {
   camera.updateProjectionMatrix(); camera.updateMatrixWorld();
 }
 function goView(v, dur = 1.3) {
-  CAM.from = CAM.cur; CAM.to = v; CAM.k = 0; CAM.dur = reduceMotion ? 0.001 : dur; needs = true;
+  CAM.from = CAM.cur; CAM.to = v; CAM.k = 0; CAM.dur = reduceMotion ? 0.001 : dur; setNeeds(true);
 }
 function stepCam(dt) {
   let moving = false;
@@ -2034,7 +2018,6 @@ function resize() {
   POST.out.setSize(w, h); POST.mat.uniforms.res.value.set(w, h); bakePaper(w, h);                                  // the watercolour, at CSS px
   placeMoon();
 }
-
 /* ---------------------------------------------------------------- main */
 let A = null, booksMesh, motes;
 async function main() {
@@ -2148,7 +2131,7 @@ function applyHour(e, az) {
   L.sun.position.copy(D.sunT).addScaledVector(dir, 12.5);
   L.sun.color.setRGB(D.sunC.r, Math.min(1, D.sunC.g * S.tg), Math.min(1, D.sunC.b * S.tb));
   const sunWas = L.sun.visible; L.sun.intensity = D.sun * S.sun; L.sun.visible = L.sun.intensity > 0.003;
-  if (L.sun.visible && (!sunWas || moved)) shadowsDirty = true;
+  if (L.sun.visible && (!sunWas || moved)) setShadowsDirty(true);
   // skylight: the sky dome, the hemisphere and the windows (the one facing the sun brighter)
   SKYU.uSunDir.value.copy(dir); SKYU.uSunCol.value.setRGB(L.sun.color.r / D.sunC.r, L.sun.color.g / D.sunC.g, L.sun.color.b / D.sunC.b);
   SKYU.uDay.value = S.skyDay; SKYU.uGlow.value = S.glow; SKYU.uWarm.value = S.warm;
@@ -2189,10 +2172,9 @@ function stepHour(dt) {   // the light toward the hour: at once when it creeps, 
   const big = Math.abs(de) > 1.5 || Math.abs(da) > 4, fast = big && on && !reduceMotion;
   const e = fast ? HOUR.e + THREE.MathUtils.clamp(de, -13 * dt, 13 * dt) : t.e;
   const az = fast ? HOUR.az + THREE.MathUtils.clamp(da, -35 * dt, 35 * dt) : t.az;
-  applyHour(e, (az + 360) % 360); needs = true;
+  applyHour(e, (az + 360) % 360); setNeeds(true);
   return HOUR.moving = fast;
 }
-
 /* ---------------------------------------------------------------- library interface
    Hidden Library keeps its data and its audio engine: its old cards stay in the DOM, hidden, and are driven by
    clicks. This layer reads the categories from them and makes the room the interface. Every book category and every
@@ -2253,7 +2235,6 @@ function focusView(sec) {
   return { pos, tgt, fov: fov0, shift };
 }
 function researchView() { return { pos: new V3(0.55, 1.95, -4.4), tgt: new V3(0.55, 1.8, -8.3), fov: 46, shift: 0 }; }
-
 /* ---- categories and items, read from the page's own (hidden) cards */
 function readCategories() {
   return [...document.querySelectorAll('#pages .page .cat')].map(el => {
@@ -2361,7 +2342,6 @@ function buildSections() {
     UIS.secs.push(sec); UIS.byId.set(sec.id, sec); for (const c of sec.cats) UIS.byCat.set(c.id, sec);
   }
 }
-
 /* ---- the book that leaves the shelf: a real box with its title printed on the cover and the spine */
 function wrapText(g, text, maxW) {
   const words = text.split(/\s+/), lines = []; let line = '';
@@ -2392,7 +2372,6 @@ function heroMesh(bk) {
   const m = new THREE.Mesh(geo, [std({ map: cover, emissive: 0xffffff, emissiveMap: cover }), plain, pages, pages, std({ map: spine, emissive: 0xffffff, emissiveMap: spine }), pages]);
   m.castShadow = true; m.visible = false; m.userData.book = bk; scene.add(m); bk.hero = m; bookWords(bk); return m;
 }
-
 /* ---- the printed words of a book on the move: drawn after the watercolour pass so they stay sharp, and hidden
    wherever the room stands in front of the book (each pixel is tested against the room's depth) */
 const OVER = { scene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) } }, words: [] };
@@ -2484,7 +2463,6 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   if (!any) return;
   renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true;
 }
-
 /* ---- the night sky over the glass: stars and the moon, drawn sharp after the watercolour pass (its filter wipes out
    points this small) and only where the room shows sky: every pixel is tested against the room's depth, which the sky
    dome and the glass leave empty. The moon has the phase of the page's sky clock and hangs in the left glass. */
@@ -2532,6 +2510,29 @@ function buildNightSky() {
   moon.visible = false;   // until its picture has loaded
   sky.add(moon); OVER.moon = moon; placeMoon();
 }
+// the page's moon pictures (its MOON_IMGS: 8 phase buckets, new moon first), used when its sky clock has not shown one yet
+const MOON_IDS = ['35cea205e90443258d2aeaa54414881a', '60161204787446faa5348897ff9578ef', '60161204787446faa5348897ff9578ef', 'f2c8bd9a09d54d75b97bd8ef98842611',
+  'b61c8002bffd4d34818b968a0e34aeb9', '5d2bbcc638ca492dbe5f16998fe651a7', 'cb81a46d1ed145098b0f4e9c55197c90', '35cea205e90443258d2aeaa54414881a'];
+function moonUrl() {
+  const img = document.querySelector('.sky .moon img[src]'), src = img && img.getAttribute('src');
+  if (src) return src.replace(/w_\d+,h_\d+/, 'w_256,h_256');
+  const id = '1ded0e_' + MOON_IDS[Math.floor(((moonAge() + 0.0625) % 1) / 0.125)];
+  return `https://static.wixstatic.com/media/${id}~mv2.png/v1/fill/w_256,h_256,al_c,q_90,enc_auto/${id}.png`;
+}
+function loadMoon() {
+  const url = moonUrl(); if (url === OVER.moonUrl) return; OVER.moonUrl = url;
+  new THREE.TextureLoader().setCrossOrigin('anonymous').load(url, t => {
+    if (OVER.moonUrl !== url) { t.dispose(); return; }
+    t.anisotropy = 4; if (OVER.moonImg.value) OVER.moonImg.value.dispose(); OVER.moonImg.value = t; OVER.moon.visible = true; setNeeds(true);
+  });
+}
+function placeMoon() {   // in the left glass, between the posts at z −6.6 and −4.55: over the transom if the frame shows it, else under it
+  if (!OVER.moon) return;
+  const az = 13.7 * Math.PI / 180, top = REF.h / 2 - Math.min(REF.h, REF.w * innerHeight / innerWidth) / 2;   // painting row at the frame's top
+  const upper = 12.3 * Math.PI / 180, yUp = REF.py - REF.f * Math.tan(upper) / Math.cos(az);   // its lower edge clears the transom's inner top
+  const el = yUp - 21 - 5 >= top ? upper : 7.4 * Math.PI / 180, dir = new V3(-Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
+  OVER.moon.position.copy(REF.eye).addScaledVector(dir, 240); OVER.moon.lookAt(REF.eye);
+}
 /* ---- fireflies: from dusk on, three drift through the room and nineteen through the garden outside, and flash, drawn sharp over the picture like the stars
    (the paint pass would smear points this small) and hidden behind whatever the room puts in front of them. Each one
    wanders slowly around its own spot (three unrelated sways, so no two paths repeat together) and flashes on its own
@@ -2575,32 +2576,9 @@ function buildFireflies() {
     transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
   pts.frustumCulled = false; pts.visible = false; OVER.scene.add(pts); FLY.pts = pts;
 }
-// the page's moon pictures (its MOON_IMGS: 8 phase buckets, new moon first), used when its sky clock has not shown one yet
-const MOON_IDS = ['35cea205e90443258d2aeaa54414881a', '60161204787446faa5348897ff9578ef', '60161204787446faa5348897ff9578ef', 'f2c8bd9a09d54d75b97bd8ef98842611',
-  'b61c8002bffd4d34818b968a0e34aeb9', '5d2bbcc638ca492dbe5f16998fe651a7', 'cb81a46d1ed145098b0f4e9c55197c90', '35cea205e90443258d2aeaa54414881a'];
-function moonUrl() {
-  const img = document.querySelector('.sky .moon img[src]'), src = img && img.getAttribute('src');
-  if (src) return src.replace(/w_\d+,h_\d+/, 'w_256,h_256');
-  const id = '1ded0e_' + MOON_IDS[Math.floor(((moonAge() + 0.0625) % 1) / 0.125)];
-  return `https://static.wixstatic.com/media/${id}~mv2.png/v1/fill/w_256,h_256,al_c,q_90,enc_auto/${id}.png`;
-}
-function loadMoon() {
-  const url = moonUrl(); if (url === OVER.moonUrl) return; OVER.moonUrl = url;
-  new THREE.TextureLoader().setCrossOrigin('anonymous').load(url, t => {
-    if (OVER.moonUrl !== url) { t.dispose(); return; }
-    t.anisotropy = 4; if (OVER.moonImg.value) OVER.moonImg.value.dispose(); OVER.moonImg.value = t; OVER.moon.visible = true; needs = true;
-  });
-}
-function placeMoon() {   // in the left glass, between the posts at z −6.6 and −4.55: over the transom if the frame shows it, else under it
-  if (!OVER.moon) return;
-  const az = 13.7 * Math.PI / 180, top = REF.h / 2 - Math.min(REF.h, REF.w * innerHeight / innerWidth) / 2;   // painting row at the frame's top
-  const upper = 12.3 * Math.PI / 180, yUp = REF.py - REF.f * Math.tan(upper) / Math.cos(az);   // its lower edge clears the transom's inner top
-  const el = yUp - 21 - 5 >= top ? upper : 7.4 * Math.PI / 180, dir = new V3(-Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
-  OVER.moon.position.copy(REF.eye).addScaledVector(dir, 240); OVER.moon.lookAt(REF.eye);
-}
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
-  shadowsDirty = true;
+  setShadowsDirty(true);
   booksMesh.setMatrixAt(bk.idx, amount === null ? ZERO : new THREE.Matrix4().makeTranslation(bk.normal.x * amount, 0, bk.normal.z * amount).multiply(bk.m0));
   booksMesh.instanceMatrix.needsUpdate = true;
 }
@@ -2668,9 +2646,8 @@ function stepBooks(dt, t) {
 function syncActive() {   // which book is "current" in the page's player
   const cur = document.querySelector('#pages .item.is-current');
   const bk = cur ? UIS.bySrc.get(cur.dataset.src) || null : null;
-  if (bk !== UIS.active) { if (UIS.active) UIS.touched.add(UIS.active); UIS.active = bk; if (bk) UIS.touched.add(bk); needs = true; }
+  if (bk !== UIS.active) { if (UIS.active) UIS.touched.add(UIS.active); UIS.active = bk; if (bk) UIS.touched.add(bk); setNeeds(true); }
 }
-
 /* ---- the record player on the floor, between the chaise and the tall shelf: the page's own packed model (paper-and-ink
    base, platter and tonearm), drawn in the sharp layer like the page's sidebar deck, so the watercolour pass leaves it
    alone. It is tested against the room's depth like the titles. Its record carries the label art of the song playing;
@@ -2763,7 +2740,7 @@ function buildRecordPlayer() {
   arm.rotation.y = M.arm.rest;
   const img = document.getElementById('disc-img');
   const loadDish = () => { if (!img || !img.src) return; const src = img.src.replace(/w_\d+,h_\d+/, 'w_256,h_256');
-    new THREE.TextureLoader().setCrossOrigin('anonymous').load(src, tx => { tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 8; recMat.map = tx; recMat.color.set(0xffffff); recMat.alphaTest = 0.5; recMat.needsUpdate = true; needs = true; }); };
+    new THREE.TextureLoader().setCrossOrigin('anonymous').load(src, tx => { tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 8; recMat.map = tx; recMat.color.set(0xffffff); recMat.alphaTest = 0.5; recMat.needsUpdate = true; setNeeds(true); }); };
   loadDish(); if (img) new MutationObserver(loadDish).observe(img, { attributes: true, attributeFilter: ['src'] });
 }
 const DECK_AT = { x: 1.86, z: -5.12, ry: -Math.PI / 2 - 0.36 };   // the floor in front of the chaise's end, by the shelf
@@ -2796,7 +2773,6 @@ function togglePlayer(open = !body.classList.contains('l3-player-open')) {   // 
   }
   else if (body.classList.contains('l3-player-open')) { body.classList.add('l3-player-closing'); togglePlayer.t = setTimeout(() => body.classList.remove('l3-player-open', 'l3-player-closing'), 280); }
 }
-
 /* ---- labels, leader lines and the card (HTML over the canvas: crisp text in either language) */
 const UIEL = {};
 function buildOverlay() {
@@ -2828,11 +2804,11 @@ function buildOverlay() {
   UIEL.items.addEventListener('pointerover', e => { const row = e.target.closest('.l3-item'); const it = row && UIS.open && UIS.open.items[+row.dataset.k]; setPeek(it && it.book ? it.book : null); });
   UIEL.items.addEventListener('pointerleave', () => setPeek(null));
 }
-function setPeek(bk) { if (UIS.peek === bk) return; if (UIS.peek) UIS.touched.add(UIS.peek); UIS.peek = bk; if (bk) UIS.touched.add(bk); needs = true; }
+function setPeek(bk) { if (UIS.peek === bk) return; if (UIS.peek) UIS.touched.add(UIS.peek); UIS.peek = bk; if (bk) UIS.touched.add(bk); setNeeds(true); }
 function setHover(sec) {
   if (UIS.hover === sec) return; UIS.hover = sec;
   for (const s of UIS.secs) s.label.classList.toggle('is-hover', s === sec);
-  CANVAS.style.cursor = sec ? 'pointer' : ''; needs = true;
+  CANVAS.style.cursor = sec ? 'pointer' : ''; setNeeds(true);
 }
 function renderCard(sec) {
   UIEL.card.querySelector('#l3-card-h').innerHTML = `<span class="en">${esc(sec.en)}</span><span class="vi">${esc(sec.vi || sec.en)}</span>`;
@@ -2862,14 +2838,14 @@ function openSection(sec, cat) {
   UIEL.items.scrollTop = sub ? sub.offsetTop - UIEL.items.offsetTop - 4 : 0;
   for (const h of UIEL.items.querySelectorAll('.l3-sub')) h.classList.toggle('is-target', h === sub);
   for (const s of UIS.secs) s.glowT = s === sec ? 1 : 0;
-  goView(focusView(sec)); if (UIS.active) UIS.touched.add(UIS.active); needs = true;
+  goView(focusView(sec)); if (UIS.active) UIS.touched.add(UIS.active); setNeeds(true);
 }
 function closeCard(home = true) {
   if (!UIS.open && !home) return;
   const was = UIS.open; UIS.open = null; UIEL.card.classList.remove('is-in'); setTimeout(() => { if (!UIS.open) UIEL.card.hidden = true; }, 260);
   for (const s of UIS.secs) s.glowT = 0; setSpine(null); setPeek(null);
   if (home) { UIS.mode = 'home'; goView(homeView()); }
-  if (UIS.active) UIS.touched.add(UIS.active); needs = true; return was;
+  if (UIS.active) UIS.touched.add(UIS.active); setNeeds(true); return was;
 }
 function showResearch() { closeCard(false); UIS.mode = 'research'; goView(researchView()); }
 function stepGlow(dt) {
@@ -2943,7 +2919,6 @@ function layoutOverlay() {
   }
   UIEL.svg.innerHTML = lines.join('');
 }
-
 /* ---- picking in the room */
 const RAY = new THREE.Raycaster(), NDC = new THREE.Vector2();
 function pickAt(e) {
@@ -2979,9 +2954,9 @@ function bindPicking() {
     const p = pickAt(e), bk = p && p.book && p.book.sec === UIS.open ? p.book : null;
     setSpine(bk); setHover(!p || p.book || p.deck || UIS.open === p.sec ? null : p.sec);
     CANVAS.style.cursor = p && (p.book || p.deck || UIS.open !== p.sec) ? 'pointer' : '';
-    const dh = !!(p && p.deck); if (dh !== DECK.hover) { DECK.hover = dh; CANVAS.title = dh ? (document.documentElement.lang === 'vi' ? 'Máy hát' : 'Record player') : ''; needs = true; }
+    const dh = !!(p && p.deck); if (dh !== DECK.hover) { DECK.hover = dh; CANVAS.title = dh ? (document.documentElement.lang === 'vi' ? 'Máy hát' : 'Record player') : ''; setNeeds(true); }
   });
-  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); if (DECK.hover) { DECK.hover = false; CANVAS.title = ''; needs = true; } });
+  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); if (DECK.hover) { DECK.hover = false; CANVAS.title = ''; setNeeds(true); } });
   CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
   CANVAS.addEventListener('pointerup', e => {
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || performance.now() - down.t > 600 || offMode()) { down = null; return; }
@@ -3009,7 +2984,6 @@ function buildInterface() {
   let pend = 0; new MutationObserver(() => { if (pend) return; pend = setTimeout(() => { pend = 0; syncActive(); refreshCard(); }, 30); })
     .observe(pages, { subtree: true, attributes: true, attributeFilter: ['class'], childList: true, characterData: true });
 }
-
 /* ---------------------------------------------------------------- render loop */
 const clock = new THREE.Clock();
 // While something moves (camera, a book, a glow, the night falling) every frame is drawn. At rest only small things
@@ -3030,7 +3004,7 @@ function draw() {
   WIND.t.value = t;
   if (motes) motes.visible = false;
   if (LIGHTS.candle) { const f = LIGHTS.candle.userData.flame; f.scale.y = 2 + Math.sin(t * 13) * .25 + Math.sin(t * 7.3) * .2; }
-  if (shadowsDirty) { renderer.shadowMap.needsUpdate = true; shadowsDirty = false; }
+  if (shadowsDirty) { renderer.shadowMap.needsUpdate = true; setShadowsDirty(false); }
   renderer.setRenderTarget(POST.rt); renderer.render(scene, camera);
   POST.toneQuad.material.uniforms.tColor.value = POST.rt.texture; renderer.setRenderTarget(POST.tone); POST.toneQuad.render(renderer);
   const U = POST.mat.uniforms; U.tDepth.value = POST.rt.depthTexture; U.near.value = camera.near; U.far.value = camera.far;
@@ -3045,7 +3019,7 @@ function loop(now) {
   const lit = stepHour(dt);
   if (!on) return;
   const t = clock.getElapsedTime();
-  const books = stepBooks(dt, t); if (books) shadowsDirty = true;
+  const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
   const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
@@ -3072,7 +3046,7 @@ function adaptQuality(now, smooth) {
   PERF.slow = median > 28 ? PERF.slow + 1 : 0;   // two slow stretches in a row: not a passing hiccup
   if (PERF.slow >= 2 && RT_SCALE > 0.5) {
     PERF.slow = 0;
-    RT_SCALE = RT_SCALE > 0.7 ? 0.65 : 0.5; resize(); needs = true;
+    setRtScale(RT_SCALE > 0.7 ? 0.65 : 0.5); resize(); needs = true;
     try { localStorage.setItem('hiddenLibrary.lib3dScale', JSON.stringify({ s: RT_SCALE, t: Date.now() })); } catch (e) { /* storage blocked */ }
   }
 }
@@ -3113,18 +3087,21 @@ async function precompileLightStates() {
   hold = false; needs = true;
 }
 
+// other modules change these through a setter (an imported binding is read-only)
+function setNeeds(v) { needs = v; }
+function setReady(v) { ready = v; }
 /* ---------------------------------------------------------------- page hooks */
 addEventListener('resize', () => {
   if (!ready) return; resize();
   if (CAM.k >= 1) { CAM.cur = UIS.open ? focusView(UIS.open) : UIS.mode === 'research' ? researchView() : homeView(); applyView(CAM.cur); }
-  needs = true; updateOn();
+  setNeeds(true); updateOn();
 });
-new MutationObserver(() => { needs = true; updateOn(); if (offMode() && UIS.mode !== 'home') closeCard(); }).observe(body, { attributes: true, attributeFilter: ['class'] });
-new MutationObserver(() => { needs = true; }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
-document.addEventListener('visibilitychange', () => { needs = true; });
-CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); ready = false; renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; needs = true; }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
+new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mode !== 'home') closeCard(); }).observe(body, { attributes: true, attributeFilter: ['class'] });
+new MutationObserver(() => { setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
+document.addEventListener('visibilitychange', () => { setNeeds(true); });
+CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
+window.__lib3d = { clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
 (window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => start().catch(e => {
-  console.warn('3D library unavailable', e); ready = false; updateOn(); document.documentElement.classList.add('lib3d-failed');
+  console.warn('3D library unavailable', e); setReady(false); updateOn(); document.documentElement.classList.add('lib3d-failed');
 }), { timeout: 800 });
 }
