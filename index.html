@@ -1085,7 +1085,7 @@
      'examples/jsm/utils/BufferGeometryUtils.js', 'examples/jsm/postprocessing/Pass.js'].forEach(function (u) {
       var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = 'https://cdn.jsdelivr.net/npm/three@0.170.0/' + u; document.head.appendChild(l);
     });
-    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=5136e16268'; document.head.appendChild(p);
+    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=294dc7e53a'; document.head.appendChild(p);
   }
   // the room replaces the painted backgrounds: drop them before anything paints, so they are never downloaded
   (function () {
@@ -1148,6 +1148,13 @@
     font: 700 10.5px/1 var(--font); letter-spacing: .26em; text-transform: uppercase; transition: opacity .35s ease; }
   .l3-cap.is-off { opacity: 0; }
   body.dark-mode .l3-cap { color: #f3ead9; }
+  /* a book under the pointer, named beside it */
+  .l3-tip { position: absolute; left: 0; top: 0; max-width: 300px; padding: 7px 11px 8px; border-radius: 10px; pointer-events: none; opacity: 0; transition: opacity .15s ease;
+    background: rgba(246, 240, 228, .96); color: #2a2118; border: 1px solid rgba(60, 45, 25, .24); box-shadow: 0 8px 22px rgba(50, 35, 15, .22); font: 13px/1.3 var(--font); }
+  .l3-tip.is-on { opacity: 1; }
+  .l3-tip b { display: block; font-weight: 700; }
+  .l3-tip small { display: block; margin-top: 3px; font-size: 11.5px; opacity: .68; }
+  body.dark-mode .l3-tip { background: rgba(22, 18, 14, .94); color: #f3ead9; border-color: rgba(255, 240, 215, .18); }
   body.dark-mode .l3-label { background: rgba(22, 18, 14, .86); color: #f3ead9; border-color: rgba(255, 240, 215, .2); }
   body.dark-mode .l3-label i { background: rgba(255, 240, 215, .12); }
 
@@ -1585,7 +1592,7 @@
         '---',
         { t: '"Damn Right!" Bí Ẩn Charlie Munger', by: 'Janet Lowe', y: 2000, a: 'https://static.wixstatic.com/mp3/1ded0e_f9d45dc7f9c9404aa976d01c969e5377.m4a', d: 1028 },
         { t: 'Paths to Wealth Through Common Stocks', by: 'Philip A. Fisher', y: 1960, a: 'https://static.wixstatic.com/mp3/1ded0e_3487d5f0c12a4cd2b97dfa5a31a4a68f.wav', d: 356 },
-        { t: 'Money Masters of Our Time', by: 'John Train', y: 1980, a: 'https://static.wixstatic.com/mp3/1ded0e_90fee9c29ff34a42ad543671091fee7b.wav', d: 306 },
+        { t: 'Money Masters of Our Time', by: 'John Train', y: 2000, a: 'https://static.wixstatic.com/mp3/1ded0e_90fee9c29ff34a42ad543671091fee7b.wav', d: 306 },
         { t: "The Innovator's Dilemma", by: 'Clayton M. Christensen', y: 1997, a: 'https://static.wixstatic.com/mp3/1ded0e_cdb4d38247c94d4790faf10dd2a126ea.wav', d: 455 },
         { t: 'Phong cách NVIDIA: Chiến lược và Văn hóa dẫn đầu AI', y: 2024, a: 'https://static.wixstatic.com/mp3/1ded0e_0c263a4cc829495a96a8fcd1aa66b401.m4a', d: 1037 }
       ] },
@@ -1594,12 +1601,12 @@
         { t: 'Khuyến Học', by: 'Fukuzawa Yukichi', y: 1872, a: 'https://static.wixstatic.com/mp3/1ded0e_b18bbbff2f3e46fe98cd6813d3531934.mp3', d: 1007 },
         { t: 'Động lực và Nhân cách', by: 'Abraham Maslow', y: 1954, a: 'https://static.wixstatic.com/mp3/1ded0e_28ff1f7cec9a4ad7aa1be5ae79f6eb52.mp3', d: 992 },
         { t: 'Phi Lý Trí', by: 'Dan Ariely', y: 2008, a: 'https://static.wixstatic.com/mp3/1ded0e_79ceb93828e243de868e49615f3ceb60.mp3', d: 1115 },
-        { t: 'Tâm lý học Hài hước', by: 'Richard Wiseman', y: 2014, a: 'https://static.wixstatic.com/mp3/1ded0e_e4ad80c90b7c48588488a6ad3cf72761.mp3', d: 1013 },
+        { t: 'Tâm lý học Hài hước', by: 'Richard Wiseman', y: 2007, a: 'https://static.wixstatic.com/mp3/1ded0e_e4ad80c90b7c48588488a6ad3cf72761.mp3', d: 1013 },
         { t: 'Tư duy như một kẻ lập dị', by: 'Steven D. Levitt & Stephen J. Dubner', y: 2014, a: 'https://static.wixstatic.com/mp3/1ded0e_a2b288a86f0642398f6361ff91571d0b.mp3', d: 1148 },
         { t: 'Khi nào cướp nhà băng', by: 'Dubner & Levitt', y: 2015, a: 'https://static.wixstatic.com/mp3/1ded0e_c5b07108407048b4b28be8375aefaf9d.mp3', d: 761 },
         { t: 'Quy Luật Bản Chất Con Người', by: 'Robert Greene', y: 2018, a: 'https://static.wixstatic.com/mp3/1ded0e_7b1a102e6ca848a1a7d0b46c4f03dd4e.mp3', d: 803 },
         { t: 'Tâm lý học về tiền', by: 'Morgan Housel', y: 2020, a: 'https://static.wixstatic.com/mp3/1ded0e_2c672b8dc7d24d8a961b8d2fc1a8620d.wav', d: 373 },
-        { t: 'Think again', by: 'Adam Grant', y: 2021, a: 'https://static.wixstatic.com/mp3/1ded0e_77290798e173463fa55910a800a0a5b4.wav', d: 447 }
+        { t: 'Think Again', by: 'Adam Grant', y: 2021, a: 'https://static.wixstatic.com/mp3/1ded0e_77290798e173463fa55910a800a0a5b4.wav', d: 447 }
       ] },
       { id: 'economics', en: 'Economics & World History', vi: 'Kinh tế & Lịch sử thế giới', nav: 'Kinh Tế & Lịch Sử Thế Giới', items: [
         { t: '[Mô hình kinh tế]', b: true, x: [pop('Hàn Quốc', 'korea-model-popup'), pop('Nhật Bản', 'japan-model-popup'), pop('Singapore', 'singapore-model-popup'), pop('Trung Quốc', 'china-model-popup'), pop('Đài Loan', 'taiwan-model-popup')] },
@@ -3116,6 +3123,6 @@
   Architecture, shelves and shelf books, pouf, bolsters, rug, lamps, plants and trees are built in code.
 -->
 <script id="lib-glb" type="application/octet-stream" data-src="lib.glb"></script>
-<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=5136e16268'; document.body.appendChild(m); }</script>
+<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=294dc7e53a'; document.body.appendChild(m); }</script>
 </body>
 </html>

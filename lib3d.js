@@ -2295,7 +2295,7 @@ const BOOK_INFO = [
   { page: 'Khi nào cướp nhà băng', en: 'When to Rob a Bank', full: 'When to Rob a Bank: …And 131 More Warped Suggestions and Well-Intended Rants', pages: 400 },
   { page: 'Quy Luật Bản Chất Con Người', en: 'The Laws of Human Nature', pages: 617 },
   { page: 'Tâm lý học về tiền', en: 'The Psychology of Money', full: 'The Psychology of Money: Timeless Lessons on Wealth, Greed, and Happiness', pages: 288 },
-  { page: 'Think again', en: 'Think Again', full: "Think Again: The Power of Knowing What You Don't Know", pages: 320 },
+  { page: 'Think Again', en: 'Think Again', full: "Think Again: The Power of Knowing What You Don't Know", pages: 320 },
   { page: '[Mô hình kinh tế]', en: '[Economic models]', pages: null },   // a heading on the page, not a book
   { page: 'Súng, Vi Trùng và Thép', en: 'Guns, Germs, and Steel', full: 'Guns, Germs, and Steel: The Fates of Human Societies', pages: 528 },
   { page: 'Sự giàu có và nghèo đói của các Quốc gia', en: 'The Wealth and Poverty of Nations', full: 'The Wealth and Poverty of Nations: Why Some Are So Rich and Some So Poor', pages: 650 },
@@ -2892,12 +2892,29 @@ function togglePlayer(open = !body.classList.contains('l3-player-open')) {   // 
 }
 /* ---- labels, leader lines and the card (HTML over the canvas: crisp text in either language) */
 const UIEL = {};
+// the book under the pointer, named beside it: title, author · year and pages, in the page's language (a thin spine
+// cannot hold its title legibly, and a long title is cut short on any spine)
+let tipBook = null;
+function showTip(bk, x, y) {
+  const t = UIEL.tip; if (!t) return;
+  if (!bk) { if (tipBook) { t.classList.remove('is-on'); tipBook = null; } return; }
+  if (tipBook !== bk) {
+    tipBook = bk; const it = bk.it, info = bookInfo(it), by = byOf(it), n = info && info.pages;
+    const line = pages => esc([by, pages].filter(Boolean).join(' · '));
+    t.innerHTML = `<b><span class="en">${esc(titleIn(it, 'en'))}</span><span class="vi">${esc(it.title)}</span></b>`
+      + (by || n ? `<small><span class="en">${line(n && n + ' pages')}</span><span class="vi">${line(n && n + ' trang')}</span></small>` : '');
+    t.classList.add('is-on');
+  }
+  t.style.left = Math.max(8, Math.min(x + 16, innerWidth - t.offsetWidth - 8)) + 'px';
+  t.style.top = (y - t.offsetHeight - 14 > 8 ? y - t.offsetHeight - 14 : y + 22) + 'px';
+}
 function buildOverlay() {
   const ui = document.createElement('div'); ui.id = 'l3-ui'; ui.innerHTML = `<svg id="l3-lines" aria-hidden="true"></svg><div id="l3-labels"></div>
     <section id="l3-card" class="l3-card" aria-labelledby="l3-card-h" hidden>
       <header class="l3-card-head"><h3 id="l3-card-h"></h3><span class="l3-count" id="l3-count"></span><button type="button" class="l3-close" id="l3-close" aria-label="Close / Đóng">&times;</button></header>
-      <ul class="l3-items" id="l3-items"></ul></section>`;
-  body.appendChild(ui); Object.assign(UIEL, { ui, svg: ui.querySelector('#l3-lines'), labels: ui.querySelector('#l3-labels'), card: ui.querySelector('#l3-card'), items: ui.querySelector('#l3-items') });
+      <ul class="l3-items" id="l3-items"></ul></section>
+    <div id="l3-tip" class="l3-tip" aria-hidden="true"></div>`;
+  body.appendChild(ui); Object.assign(UIEL, { ui, svg: ui.querySelector('#l3-lines'), labels: ui.querySelector('#l3-labels'), card: ui.querySelector('#l3-card'), items: ui.querySelector('#l3-items'), tip: ui.querySelector('#l3-tip') });
   for (const sec of UIS.secs) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'l3-label l3-' + sec.group; b.dataset.sec = sec.id;
     b.innerHTML = `<span class="en">${esc(sec.en)}</span><span class="vi">${esc(sec.vi || sec.en)}</span><i>${sec.count}</i>`;
@@ -3073,12 +3090,12 @@ function bindPicking() {
   CANVAS.addEventListener('pointermove', e => {
     if (!ready || offMode()) return;
     const p = pickAt(e), bk = p && p.book && p.book.sec === UIS.open ? p.book : null;
-    setSpine(bk); setHover(!p || p.book || p.deck || UIS.open === p.sec ? null : p.sec);
+    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY); setHover(!p || p.book || p.deck || UIS.open === p.sec ? null : p.sec);
     CANVAS.style.cursor = p && (p.book || p.deck || UIS.open !== p.sec) ? 'pointer' : '';
     const dh = !!(p && p.deck); if (dh !== DECK.hover) { DECK.hover = dh; CANVAS.title = dh ? (document.documentElement.lang === 'vi' ? 'Máy hát' : 'Record player') : ''; setNeeds(true); }
   });
-  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); if (DECK.hover) { DECK.hover = false; CANVAS.title = ''; setNeeds(true); } });
-  CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover) { DECK.hover = false; CANVAS.title = ''; setNeeds(true); } });
+  CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; showTip(null); });
   CANVAS.addEventListener('pointerup', e => {
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || performance.now() - down.t > 600 || offMode()) { down = null; return; }
     down = null; const p = pickAt(e);
