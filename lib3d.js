@@ -2577,7 +2577,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   if (OVER.sky) { const night = NIGHT.u.value > 0.005; OVER.sky.visible = night; if (night) { any = true; OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); } }
   if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
-  drawDeck();
+  drawDeck(); drawPets();
   if (!any) return;
   renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true;
 }
@@ -2694,18 +2694,31 @@ function buildFireflies() {
     transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
   pts.frustumCulled = false; pts.visible = false; OVER.scene.add(pts); FLY.pts = pts;
 }
-/* ---------------------------------------------------------------- the cat (and a chicken)
+/* ---------------------------------------------------------------- the cat and the chicken
    A black cat with white paws lives in the room ("Cat Walk", CC BY-NC 4.0: its mesh and skeleton; see the credits). By
-   day it lies on the floor in front of the stump table by the left glass, awake, head up; at night it sleeps curled up
-   on the chaise. The poses are made on its own skeleton: each bone is aimed (turned about its joint, in world space,
-   so the line to its next joint takes a chosen direction; parents first) in the cat's frame (forward +z, up +y, left
-   +x); then the cat is laid on its right side and set down on the surface. By day a chicken ("Chicken", CC BY 4.0)
-   stands outside that glass, as in the painting. Both come from pets.glb (src/tools/pets/pack.mjs), fetched once the
-   room shows. While the room is drawn the cat breathes (and by day its tail sways) and the chicken pecks. */
-const PETS = { ok: false, cat: null, holder: null, chicken: null, bones: {}, poses: {}, state: null, sway: null };
-// where it stays: the floor in front of the stump table (by day), the chaise of the sofa (by night); yaw turns its nose
-const CAT_SPOT = { day: { x: -0.25, z: -5.5, yaw: -Math.PI / 2 - 0.25 }, night: { x: 1.6, z: -5.95, yaw: 0.6 } };   // whole in the home view
-const CHICKEN_SPOT = { x: -1.7, z: -5.05, yaw: 0.35, h: 0.42 };   // the model faces its +x; yaw 0 looks at the glass
+   day it lies on the floor by the left glass, awake, watching a chicken ("Chicken", CC BY 4.0) forage outside; at night
+   it sleeps curled up on the chaise and the chicken has gone to roost. Both are drawn crisp over the painted room (not
+   watercoloured), lit by the room's own lights, hidden where the room stands in front of them.
+   The cat's poses are made on its own skeleton: each bone is aimed (turned about its joint so the line to its next joint
+   takes a chosen direction, parents first) in the cat's frame (forward +z, up +y, left +x); then it is laid on its right
+   side and set down. What both do follows how the animals behave:
+   - the cat: a resting cat breathes 16 to 25 times a minute, a sleeper slower; one watching a bird through glass keeps
+     its head on it and its ears forward, its tail tip twitches, now and then its jaw chatters; a relaxed cat blinks
+     slowly. So: breathing; head (and gaze) on the chicken with glances back into the room; ear flicks; tail-tip
+     twitches, quicker while the hen is busy; blinks, slow ones when it looks away; chatter when the hen pecks. Asleep:
+     slower breathing with a sigh now and then, an ear or the tail tip twitching, eyes shut.
+   - the chicken: a walking bird's head holds still in space while the body passes under it, then thrusts ahead, one
+     bob a step; a foraging hen scratches in a four-stroke bout (one foot, the other twice, the first again), steps
+     back, looks at the ground with one eye and pecks in quick bouts; between bouts it stands and looks about, and it
+     wanders within its patch. Its model has no skeleton: its head and neck, body and feet move in the vertex shader,
+     by regions of the mesh (measured on it).
+   Both come from pets.glb (src/tools/pets/pack.mjs), fetched once the room shows; they are on layer 1, which only
+   their crisp pass sees (the painted pass, the shadows and the picking see layer 0).                              */
+const PETS = { ok: false, cat: null, holder: null, chicken: null, bones: {}, poses: {}, state: null, layer: 1, last: 0 };
+// where the cat stays: by day the floor between the stump table and the glass, by night the chaise of the sofa
+const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12 }, night: { x: 1.6, z: -5.95, yaw: 0.6 } };
+// the chicken's patch of lawn outside the left glass (it wanders in it), and its height
+const HEN_AREA = { x0: -2.3, x1: -1.6, z0: -5.7, z1: -4.5, h: 0.42 };
 const CAT_POSES = {
   // awake, lying on its side: back nearly straight, head up and looking ahead, front legs reaching, tail along the floor
   day: { spine: [4, 6, 8, 10, [0.45, -0.05, 0.89], [0.75, 0.05, 0.66]], head: [[0, 0, 1], -55],
@@ -2723,15 +2736,16 @@ function aimBone(b, child, dir) {
   _r.setFromUnitVectors(_a, _b.set(...dir).normalize()); b.parent.getWorldQuaternion(_pq);
   b.quaternion.premultiply(_pq.clone().invert().multiply(_r).multiply(_pq)); b.updateWorldMatrix(false, true);
 }
-function turnBone(b, axis, deg) {
-  b.updateWorldMatrix(true, false); b.parent.getWorldQuaternion(_pq);
-  b.quaternion.premultiply(_pq.clone().invert().multiply(_r.setFromAxisAngle(_b.set(...axis).normalize(), deg * Math.PI / 180)).multiply(_pq)); b.updateWorldMatrix(false, true);
+function turnWorld(b, q) {   // a turn given in world space, through the bone's own joint
+  b.parent.updateWorldMatrix(true, false); b.parent.getWorldQuaternion(_pq);
+  b.quaternion.premultiply(_pq.clone().invert().multiply(q).multiply(_pq)); b.updateWorldMatrix(false, true);
 }
-// a pose, worked out on the cat at the origin and kept as its bones' rotations and its root's place
+const turnBone = (b, axis, deg) => turnWorld(b, _r.setFromAxisAngle(_b.set(...axis).normalize(), deg * Math.PI / 180));
+// a pose, worked out on the cat at the origin and kept as its bones' rotations and its body's place
 function catPose(P) {
-  const B = PETS.bones, root = PETS.cat, rest = PETS.rest;
-  for (const [k, q] of rest) k.quaternion.copy(q);
-  root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
+  const B = PETS.bones, body = PETS.cat;
+  for (const [k, q] of PETS.rest) k.quaternion.copy(q);
+  body.position.set(0, 0, 0); body.rotation.set(0, 0, 0); body.updateMatrixWorld(true);
   const arc = th => [0, -Math.sin(th * Math.PI / 180), Math.cos(th * Math.PI / 180)];   // bent th degrees toward the belly
   const chain = (names, dirs) => names.slice(0, -1).forEach((k, i) => aimBone(B[k], B[names[i + 1]], dirs[i]));
   chain(['Spine', 'Spine1', 'Spine2', 'Spine3', 'Neck', 'Neck1', 'Head'], P.spine.map(a => typeof a === 'number' ? arc(a) : a));
@@ -2741,9 +2755,9 @@ function catPose(P) {
     chain([s + '-Thigh', s + '-Calf', s + '-Foot', s + '-Toe0'], P.leg);
   }
   chain(['Tail', 'Tail1', 'Tail2', 'Tail3', 'TailNub'], P.tail);
-  root.rotation.z = Math.PI / 2; root.updateMatrixWorld(true);   // onto its right side
-  const box = new THREE.Box3().setFromObject(root, true); root.position.y = -box.min.y; root.updateMatrixWorld(true);
-  return { q: [...rest.keys()].map(b => [b, b.quaternion.clone()]), pos: root.position.clone(), quat: root.quaternion.clone() };
+  body.rotation.z = Math.PI / 2; body.updateMatrixWorld(true);   // onto its right side
+  const box = new THREE.Box3().setFromObject(body, true); body.position.y = -box.min.y; body.updateMatrixWorld(true);
+  return { q: new Map([...PETS.rest.keys()].map(b => [b, b.quaternion.clone()])), pos: body.position.clone(), quat: body.quaternion.clone() };
 }
 // the surface under a point: the first thing a ray from above meets (the floor if nothing)
 function surfaceAt(x, z) {
@@ -2757,55 +2771,219 @@ async function getPetsBuffer() {   // inline (base64) in the one-file build, a f
   if (el && el.textContent.trim().length > 100) return (await fetch('data:application/octet-stream;base64,' + el.textContent.trim())).arrayBuffer();
   return null;
 }
+// a soft shadow where an animal touches the ground (in the room, so it is painted with it)
+let _shadowTex = null;
+function contactShadow(w, d) {
+  if (!_shadowTex) { const c = canvas(128, 128), g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+    gr.addColorStop(0, 'rgba(18,11,5,.72)'); gr.addColorStop(0.55, 'rgba(18,11,5,.38)'); gr.addColorStop(1, 'rgba(18,11,5,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); _shadowTex = ctex(c, { rep: false }); }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: _shadowTex, transparent: true, depthWrite: false, fog: false }));
+  m.rotation.x = -Math.PI / 2; m.renderOrder = 1; return m;
+}
+/* ---- crisp: drawn over the picture, a fragment is dropped where the room is nearer (the room's depth, as the deck) */
+const SHARP = { rt: null, cam: new THREE.Camera(), quad: null, exp: { value: 1 }, v: new THREE.Vector3() };
+function crispPatch(sh) {
+  sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
+  sh.fragmentShader = 'uniform sampler2D uDepth; uniform vec2 uFull, uOff;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (gl_FragCoord.z > texture2D(uDepth, (gl_FragCoord.xy + uOff) / uFull).r + 2e-6) discard;');
+}
+/* ---- the chicken's head and neck, body and feet, moved in the vertex shader. Its mesh is baked into a frame where it
+   stands on y = 0 facing +x, 0.42 m tall: head and neck are what lies above 0.26 m ahead of x = 0.02 (turning about the
+   neck's base), the feet and shanks what lies under 0.13 m (left foot at +z); the body pitches about the hips. */
+const HEN = { u: { uNeck: { value: new THREE.Vector3(0.085, 0.255, 0.02) }, uHeadR: { value: new THREE.Matrix3() }, uHeadT: { value: new THREE.Vector3() },
+  uHip: { value: new THREE.Vector3(0, 0.12, 0) }, uBodyR: { value: new THREE.Matrix3() }, uFootL: { value: new THREE.Vector3() }, uFootR: { value: new THREE.Vector3() } } };
+function henPatch(sh) {
+  crispPatch(sh); Object.assign(sh.uniforms, HEN.u);
+  sh.vertexShader = 'uniform vec3 uNeck, uHeadT, uHip, uFootL, uFootR; uniform mat3 uHeadR, uBodyR;\n' + sh.vertexShader
+    .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+      float wH = smoothstep(0.26, 0.33, position.y) * smoothstep(0.02, 0.1, position.x), wF = 1.0 - smoothstep(0.08, 0.13, position.y);
+      objectNormal = normalize(mix(objectNormal, uHeadR * objectNormal, wH)); objectNormal = normalize(mix(uBodyR * objectNormal, objectNormal, wF));`)
+    .replace('#include <begin_vertex>', `vec3 transformed = position;
+      transformed += wF * (1.0 - position.y / 0.13) * mix(uFootR, uFootL, smoothstep(-0.02, 0.02, position.z));
+      transformed = mix(transformed, uHeadR * (transformed - uNeck) + uNeck + uHeadT, wH);
+      transformed = mix(uBodyR * (transformed - uHip) + uHip, transformed, wF);`);
+}
+const toFloat = (attr, m, normal) => {   // a (quantized) attribute as plain floats, moved by a matrix
+  const out = new Float32Array(attr.count * 3), v = new THREE.Vector3(), nm = new THREE.Matrix3().getNormalMatrix(m);
+  for (let i = 0; i < attr.count; i++) { v.fromBufferAttribute(attr, i); if (normal) v.applyMatrix3(nm).normalize(); else v.applyMatrix4(m); v.toArray(out, i * 3); }
+  return new THREE.BufferAttribute(out, 3);
+};
 async function loadPets() {
   const buf = await getPetsBuffer(); if (!buf) return;
   const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(buf, '');
-  const cat = gltf.scene.getObjectByName('cat'), chicken = gltf.scene.getObjectByName('chicken');
+  const cat = gltf.scene.getObjectByName('cat'), hen = gltf.scene.getObjectByName('chicken');
   if (!cat) return;
-  cat.removeFromParent(); const body = new THREE.Group(); body.add(cat); body.scale.setScalar(0.01);   // the model is in centimetres
+  const L = PETS.layer;
+  // the cat: centimetres to metres; its bones by name (the jaw is fst-Xtra01)
+  cat.removeFromParent(); const body = new THREE.Group(); body.add(cat); body.scale.setScalar(0.01);
   cat.traverse(o => {
-    const k = o.name.replace(/^cat_bip-/, '').replace(/_\d+$/, ''); if (/^cat_bip-/.test(o.name)) PETS.bones[k] = o;
-    if (o.isMesh) { o.castShadow = o.receiveShadow = true; o.frustumCulled = false; [].concat(o.material).forEach(m => { m.fog = false; }); }
+    if (/^cat_bip-|^fst-Xtra01/.test(o.name)) PETS.bones[o.name.replace(/^cat_bip-/, '').replace(/_\d+$/, '')] = o;
+    if (o.isMesh) { o.frustumCulled = false; o.layers.set(L); [].concat(o.material).forEach(m => { m.fog = false; m.onBeforeCompile = crispPatch; if (/eye/i.test(m.name)) PETS.eyes = o; }); }
   });
   PETS.cat = body; PETS.rest = new Map(Object.values(PETS.bones).map(b => [b, b.quaternion.clone()]));
+  // where the head looks, in its own frame (the cat faces +z in its rest pose)
+  body.updateMatrixWorld(true); PETS.nose = new THREE.Vector3(0, 0, 1).applyQuaternion(PETS.bones.Head.getWorldQuaternion(new THREE.Quaternion()).invert());
   PETS.poses.day = catPose(CAT_POSES.day); PETS.poses.night = catPose(CAT_POSES.night);
   const holder = new THREE.Group(); holder.add(body); PETS.holder = holder;
   for (const k of ['day', 'night']) { const s = CAT_SPOT[k]; s.y = surfaceAt(s.x, s.z); }
-  if (chicken) {   // stands on the lawn outside the left glass, about 42 cm tall
-    chicken.removeFromParent(); chicken.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(chicken), size = box.getSize(new THREE.Vector3()), k = CHICKEN_SPOT.h / size.y;
-    const g = new THREE.Group(); chicken.scale.multiplyScalar(k); chicken.position.set(-(box.min.x + box.max.x) / 2 * k, -box.min.y * k, -(box.min.z + box.max.z) / 2 * k);
-    const peck = new THREE.Group(); peck.add(chicken); g.add(peck);   // it pecks about its feet
-    g.position.set(CHICKEN_SPOT.x, -0.12, CHICKEN_SPOT.z); g.rotation.y = CHICKEN_SPOT.yaw;
-    chicken.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    PETS.chicken = g;
+  PETS.catShadow = contactShadow(0.7, 0.42); room.add(PETS.catShadow);
+  if (hen) {   // the chicken: its mesh baked into its own frame (standing on y = 0, facing +x, 0.42 m tall)
+    hen.removeFromParent(); hen.updateMatrixWorld(true);
+    let mesh = null; hen.traverse(o => { if (o.isMesh) mesh = o; });
+    const box = new THREE.Box3().setFromObject(hen), k = HEN_AREA.h / (box.max.y - box.min.y);
+    const m = new THREE.Matrix4().makeScale(k, k, k).multiply(new THREE.Matrix4().makeTranslation(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2)).multiply(mesh.matrixWorld);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', toFloat(mesh.geometry.attributes.position, m)); g.setAttribute('normal', toFloat(mesh.geometry.attributes.normal, m, true));
+    if (mesh.geometry.attributes.uv) g.setAttribute('uv', mesh.geometry.attributes.uv); if (mesh.geometry.index) g.setIndex(mesh.geometry.index);
+    const mat = mesh.material; mat.onBeforeCompile = henPatch; mat.fog = true;
+    const bird = new THREE.Mesh(g, mat); bird.frustumCulled = false; bird.layers.set(L);
+    PETS.chicken = new THREE.Group(); PETS.chicken.add(bird);
+    PETS.henShadow = contactShadow(0.36, 0.22); PETS.henShadow.material.fog = true; scene.add(PETS.henShadow);
+    Object.assign(HEN, { x: -1.75, z: -5.0, yaw: 0.25, act: null, queue: null, t: 0, look: 0, tilt: 0, lookT: 0, tiltT: 0 });
   }
-  // its shaders compiled in the background, for the target the room renders into, before it appears
-  const tmp = new THREE.Group(); tmp.add(holder); if (PETS.chicken) tmp.add(PETS.chicken); scene.add(tmp);
-  if (renderer.compileAsync) { renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(tmp, camera, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
-  scene.remove(tmp); room.add(holder); if (PETS.chicken) scene.add(PETS.chicken);
-  PETS.ok = true; PETS.state = null; petsForHour(HOUR.S);
+  // the room's lights light them too (they are on their own layer, which only the crisp pass sees)
+  scene.traverse(o => { if (o.isLight) o.layers.enable(L); });
+  SHARP.cam.layers.set(L);
+  SHARP.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uExp: SHARP.exp }, transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false,
+    vertexShader: QUAD_VS, fragmentShader: 'uniform sampler2D t; uniform vec2 uScale; uniform float uExp; varying vec2 vUv; void main(){ vec4 c = texture2D(t, vUv * uScale); gl_FragColor = vec4(c.rgb * uExp, c.a);\n#include <colorspace_fragment>\n}' }));
+  // their shaders compiled in the background (for a linear target like theirs) before they appear
+  scene.add(holder); if (PETS.chicken) scene.add(PETS.chicken);
+  if (renderer.compileAsync) { renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(holder, SHARP.cam, scene); if (PETS.chicken) await renderer.compileAsync(PETS.chicken, SHARP.cam, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
+  PETS.ok = true; PETS.state = null; petsForHour(HOUR.S); setNeeds(true);
 }
-// by day on the floor (and the chicken outside), by night asleep on the chaise
+// by day on the floor (and the chicken outside), by night asleep on the chaise (the chicken has gone to roost)
+const CAT = {};
 function petsForHour(S) {
   if (!PETS.ok) return;
   const state = S.n > 0.5 ? 'night' : 'day'; if (state === PETS.state) return;
   PETS.state = state; const P = PETS.poses[state], s = CAT_SPOT[state];
   for (const [b, q] of P.q) b.quaternion.copy(q);
   PETS.cat.position.copy(P.pos); PETS.cat.quaternion.copy(P.quat);
-  PETS.holder.position.set(s.x, s.y, s.z); PETS.holder.rotation.y = s.yaw; PETS.holder.scale.set(1, 1, 1);
-  PETS.sway = state === 'day' ? [PETS.bones.Tail2, PETS.bones.Tail2.quaternion.clone()] : null;
-  if (PETS.chicken) PETS.chicken.visible = state === 'day';
+  PETS.holder.position.set(s.x, s.y, s.z); PETS.holder.rotation.y = s.yaw; PETS.holder.scale.set(1, 1, 1); PETS.holder.updateMatrixWorld(true);
+  const sh = PETS.catShadow; sh.position.set(s.x, s.y + 0.004, s.z); sh.rotation.z = s.yaw + Math.PI / 2; sh.scale.set(state === 'night' ? 0.62 : 1, 1, 1);
+  if (PETS.chicken) PETS.chicken.visible = PETS.henShadow.visible = state === 'day';
+  Object.assign(CAT, { look: null, ear: [0, 0], earT: [1, 2.5], tail: 0, tailT: 1, blink: 0, blinkT: 2, slow: false, chatter: 0, chatterT: 8, sigh: 0, sighT: 20, glance: 0, glanceT: 5 });
   setShadowsDirty(true); setNeeds(true);
 }
-// small life while the room is drawn: breathing (a sleeper slower), the tail's tip by day, the chicken pecking
-const _sw = new THREE.Quaternion(), _x = new THREE.Vector3(1, 0, 0);
-function stepPets(t) {
-  if (!PETS.ok || reduceMotion) return;
-  const night = PETS.state === 'night', br = Math.sin(t * (night ? 1.9 : 2.6));
-  PETS.holder.scale.set(1, 1 + (night ? 0.022 : 0.012) * br, 1 + (night ? 0.012 : 0.006) * br);
-  if (PETS.sway) PETS.sway[0].quaternion.copy(PETS.sway[1]).multiply(_sw.setFromAxisAngle(_x, 0.22 * Math.sin(t * 0.9) * Math.sin(t * 0.23)));
-  if (PETS.chicken && PETS.chicken.visible) { const p = Math.max(0, Math.sin(t * 1.7)) ** 6; PETS.chicken.children[0].rotation.z = -0.4 * p; }
+/* ---- the cat's small life, on top of its pose */
+const rnd = (a, b) => a + (b - a) * Math.random();
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _hp = new THREE.Vector3(), _Z = new THREE.Vector3(0, 0, 1);
+function stepCat(t, dt) {
+  const B = PETS.bones, P = PETS.poses[PETS.state], night = PETS.state === 'night';
+  for (const k of ['Neck1', 'Head', 'Ponytail1', 'Ponytail2', 'Tail2', 'Tail3', 'fst-Xtra01']) { const b = B[k]; if (b) b.quaternion.copy(P.q.get(b)); }
+  // breathing: about 22 breaths a minute awake, 17 asleep; asleep, now and then a deeper sigh
+  CAT.sighT -= dt; if (night && CAT.sighT <= 0) { CAT.sigh = 1; CAT.sighT = rnd(25, 60); }
+  CAT.sigh = Math.max(0, CAT.sigh - dt / 4.5);
+  const br = Math.sin(t * Math.PI * 2 * (night ? 0.28 : 0.37)), deep = 1 + 1.6 * Math.sin(Math.PI * CAT.sigh);
+  PETS.holder.scale.set(1, 1 + (night ? 0.018 : 0.011) * br * deep, 1 + (night ? 0.01 : 0.006) * br * deep);
+  // ears: a flick now and then, each on its own (rarer asleep)
+  for (let e = 0; e < 2; e++) {
+    CAT.earT[e] -= dt; if (CAT.earT[e] <= 0) { CAT.ear[e] = 1; CAT.earT[e] = night ? rnd(6, 18) : rnd(2, 7); }
+    CAT.ear[e] = Math.max(0, CAT.ear[e] - dt / 0.22);
+    const b = B[e ? 'Ponytail2' : 'Ponytail1']; if (b && CAT.ear[e] > 0) b.quaternion.multiply(_q.setFromAxisAngle(_Z, (e ? -1 : 1) * 0.55 * Math.sin(Math.PI * CAT.ear[e])));
+  }
+  // the tail's tip: twitches, often while the chicken is busy scratching or pecking; asleep, rarely
+  const hen = PETS.chicken && PETS.chicken.visible, busy = !!(hen && HEN.act && /peck|scratch/.test(HEN.act.kind));
+  CAT.tailT -= dt; if (CAT.tailT <= 0) { CAT.tail = 1; CAT.tailT = night ? rnd(8, 20) : busy ? rnd(0.5, 1.6) : rnd(2, 6); }
+  CAT.tail = Math.max(0, CAT.tail - dt / 0.35);
+  const tw = Math.sin(Math.PI * CAT.tail) * (night ? 0.25 : 0.45), sway = night ? 0 : 0.12 * Math.sin(t * 0.7);
+  if (B.Tail2) B.Tail2.quaternion.multiply(_q.setFromAxisAngle(_Z, sway + tw * 0.5));
+  if (B.Tail3) B.Tail3.quaternion.multiply(_q.setFromAxisAngle(_Z, tw));
+  if (night) { if (PETS.eyes) PETS.eyes.visible = false; return; }   // asleep: eyes shut
+  // awake: the head follows the chicken's head, with glances back into the room
+  CAT.glanceT -= dt; if (CAT.glanceT <= 0) { CAT.glance = CAT.glance ? 0 : 1; CAT.glanceT = CAT.glance ? rnd(1.2, 2.8) : rnd(4, 10); }
+  const head = B.Head; PETS.holder.updateMatrixWorld(true); head.getWorldPosition(_hp);
+  const target = hen && !CAT.glance ? _w.set(HEN.x + Math.cos(HEN.yaw) * 0.12, 0.25, HEN.z - Math.sin(HEN.yaw) * 0.12) : _w.copy(camera.position).lerp(_hp, 0.4);
+  const want = target.sub(_hp).normalize();
+  if (!CAT.look) CAT.look = want.clone();
+  const ang = CAT.look.angleTo(want); if (ang > 1e-4) CAT.look.lerp(want, Math.min(1, dt * 4.5 / Math.max(ang, 0.2))).normalize();
+  const nose = _v.copy(PETS.nose).applyQuaternion(head.getWorldQuaternion(_q2));
+  _q.setFromUnitVectors(nose, CAT.look); const lim = 2 * Math.acos(Math.min(1, Math.abs(_q.w)));
+  if (lim > 1.2) _q.slerp(_q3.identity(), 1 - 1.2 / lim);   // a cat lying down turns its head ~70° at most
+  const half = _q3.identity().slerp(_q, 0.5).clone(); turnWorld(B.Neck1, half); turnWorld(head, half);
+  // blinks: a quick one every few seconds; a slow one (the relaxed cat's) when it looks away from the hen
+  CAT.blinkT -= dt; if (CAT.blinkT <= 0) { CAT.slow = !!CAT.glance && Math.random() < 0.6; CAT.blink = 1; CAT.blinkT = rnd(3, 8); }
+  CAT.blink = Math.max(0, CAT.blink - dt / (CAT.slow ? 0.9 : 0.16)); if (PETS.eyes) PETS.eyes.visible = CAT.blink <= 0.05;
+  // chatter: the jaw clicks fast when the chicken pecks and the cat is watching
+  CAT.chatterT -= dt; if (CAT.chatterT <= 0 && busy && !CAT.glance) { CAT.chatter = 1; CAT.chatterT = rnd(10, 25); }
+  CAT.chatter = Math.max(0, CAT.chatter - dt / 1.3);
+  const jaw = B['fst-Xtra01']; if (jaw && CAT.chatter > 0) jaw.quaternion.multiply(_q.setFromAxisAngle(_Z, -0.3 * Math.max(0, Math.sin(t * 2 * Math.PI * 7)) * Math.min(1, CAT.chatter * 3)));
+}
+/* ---- the chicken's foraging: a queue of acts, each moving its body, head and feet for a while */
+const HEN_ACTS = {
+  walk: n => ({ kind: 'walk', dur: n * 0.36, steps: n }), scratch: () => ({ kind: 'scratch', dur: 4 * 0.27 }), back: () => ({ kind: 'back', dur: 0.32 }),
+  peer: () => ({ kind: 'peer', dur: rnd(0.5, 0.9) }), peck: n => ({ kind: 'peck', dur: n * 0.24 }), stand: () => ({ kind: 'stand', dur: rnd(1, 2.6) }), turn: a => ({ kind: 'turn', dur: 0.5, a }),
+};
+function henPlan() {   // what it does next: forage (scratch, step back, look, peck), wander, or stand and look about
+  const A = HEN_AREA, inside = HEN.x > A.x0 + 0.12 && HEN.x < A.x1 - 0.12 && HEN.z > A.z0 + 0.12 && HEN.z < A.z1 - 0.12;
+  if (!inside) { const cx = (A.x0 + A.x1) / 2 + rnd(-0.15, 0.15), cz = (A.z0 + A.z1) / 2 + rnd(-0.2, 0.2); return [HEN_ACTS.turn(Math.atan2(-(cz - HEN.z), cx - HEN.x)), HEN_ACTS.walk(3)]; }
+  const r = Math.random();
+  if (r < 0.5) return [HEN_ACTS.scratch(), HEN_ACTS.back(), HEN_ACTS.peer(), HEN_ACTS.peck(2 + Math.floor(rnd(0, 4)))];
+  if (r < 0.75) return [HEN_ACTS.walk(2 + Math.floor(rnd(0, 4))), HEN_ACTS.peck(1 + Math.floor(rnd(0, 3)))];
+  if (r < 0.88) return [HEN_ACTS.turn(HEN.yaw + rnd(-1.4, 1.4)), HEN_ACTS.walk(2)];
+  return [HEN_ACTS.stand()];
+}
+const _m4 = new THREE.Matrix4(), _e = new THREE.Euler();
+function stepHen(dt) {
+  if (!HEN.queue || !HEN.queue.length) HEN.queue = henPlan();
+  if (!HEN.act) { HEN.act = HEN.queue.shift(); HEN.t = 0; HEN.from = { x: HEN.x, z: HEN.z, yaw: HEN.yaw }; }
+  const A = HEN.act; HEN.t += dt; const k = Math.min(1, HEN.t / A.dur), ease = k * k * (3 - 2 * k);
+  let pitch = 0, neck = 0, headX = 0, headY = 0; const foot = [0, 0, 0, 0];   // left x, y, right x, y
+  const fwd = d => { HEN.x = HEN.from.x + Math.cos(HEN.yaw) * d; HEN.z = HEN.from.z - Math.sin(HEN.yaw) * d; };
+  if (A.kind === 'walk') {   // one bob a step: the head holds still in space as the body passes under it, then thrusts ahead
+    const step = 0.065, s = Math.min(A.steps - 1e-6, HEN.t / 0.36), i = Math.floor(s), f = s - i; fwd(s * step);
+    headX = f < 0.62 ? 0.03 - f / 0.62 * step : 0.03 - step + (f - 0.62) / 0.38 * step;
+    const a = i % 2 ? 2 : 0, lift = Math.sin(Math.PI * f); foot[a] = (f - 0.5) * 0.07; foot[a + 1] = 0.028 * lift; foot[2 - a] = -(f - 0.5) * 0.03;
+    pitch = -0.04 * lift;
+  } else if (A.kind === 'scratch') {   // four strokes, each raking the ground backwards: one foot, the other twice, the first again
+    const s = HEN.t / 0.27, i = Math.min(3, Math.floor(s)), f = s - Math.floor(s), a = [0, 2, 2, 0][i];
+    foot[a] = f < 0.35 ? 0.03 * f / 0.35 : 0.03 - 0.11 * (f - 0.35) / 0.65; foot[a + 1] = 0.022 * Math.sin(Math.PI * Math.min(1, f / 0.5));
+    pitch = 0.08; neck = 0.15;
+  } else if (A.kind === 'back') { fwd(-0.06 * ease); pitch = 0.05 * Math.sin(Math.PI * k); }   // a step back to see what it turned up
+  else if (A.kind === 'peer') { pitch = -0.25 * Math.sin(Math.PI * Math.min(1, k * 2)); neck = -0.45 * Math.min(1, k * 3); HEN.tiltT = 0.5; }   // one eye to the ground
+  else if (A.kind === 'peck') {   // quick strikes at the ground: the body leans, the neck bends right down
+    const f = (HEN.t / 0.24) % 1, d = f < 0.35 ? f / 0.35 : 1 - (f - 0.35) / 0.65, e = d * d * (3 - 2 * d);
+    pitch = -0.6 * e; neck = -1.3 * e; HEN.tiltT = 0;
+  } else if (A.kind === 'turn') HEN.yaw = HEN.from.yaw + (A.a - HEN.from.yaw) * ease;
+  else if (A.kind === 'stand') { headY = 0.015; if (HEN.t > A.dur * 0.3 && !A.looked) { A.looked = true; HEN.lookT = rnd(-0.8, 0.8); HEN.tiltT = rnd(-0.35, 0.35); } }
+  if (k >= 1) { HEN.act = null; HEN.lookT = Math.random() < 0.3 ? rnd(-0.6, 0.6) : 0; }
+  // the head turns and tilts in quick moves, then holds
+  HEN.look += (HEN.lookT - HEN.look) * Math.min(1, dt * 12); HEN.tilt += (HEN.tiltT - HEN.tilt) * Math.min(1, dt * 12);
+  HEN.u.uHeadR.value.setFromMatrix4(_m4.makeRotationFromEuler(_e.set(HEN.tilt, HEN.look, neck, 'YXZ')));
+  HEN.u.uHeadT.value.set(headX, headY, 0); HEN.u.uBodyR.value.setFromMatrix4(_m4.makeRotationZ(pitch));
+  HEN.u.uFootL.value.set(foot[0], foot[1], 0); HEN.u.uFootR.value.set(foot[2], foot[3], 0);
+  PETS.chicken.position.set(HEN.x, -0.12, HEN.z); PETS.chicken.rotation.y = HEN.yaw;
+  PETS.henShadow.position.set(HEN.x + Math.cos(HEN.yaw) * 0.02, -0.116, HEN.z - Math.sin(HEN.yaw) * 0.02); PETS.henShadow.rotation.z = HEN.yaw;
+}
+/* ---- the crisp pass: the animals over the finished picture, in a small target covering where they are on screen */
+const _c = new THREE.Color();
+function drawPets() {
+  if (!PETS.ok) return;
+  const t = clock.getElapsedTime(), dt = Math.min(0.1, Math.max(0, t - PETS.last)); PETS.last = t;
+  if (!reduceMotion) { stepCat(t, dt); if (PETS.chicken && PETS.chicken.visible) stepHen(dt); }
+  const W = OVER.u.uRes.value.x, H = OVER.u.uRes.value.y, pr = renderer.getPixelRatio();
+  let x0 = W, y0 = H, x1 = 0, y1 = 0, any = false;
+  const add = (cx, cy, cz, rx, ry, rz) => { for (let i = 0; i < 8; i++) { const v = SHARP.v.set(cx + (i & 1 ? rx : -rx), cy + (i & 2 ? ry : 0), cz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
+    any = true; const px = (v.x + 1) / 2 * W, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } };
+  const hp = PETS.holder.position; add(hp.x, hp.y - 0.02, hp.z, 0.48, 0.42, 0.48);
+  if (PETS.chicken && PETS.chicken.visible) add(HEN.x, -0.14, HEN.z, 0.3, 0.52, 0.3);
+  if (!any) return;
+  x0 = Math.max(0, Math.floor(x0) - 4); y0 = Math.max(0, Math.floor(y0) - 4); x1 = Math.min(W, Math.ceil(x1) + 4); y1 = Math.min(H, Math.ceil(y1) + 4);
+  const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return;
+  if (!SHARP.rt || SHARP.rt.width < w || SHARP.rt.height < h) {
+    if (SHARP.rt) SHARP.rt.dispose();
+    SHARP.rt = new THREE.WebGLRenderTarget(Math.ceil(w * 1.25), Math.ceil(h * 1.25), { samples: 4, type: THREE.HalfFloatType });
+    SHARP.quad.material.uniforms.t.value = SHARP.rt.texture;
+  }
+  // the camera's projection narrowed to that rectangle (x, y scaled in clip space; depth as in the picture)
+  const cx = (x0 + x1) / W - 1, cy = (y0 + y1) / H - 1, sx = W / w, sy = H / h, C = SHARP.cam;
+  C.projectionMatrix.set(sx, 0, 0, -sx * cx, 0, sy, 0, -sy * cy, 0, 0, 1, 0, 0, 0, 0, 1).multiply(camera.projectionMatrix);
+  C.projectionMatrixInverse.copy(C.projectionMatrix).invert(); camera.matrixWorld.decompose(C.position, C.quaternion, C.scale); C.updateMatrixWorld(true);
+  DECKR.u.uFull.value.set(W, H); DECKR.u.uOff.value.set(x0, y0); SHARP.exp.value = POST.mat.uniforms.exposure.value;
+  const cc = renderer.getClearColor(_c), ca = renderer.getClearAlpha();
+  SHARP.rt.viewport.set(0, 0, w, h); SHARP.rt.scissor.set(0, 0, w, h); SHARP.rt.scissorTest = true;
+  renderer.setRenderTarget(SHARP.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, C);
+  renderer.setRenderTarget(null); renderer.setClearColor(cc, ca);
+  SHARP.quad.material.uniforms.uScale.value.set(w / SHARP.rt.width, h / SHARP.rt.height);
+  renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); SHARP.quad.render(renderer);   // over the picture: no clear
+  renderer.setViewport(0, 0, W / pr, H / pr); renderer.autoClear = true;
 }
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
@@ -3255,7 +3433,6 @@ function draw() {
   const t = clock.getElapsedTime();
   WIND.t.value = t;
   if (motes) motes.visible = false;
-  stepPets(t);
   if (LIGHTS.candle) { const f = LIGHTS.candle.userData.flame; f.scale.y = 2 + Math.sin(t * 13) * .25 + Math.sin(t * 7.3) * .2; }
   if (shadowsDirty) { renderer.shadowMap.needsUpdate = true; setShadowsDirty(false); }
   renderer.setRenderTarget(POST.rt); renderer.render(scene, camera);
@@ -3278,9 +3455,9 @@ function loop(now) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
     // between the room's own frames too), which costs a blit and a few points
-    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on);
+    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok);
     if (still || now - lastDraw < FRAME_MS - 2) {
-      if (live && now - lastSharp >= (FLY.on ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }
+      if (live && now - lastSharp >= (FLY.on || PETS.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }
       return;
     }
   }
