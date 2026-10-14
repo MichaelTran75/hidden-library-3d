@@ -3108,6 +3108,7 @@ const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12, sink: 0 
 const CAT_WAY = { floor: [1.22, -5.22], seat: [1.5, -6.02] };   // the floor left of the deck, the chaise's cushion
 // the chicken's patch of lawn outside the left glass (it wanders in it), and its height
 const HEN_AREA = { x0: -2.45, x1: -1.85, z0: -5.7, z1: -4.5, h: 0.42 };   // clear of the sill, so its legs show
+const HEN_GROUND = -0.1;   // it walks on the patio's flags (outside.js: 2 cm above the lawn; on the lawn's level its toes sank out of sight)
 // the surface under a point: the first thing a ray from above meets (the floor if nothing)
 function surfaceAt(x, z) {
   const ray = new THREE.Raycaster(new THREE.Vector3(x, 2.5, z), new THREE.Vector3(0, -1, 0), 0, 3); ray.camera = camera;   // (sprites ask for it)
@@ -3201,7 +3202,10 @@ function henPatch(sh) {
       float sideL = smoothstep(-0.012, 0.012, distance(position.xz, uShankR) - distance(position.xz, uShankL));
       objectNormal = normalize(mix(objectNormal, uHeadR * objectNormal, wH)); objectNormal = normalize(mix(uBodyR * objectNormal, objectNormal, wF));`)
     .replace('#include <begin_vertex>', `vec3 transformed = position;
-      transformed += wF * clamp(1.0 - position.y / 0.13, 0.0, 1.0) * mix(uFootR, uFootL, sideL);
+      vec3 foot = mix(uFootR, uFootL, sideL);   // (x ahead, y up; z: how far its toes are drawn in)
+      // a foot in the air draws its toes in toward its shank (as a bird's do) and spreads them again to come down
+      transformed.xz += (mix(uShankR, uShankL, sideL) - position.xz) * wF * foot.z * 0.6 * (1.0 - smoothstep(0.0, 0.035, position.y));
+      transformed += wF * clamp(1.0 - position.y / 0.13, 0.0, 1.0) * vec3(foot.xy, 0.0);
       transformed = mix(transformed, uHeadR * (transformed - uNeck) + uNeck + uHeadT, wH);
       transformed = mix(uBodyR * (transformed - uHip) + uHip + uBodyT, transformed, wF);`);
 }
@@ -3252,7 +3256,7 @@ async function loadPets() {
     const bird = new THREE.Mesh(g, mat); bird.frustumCulled = false; bird.layers.set(L);
     PETS.chicken = new THREE.Group(); PETS.chicken.add(bird);
     PETS.henShadow = contactShadow(0.36, 0.22); PETS.henShadow.material.fog = true; scene.add(PETS.henShadow);
-    Object.assign(HEN, { x: -2.0, z: -5.0, yaw: 0.25, act: null, queue: null, t: 0, look: 0, tilt: 0, lookT: 0, tiltT: 0, phase: 0, v: 0, feet: [0, 0, 0, 0] });
+    Object.assign(HEN, { x: -2.0, z: -5.0, yaw: 0.25, act: null, queue: null, t: 0, look: 0, tilt: 0, lookT: 0, tiltT: 0, phase: 0, v: 0, feet: [0, 0, 0, 0, 0, 0] });
   }
   // the room's lights light them too (they are on their own layer, which only the crisp pass sees)
   scene.traverse(o => { if (o.isLight) { o.layers.enable(L); o.layers.enable(FUR.layer); } });   // (and the cat's skin lit for its fur)
@@ -3519,11 +3523,12 @@ const HEN_ACTS = {
 function henPlan() {   // what it does next: forage (scratch, step back, look, peck), wander, or stand and look about
   const A = HEN_AREA, inside = HEN.x > A.x0 + 0.12 && HEN.x < A.x1 - 0.12 && HEN.z > A.z0 + 0.12 && HEN.z < A.z1 - 0.12;
   if (!inside) { const cx = (A.x0 + A.x1) / 2 + rnd(-0.15, 0.15), cz = (A.z0 + A.z1) / 2 + rnd(-0.2, 0.2); return [HEN_ACTS.turn(Math.atan2(-(cz - HEN.z), cx - HEN.x)), HEN_ACTS.walk(4)]; }
+  // (pecking only now and then, G 14/10/2026: about a quarter as often as before, more walking and looking about)
   const r = Math.random();
-  if (r < 0.5) return [HEN_ACTS.scratch(), HEN_ACTS.back(), HEN_ACTS.peer(), HEN_ACTS.peck(2 + Math.floor(rnd(0, 4)))];
-  if (r < 0.75) return [HEN_ACTS.walk(2 + 2 * Math.floor(rnd(0, 3))), HEN_ACTS.peck(1 + Math.floor(rnd(0, 3)))];
-  if (r < 0.88) return [HEN_ACTS.turn(HEN.yaw + rnd(-1.4, 1.4)), HEN_ACTS.walk(2)];
-  return [HEN_ACTS.stand()];
+  if (r < 0.28) return [HEN_ACTS.scratch(), HEN_ACTS.back(), HEN_ACTS.peer(), ...(Math.random() < 0.6 ? [HEN_ACTS.peck(1 + Math.floor(rnd(0, 2)))] : [])];
+  if (r < 0.58) return [HEN_ACTS.walk(2 + 2 * Math.floor(rnd(0, 3))), Math.random() < 0.35 ? HEN_ACTS.peck(1) : HEN_ACTS.peer()];
+  if (r < 0.78) return [HEN_ACTS.turn(HEN.yaw + rnd(-1.4, 1.4)), HEN_ACTS.walk(2 + 2 * Math.floor(rnd(0, 2)))];
+  return [HEN_ACTS.stand(), HEN_ACTS.stand()];
 }
 const STRIDE_T = 0.72, DUTY = 0.6;   // a stride (two steps) and the part of it a foot is down
 const _m4 = new THREE.Matrix4(), _e = new THREE.Euler();
@@ -3539,7 +3544,7 @@ function stepHen(dt) {
   } else if (A.kind === 'scratch') {   // four strokes, each raking backwards: one foot, the other twice, the first again; it leans over the other foot
     const s = HEN.t / 0.27, i = Math.min(3, Math.floor(s)), f = s - Math.floor(s), left = [1, 0, 0, 1][i];
     const fx = f < 0.35 ? 0.03 * f / 0.35 : 0.03 - 0.11 * (f - 0.35) / 0.65, fy = 0.022 * Math.sin(Math.PI * Math.min(1, f / 0.5));
-    HEN.feet = left ? [fx, fy, 0, 0] : [0, 0, fx, fy]; pitch = 0.08; neck = 0.15; bz = left ? -0.01 : 0.01; roll = left ? 0.05 : -0.05;
+    HEN.feet = left ? [fx, fy, 0, 0, 0, 0] : [0, 0, fx, fy, 0, 0]; pitch = 0.08; neck = 0.15; bz = left ? -0.01 : 0.01; roll = left ? 0.05 : -0.05;
   } else if (A.kind === 'peer') { pitch = -0.25 * Math.sin(Math.PI * Math.min(1, k * 2)); neck = -0.45 * Math.min(1, k * 3); HEN.tiltT = 0.5; }   // one eye to the ground
   else if (A.kind === 'peck') {   // quick strikes at the ground: the body leans about its hips, the neck bends right down, the feet stay
     const f = (HEN.t / 0.24) % 1, d = f < 0.35 ? f / 0.35 : 1 - (f - 0.35) / 0.65, e = ease(d);
@@ -3549,23 +3554,32 @@ function stepHen(dt) {
     // each foot: down for 60 % of the stride, moving back under the body exactly as fast as the body goes (so it stays put
     // on the ground), then up, clearing the ground, and forward to land ahead; the two feet half a stride apart
     const a = Math.max(0.006, Math.abs(v) * STRIDE_T * DUTY / 2) * (v < 0 ? -1 : 1), foot = ph => {
-      const p = ((ph % 1) + 1) % 1; if (p < DUTY) return [a - 2 * a * p / DUTY, 0];
-      const s = (p - DUTY) / (1 - DUTY); return [-a + 2 * a * ease(s), 0.024 * Math.sin(Math.PI * s)]; };
-    const L = foot(HEN.phase), R = foot(HEN.phase + 0.5); HEN.feet = [L[0], L[1], R[0], R[1]];
+      const p = ((ph % 1) + 1) % 1; if (p < DUTY) return [a - 2 * a * p / DUTY, 0, 0];
+      const s = (p - DUTY) / (1 - DUTY); return [-a + 2 * a * ease(s), 0.032 * Math.pow(Math.sin(Math.PI * s), 0.8), Math.sin(Math.PI * Math.min(1, s * 1.25))]; };   // up early, toes in; down flat, toes spread
+    const L = foot(HEN.phase), R = foot(HEN.phase + 0.5); HEN.feet = [L[0], L[1], R[0], R[1], L[2] || 0, R[2] || 0];
     // the body rides over the standing leg (highest mid-stance, lowest when both feet are down) and sways over it
     const ps = (HEN.phase * 2) % 1; by = -0.007 * Math.cos(Math.PI * 2 * ps) * (v ? 1 : 0.4);
     bz = 0.008 * Math.cos(Math.PI * 2 * (HEN.phase - DUTY / 2)); roll = -0.04 * Math.cos(Math.PI * 2 * (HEN.phase - DUTY / 2)); pitch = v > 0 ? -0.05 : 0;
     // the head holds still in space while the body passes, then thrusts ahead: one bob a step
     if (v > 0) { const step = v * STRIDE_T / 2; headX = ps < 0.62 ? 0.012 - step * ps : 0.012 - step * 0.62 + step * 0.62 * ease((ps - 0.62) / 0.38); }
-  } else if (A.kind !== 'scratch') { HEN.feet = HEN.feet.map(f => f * Math.max(0, 1 - dt * 10)); }   // the feet set down square
+  } else if (A.kind !== 'scratch') {   // the feet set square under it: a foot left ahead or behind is lifted and stepped in (never slid)
+    const F = HEN.feet, st = HEN.settle || (HEN.settle = { i: -1, t: 0, x0: 0 });
+    if (st.i < 0) {
+      const dl = Math.abs(F[0]), dr = Math.abs(F[2]);
+      if (Math.max(dl, dr) > 0.005) { st.i = dl >= dr ? 0 : 1; st.t = 0; st.x0 = F[st.i * 2]; } else F.fill(0);
+    }
+    if (st.i >= 0) { st.t += dt / 0.24; const q = Math.min(1, st.t), j = st.i * 2;
+      F[j] = st.x0 * (1 - ease(q)); F[j + 1] = 0.022 * Math.sin(Math.PI * q); F[4 + st.i] = Math.sin(Math.PI * Math.min(1, q * 1.25)); if (q >= 1) st.i = -1; }
+  }
+  if (stepping || A.kind === 'scratch') HEN.settle = null;
   if (k >= 1) { HEN.act = null; HEN.lookT = Math.random() < 0.3 ? rnd(-0.6, 0.6) : 0; if (stepping) HEN.phase = Math.round(HEN.phase * 2) / 2; }
   // the head turns and tilts in quick moves, then holds
   HEN.look += (HEN.lookT - HEN.look) * Math.min(1, dt * 12); HEN.tilt += (HEN.tiltT - HEN.tilt) * Math.min(1, dt * 12);
   HEN.u.uHeadR.value.setFromMatrix4(_m4.makeRotationFromEuler(_e.set(HEN.tilt, HEN.look, neck, 'YXZ')));
   HEN.u.uHeadT.value.set(headX, headY, 0); HEN.u.uBodyR.value.setFromMatrix4(_m4.makeRotationFromEuler(_e.set(roll, 0, pitch, 'XYZ'))); HEN.u.uBodyT.value.set(0, by, bz);
-  HEN.u.uFootL.value.set(HEN.feet[0], HEN.feet[1], 0); HEN.u.uFootR.value.set(HEN.feet[2], HEN.feet[3], 0);
-  PETS.chicken.position.set(HEN.x, -0.12, HEN.z); PETS.chicken.rotation.y = HEN.yaw;
-  PETS.henShadow.position.set(HEN.x + Math.cos(HEN.yaw) * 0.02, -0.116, HEN.z - Math.sin(HEN.yaw) * 0.02); PETS.henShadow.rotation.z = HEN.yaw;
+  HEN.u.uFootL.value.set(HEN.feet[0], HEN.feet[1], HEN.feet[4] || 0); HEN.u.uFootR.value.set(HEN.feet[2], HEN.feet[3], HEN.feet[5] || 0);
+  PETS.chicken.position.set(HEN.x, HEN_GROUND, HEN.z); PETS.chicken.rotation.y = HEN.yaw;
+  PETS.henShadow.position.set(HEN.x + Math.cos(HEN.yaw) * 0.02, HEN_GROUND + 0.004, HEN.z - Math.sin(HEN.yaw) * 0.02); PETS.henShadow.rotation.z = HEN.yaw;
 }
 /* ---- the crisp pass: the animals over the finished picture, in a small target covering where they are on screen */
 const _c = new THREE.Color();
@@ -3578,7 +3592,7 @@ function drawPets() {
   // the chicken first (beyond the glass, so the cat is never behind it), then the cat and its Zzz, each alone
   const hen = PETS.chicken && PETS.chicken.visible, zzz = ZZZ.grp && ZZZ.grp.visible, hp = PETS.holder.position;
   if (hen) { PETS.holder.visible = false; if (zzz) ZZZ.grp.visible = false;
-    crispPass(SHARP.hen, [HEN.x, -0.14, HEN.z, 0.3, 0.52, 0.3]);
+    crispPass(SHARP.hen, [HEN.x, HEN_GROUND - 0.02, HEN.z, 0.3, 0.52, 0.3]);
     PETS.holder.visible = true; if (zzz) ZZZ.grp.visible = true; PETS.chicken.visible = false; }
   crispPass(SHARP.cat, [hp.x, hp.y - 0.04, hp.z, 0.5, zzz ? 0.8 : 0.55, 0.5], C => { if (PETS.fur && PETS.fur.visible) furLight(renderer, scene, C); });   // (high enough for the Zzz)
   if (hen) PETS.chicken.visible = true;
