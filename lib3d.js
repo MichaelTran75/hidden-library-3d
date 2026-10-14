@@ -1172,7 +1172,7 @@ function candleJar() {
 }
 /* ---------------------------------------------------------------- outside */
 const outside = new THREE.Group(); scene.add(outside);
-const LEFT_KEEP = 0.65;   // the share of their leaves the trees and shrubs past the left glass keep (G, 14/10/2026: 35 % fewer)
+const LEFT_KEEP = 0.65 * 0.7;   // the share of their leaves the trees and shrubs past the left glass keep (G, 14/10/2026: 35 % fewer, then 30 % fewer again)
 function buildOutside(assets) {
   // ground: lawn + patio
   const gc = canvas(512, 512), gg = gc.getContext('2d'); const id = gg.createImageData(512, 512);
@@ -1252,7 +1252,7 @@ function buildOutside(assets) {
     spots[k].push({ x: -Math.sin(a) * d, z: -Math.cos(a) * d, s: h / (dims[k].top * T[k].scale), ry, near: true });
   }
   // far trees get a thinned leaf LOD (fewer, larger leaf cards); past the left glass every tree keeps LEFT_KEEP of its
-  // leaves (the same cards less a third: the garden there had crowded the view out)
+  // leaves (the same cards, fewer: the garden there had crowded the view out)
   const cx = (R.xL + R.xW) / 2, cz = (R.zB + R.zF) / 2;
   for (const k of ['A', 'B', 'C']) for (const p of spots[k]) { p.far = !p.near && Math.hypot(p.x - cx, (p.z - cz) * 0.8) > 17; p.thin = p.x < R.xL; }
   for (const k of ['A', 'B', 'C']) {
