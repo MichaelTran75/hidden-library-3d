@@ -1942,7 +1942,12 @@ const POST = {};
    1. tone: the scene's colours through the tone curve, once per pixel (the paint pass reads each one ~50 times);
    2. paper: the noise fields that only depend on the screen position (wobble, pigment, fibres, blotches, paper grain),
       baked when the window size changes instead of being recomputed every frame;
-   3. paint: Kuwahara smoothing, ink edges and the paper, reading the two above.                                  */
+   3. paint: Kuwahara smoothing, ink edges and the paper, reading the two above.
+   The Kuwahara is the generalized one (Papari, Petkov & Campisi 2007): the four sectors' means blended by how even each
+   is (weights 1/(1 + (k·variance)^4)) instead of the evenest taken outright, which left stair-steps on busy, high-contrast
+   detail (leaves against the night). And where the depth is busy all round (foliage), the ink keeps off the single
+   leaves and the strokes run into each other (wet-in-wet): a painter washes a mass of leaves as one soft shape ("lost"
+   edges) and keeps the line for the big forms.  */
 const QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy,0.0,1.0); }';
 function buildPost() {
   POST.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(4, 4) });
@@ -1982,8 +1987,9 @@ function buildPost() {
         vec3 c = samp(uvw + vec2(float(i),float(j))*tx*1.25*sc);
         if(i<=0&&j<=0){ m[0]+=c; s2[0]+=c*c; } if(i>=0&&j<=0){ m[1]+=c; s2[1]+=c*c; }
         if(i<=0&&j>=0){ m[2]+=c; s2[2]+=c*c; } if(i>=0&&j>=0){ m[3]+=c; s2[3]+=c*c; } }
-      vec3 col = vec3(0.0); float best = 1e9;
-      for(int k=0;k<4;k++){ vec3 mu = m[k]/16.0; vec3 v = abs(s2[k]/16.0 - mu*mu); float sv = v.r+v.g+v.b; if (sv<best){ best=sv; col=mu; } }
+      vec3 col = vec3(0.0); float wsum = 0.0;
+      for(int k=0;k<4;k++){ vec3 mu = m[k]/16.0; vec3 v = abs(s2[k]/16.0 - mu*mu); float sv = v.r+v.g+v.b, w = 1.0/(1.0 + pow(sv*300.0, 4.0)); col += mu*w; wsum += w; }
+      col /= max(wsum, 1e-6);
       // --- edges: depth + colour sobel
       float d00=ld(texture2D(tDepth,uvw+vec2(-1,-1)*tx*sc).r), d10=ld(texture2D(tDepth,uvw+vec2(0,-1)*tx*sc).r), d20=ld(texture2D(tDepth,uvw+vec2(1,-1)*tx*sc).r);
       float d01=ld(texture2D(tDepth,uvw+vec2(-1,0)*tx*sc).r), d11=ld(texture2D(tDepth,uvw).r), d21=ld(texture2D(tDepth,uvw+vec2(1,0)*tx*sc).r);
@@ -1992,9 +1998,18 @@ function buildPost() {
       float de = clamp(length(vec2(gx,gy))/max(d11,0.3)*6.0 - 0.25, 0.0, 1.0);
       vec3 a1 = samp(uvw+vec2(1.5,0)*tx*sc), a2 = samp(uvw-vec2(1.5,0)*tx*sc), a3 = samp(uvw+vec2(0,1.5)*tx*sc), a4 = samp(uvw-vec2(0,1.5)*tx*sc);
       float ce = length(a1-a2)+length(a3-a4);
-      float ink = max(de*0.85, smoothstep(0.25,0.65,ce)*0.38) * (0.55 + 0.6*n1.z) * smoothstep(16.0, 8.5, d11);
+      // how busy the depth is a little further round (foliage: many small steps in depth on every side)
+      float busy = 0.0; for(int k=0;k<6;k++){ float a = float(k)*1.0472 + n1.x*2.0; float dk = ld(texture2D(tDepth, uvw + vec2(cos(a), sin(a))*tx*sc*4.0).r); busy += step(0.06*d11, abs(dk - d11)); }
+      float leafy = smoothstep(3.5, 5.5, busy);   // (most of the way round: a mass of leaves, not the one edge of a form)
+      busy = smoothstep(2.0, 5.0, busy);
+      // wet-in-wet: in a mass of leaves the strokes run into each other, no cut-out edges (the four quarters' plain mean:
+      // a soft 7×7 wash)
+      col = mix(col, (m[0] + m[1] + m[2] + m[3]) / 64.0, leafy * 0.6);
+      float ink = max(de*0.85*(1.0 - 0.7*busy), smoothstep(0.25,0.65,ce)*0.38*(1.0 - 0.5*busy)) * (0.55 + 0.6*n1.z) * smoothstep(16.0, 8.5, d11);
       // --- watercolour transparency: lift + slight desaturation, pigment granulation, edge darkening
       float lum = dot(col, vec3(0.299,0.587,0.114));
+      col = mix(col, col * 1.25 + vec3(0.03, 0.04, 0.025), busy * (1.0 - smoothstep(0.05, 0.3, lum)) * 0.6);   // a mass of leaves in shade: a dark wash, not a hard black
+      lum = dot(col, vec3(0.299,0.587,0.114));
       col = mix(vec3(lum), col, 1.08);
       col *= 1.0 + (n1.w - 0.5)*0.10*(1.0-lum) + (n2.x - 0.5)*0.03;
       col *= 1.0 - smoothstep(0.08,0.5,ce)*0.10;
@@ -2008,10 +2023,23 @@ function buildPost() {
     }`);
   POST.mat = POST.quad.material;
   POST.out = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });   // the finished picture, at CSS resolution
-  POST.blit = quad({ t: { value: POST.out.texture } }, 'uniform sampler2D t; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv); }');
+  // laid on the canvas through FXAA (T. Lottes): the picture is painted at CSS pixels and shown on a screen twice as
+  // fine, and its hard steps (dark leaves against the night) were showing as stairs
+  POST.blit = quad({ t: { value: POST.out.texture }, px: { value: new THREE.Vector2(1, 1) } }, `uniform sampler2D t; uniform vec2 px; varying vec2 vUv;
+    float L(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+    void main(){
+      vec3 nw = texture2D(t, vUv + vec2(-1.0, -1.0) * px).rgb, ne = texture2D(t, vUv + vec2(1.0, -1.0) * px).rgb, sw = texture2D(t, vUv + vec2(-1.0, 1.0) * px).rgb, se = texture2D(t, vUv + vec2(1.0, 1.0) * px).rgb, m = texture2D(t, vUv).rgb;
+      float lnw = L(nw), lne = L(ne), lsw = L(sw), lse = L(se), lm = L(m), lo = min(lm, min(min(lnw, lne), min(lsw, lse))), hi = max(lm, max(max(lnw, lne), max(lsw, lse)));
+      if (hi - lo < max(0.03, hi * 0.12)) { gl_FragColor = vec4(m, 1.0); return; }
+      vec2 dir = vec2(-((lnw + lne) - (lsw + lse)), (lnw + lsw) - (lne + lse));
+      float red = max((lnw + lne + lsw + lse) * 0.03125, 1.0 / 128.0), rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + red);
+      dir = clamp(dir * rcp, vec2(-8.0), vec2(8.0)) * px;
+      vec3 a = 0.5 * (texture2D(t, vUv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(t, vUv + dir * (2.0 / 3.0 - 0.5)).rgb);
+      vec3 b = a * 0.5 + 0.25 * (texture2D(t, vUv - dir * 0.5).rgb + texture2D(t, vUv + dir * 0.5).rgb);
+      float lb = L(b); gl_FragColor = vec4((lb < lo || lb > hi) ? a : b, 1.0); }`);
 }
 function bakePaper(w, h) {   // the screen-fixed noise of the paint pass, for this window size
-  POST.n1.setSize(w, h); POST.n2.setSize(w, h); const U = POST.bakeQuad.material.uniforms; U.res.value.set(w, h);
+  POST.n1.setSize(w, h); POST.n2.setSize(w, h); const U = POST.bakeQuad.material.uniforms; U.res.value.set(w, h); POST.blit.material.uniforms.px.value.set(1 / w, 1 / h);
   for (const [rt, which] of [[POST.n1, 0], [POST.n2, 1]]) { U.which.value = which; renderer.setRenderTarget(rt); POST.bakeQuad.render(renderer); }
   renderer.setRenderTarget(null);
 }
@@ -2656,7 +2684,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   for (const sec of UIS.secs) for (const bk of sec.books) {
     const on = !bk.away && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;   // too narrow to read (the whole room in view): none
   }
-  if (OVER.sky) { const night = NIGHT.u.value > 0.005; OVER.sky.visible = night; if (night) { any = true; OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); } }
+  if (OVER.sky) { const night = NIGHT.u.value > 0.005; OVER.sky.visible = night; if (night) { any = true; OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); stepMeteors(clock.getElapsedTime(), camera); } }
   if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   drawDeck(); drawPets();
@@ -2712,6 +2740,101 @@ function buildNightSky() {
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
   moon.visible = false;   // until its picture has loaded
   sky.add(moon); OVER.moon = moon; placeMoon();
+  buildMeteors(sky);
+}
+/* ---- shooting stars, now and then, as the garden's night sky draws them (3d-garden: app/core/night-sky.js): about one
+   in 16 s at full night, at most three at once, each a streak across the sky in a fraction of a second (the faster
+   the shorter), its tail thinning out behind a bright round head, now and then a brighter, slower fireball; and only
+   where the room shows sky (they pass 230 m off, inside the stars' sphere, under the same depth test). Each is a strip
+   on the screen, rebuilt every frame from its two ends on the sky. Where one flies is chosen so that it is seen: when
+   one is due, 32 paths are tried against the room's depth on the GPU (two points of each, a third and two thirds of
+   the way, where it burns brightest; one row of pixels, read back without stalling the frame) and the first whose
+   two points both show sky, with none of the page's panels over them, is sent; if none does, it is tried again 1.5 s later, up to five times (a view with little
+   sky still gets its share; one with none, none). */
+const METEOR = { list: [], mesh: null, on: false, last: 0 };
+const _m0 = new THREE.Vector3(), _m1 = new THREE.Vector3(), _mh = new THREE.Vector3(), _mt = new THREE.Vector3();
+function buildMeteors(sky) {
+  const MQ = 3, idx = []; for (let k = 0; k < MQ; k++) idx.push(4 * k, 4 * k + 1, 4 * k + 2, 4 * k + 2, 4 * k + 1, 4 * k + 3);
+  const g = new THREE.BufferGeometry(); g.setIndex(idx);
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MQ * 12), 3)); g.setAttribute('aC', new THREE.BufferAttribute(new Float32Array(MQ * 16), 4)); g.setAttribute('aT', new THREE.BufferAttribute(new Float32Array(MQ * 12), 3));
+  METEOR.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u },
+    vertexShader: 'attribute vec4 aC; attribute vec3 aT; varying vec4 vC; varying vec3 vT; void main(){ vC = aC; vT = aT; gl_Position = vec4(position, 1.0); }',
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec4 vC; varying vec3 vT;
+      void main(){ ${SKY_DEPTH}
+        float u = clamp(vT.x, 0.0, 1.0), w = vT.y * vT.y;
+        float k = pow(u, 2.6) * exp(-w * 5.0) + 1.6 * exp(-pow((1.0 - u) / 0.05, 2.0) - w * 1.5);   // the tail thinning out, the head bright
+        float a = vC.a * k * smoothstep(1.04, 0.995, vT.x) * uNight; if (a < 0.003) discard;      // (a round tip, not a square end)
+        gl_FragColor = vec4(vC.rgb * a, 0.0); }`,
+    transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));   // (added as it is: ONE, ONE)
+  METEOR.mesh.frustumCulled = false; METEOR.mesh.visible = false; sky.add(METEOR.mesh);
+  METEOR.spawn = spawnMeteor; METEOR.probe = PROBE;   // (for tests)
+}
+function meteorPath(camera) {   // a start somewhere in the upper part of the view, 6° or more up; a path down and across
+  _m0.set(Math.random() * 1.9 - 0.95, 0.15 + Math.random() * 0.8, 0.5).unproject(camera).sub(camera.position).normalize();
+  if (_m0.y < 0.1) return null;   // (6° up or more)
+  const side = _mh.set(0, 1, 0).cross(_m0).normalize(), down = _mt.crossVectors(_m0, side), th = Math.random() * Math.PI * 2;
+  const tn = side.multiplyScalar(Math.cos(th)).addScaledVector(down, Math.sin(th) - 0.35); tn.addScaledVector(_m0, -tn.dot(_m0)).normalize();   // (leaning a little downward)
+  const fire = Math.random() < 0.05, v = fire ? 18 + Math.random() * 14 : 20 + Math.random() * 50, ang = (fire ? 14 + Math.random() * 12 : 5 + Math.random() * 15) * Math.PI / 180;
+  return { d0: _m0.clone(), d1: _m0.clone().multiplyScalar(Math.cos(ang)).addScaledVector(tn, Math.sin(ang)).normalize(), t: 0,
+    dur: Math.min(fire ? 2.2 : 1.4, Math.max(0.3, ang * 180 / Math.PI / (v * 0.45 * (0.8 + 0.4 * Math.random())))), b: fire ? 2.2 : 0.9 + Math.random() * 0.8,
+    w: fire ? 1.7 : 1, fast: Math.min(1, Math.max(0, (v - 35) / 30)) };
+}
+const PROBE = { n: 32, rt: null, quad: null, cand: [], busy: false, buf: new Uint8Array(256), left: 0, at: 0, tries: 0, sent: 0 };   // (tries, sent: for tests)
+function spawnMeteor(camera) {   // 32 paths tried against the room's depth: the first whose bright middle shows sky is sent
+  if (PROBE.busy || !OVER.u.uDepth.value || METEOR.list.length >= 3) return;
+  if (!PROBE.rt) {
+    PROBE.rt = new THREE.WebGLRenderTarget(2 * PROBE.n, 1, { depthBuffer: false });
+    PROBE.quad = new FullScreenQuad(new THREE.ShaderMaterial({ depthTest: false, depthWrite: false,
+      uniforms: { uDepth: OVER.u.uDepth, uP: { value: Array.from({ length: 2 * PROBE.n }, () => new THREE.Vector3()) } },
+      vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `uniform sampler2D uDepth; uniform vec3 uP[${2 * PROBE.n}];
+        void main() { vec3 p = uP[int(gl_FragCoord.x)]; vec2 uv = p.xy * 0.5 + 0.5;   // one pixel per end: 1 where it shows sky
+          bool on = uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0 && p.z < 1.0 && p.z * 0.5 + 0.5 <= texture2D(uDepth, uv).r + 1e-7;
+          gl_FragColor = vec4(on ? 1.0 : 0.0, 0.0, 0.0, 1.0); }` }));
+  }
+  const C = PROBE.cand, U = PROBE.quad.material.uniforms.uP.value; C.length = 0; PROBE.tries++;
+  for (let i = 0; i < PROBE.n; i++) {
+    const e = meteorPath(camera); C.push(e);
+    if (!e) { U[2 * i].set(9, 9, 9); U[2 * i + 1].set(9, 9, 9); continue; }
+    for (let j = 0; j < 2; j++) U[2 * i + j].copy(e.d0).lerp(e.d1, j ? 0.7 : 0.3).normalize().multiplyScalar(230).add(camera.position).project(camera);
+  }
+  const prev = renderer.getRenderTarget(); renderer.setRenderTarget(PROBE.rt); PROBE.quad.render(renderer);
+  const done = () => {
+    PROBE.busy = false; PROBE.left = Math.max(0, PROBE.left - 1);
+    const r = CANVAS.getBoundingClientRect(), bare = q => document.elementFromPoint(r.left + (q.x + 1) / 2 * r.width, r.top + (1 - q.y) / 2 * r.height) === CANVAS;
+    for (let i = 0; i < PROBE.n; i++) if (C[i] && PROBE.buf[8 * i] > 127 && PROBE.buf[8 * i + 4] > 127 && bare(U[2 * i]) && bare(U[2 * i + 1])) {
+      if (METEOR.list.length < 3) { METEOR.list.push(C[i]); PROBE.sent++; } PROBE.left = 0; setNeeds(true); break;
+    }
+    C.length = 0;
+  };
+  if (renderer.readRenderTargetPixelsAsync) {   // (it leaves its target bound until it resolves: the frame's own put back at once)
+    PROBE.busy = true; renderer.readRenderTargetPixelsAsync(PROBE.rt, 0, 0, 2 * PROBE.n, 1, PROBE.buf).then(done, () => { PROBE.busy = false; });
+  } else { renderer.readRenderTargetPixels(PROBE.rt, 0, 0, 2 * PROBE.n, 1, PROBE.buf); done(); }
+  renderer.setRenderTarget(prev);
+}
+function stepMeteors(t, camera) {
+  const dt = Math.min(0.1, Math.max(0, t - METEOR.last)); METEOR.last = t;
+  const night = NIGHT.u.value, M = METEOR.list, mesh = METEOR.mesh; if (!mesh) return;
+  if (night > 0.6 && Math.random() < dt / 16) PROBE.left = 5;   // one due (tried until it finds sky, five times at most)
+  if (PROBE.left && M.length < 3 && t - PROBE.at > 1.5) { PROBE.at = t; spawnMeteor(camera); }
+  const g = mesh.geometry, P = g.attributes.position.array, C = g.attributes.aC.array, T = g.attributes.aT.array, W = OVER.u.uRes.value.x / 2, H = OVER.u.uRes.value.y / 2;
+  let nq = 0;
+  for (let i = M.length - 1; i >= 0; i--) {
+    const e = M[i]; e.t += dt; const k = e.t / e.dur; if (k >= 1) { M.splice(i, 1); continue; }
+    const at = Math.max(0, k - 0.35 - 0.25 * e.fast), fl = Math.sin(Math.PI * Math.pow(k, 1.4));
+    const head = _mh.copy(e.d0).lerp(e.d1, k).normalize().multiplyScalar(230).add(camera.position).project(camera);
+    const tail = _mt.copy(e.d0).lerp(e.d1, at).normalize().multiplyScalar(230).add(camera.position).project(camera);
+    if (head.z > 1 || tail.z > 1) continue;
+    let dx = (head.x - tail.x) * W, dy = (head.y - tail.y) * H; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+    const wpx = 1.3 * e.w * (OVER.u.uPR ? OVER.u.uPR.value : 1), nx = -dy * wpx / W, ny = dx * wpx / H, ex = dx * wpx * 1.5 / W, ey = dy * wpx * 1.5 / H, o = nq * 12, oc = nq * 16;
+    const Q = [tail.x + nx, tail.y + ny, tail.z, tail.x - nx, tail.y - ny, tail.z, head.x + nx + ex, head.y + ny + ey, head.z, head.x - nx + ex, head.y - ny + ey, head.z];
+    for (let j = 0; j < 4; j++) { P[o + 3 * j] = Q[3 * j]; P[o + 3 * j + 1] = Q[3 * j + 1]; P[o + 3 * j + 2] = Q[3 * j + 2];
+      C[oc + 4 * j] = 0.95 - 0.25 * e.fast; C[oc + 4 * j + 1] = 0.9 + 0.08 * e.fast; C[oc + 4 * j + 2] = 0.7 + 0.25 * e.fast; C[oc + 4 * j + 3] = e.b * fl;
+      T[o + 3 * j] = j < 2 ? 0 : 1.04; T[o + 3 * j + 1] = j % 2 ? -1 : 1; T[o + 3 * j + 2] = 0; }
+    nq++;
+  }
+  g.setDrawRange(0, nq * 6); mesh.visible = nq > 0; METEOR.on = M.length > 0;
+  if (nq) { g.attributes.position.needsUpdate = g.attributes.aC.needsUpdate = g.attributes.aT.needsUpdate = true; }
 }
 // the page's moon pictures (its MOON_IMGS: 8 phase buckets, new moon first), used when its sky clock has not shown one yet
 const MOON_IDS = ['35cea205e90443258d2aeaa54414881a', '60161204787446faa5348897ff9578ef', '60161204787446faa5348897ff9578ef', 'f2c8bd9a09d54d75b97bd8ef98842611',
@@ -4191,7 +4314,7 @@ function loop(now) {
     // between the room's own frames too), which costs a blit and a few points
     const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok);
     if (still || now - lastDraw < FRAME_MS - 2) {
-      if (live && now - lastSharp >= (PETS.fast ? 1000 / 60 : FLY.on || PETS.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }   // (animals on the move: 60 a second)
+      if (live && now - lastSharp >= (PETS.fast || METEOR.on ? 1000 / 60 : FLY.on || PETS.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }   // (animals on the move, a shooting star: 60 a second)
       return;
     }
   }
@@ -4265,7 +4388,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
+window.__lib3d = { PETS, METEOR, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
 (window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => start().catch(e => {
   console.warn('3D library unavailable', e); setReady(false); updateOn(); document.documentElement.classList.add('lib3d-failed');
 }), { timeout: 800 });

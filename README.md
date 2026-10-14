@@ -1,6 +1,6 @@
 # Hidden Library 3D
 
-The Hidden Library audiobook page as a 3D reading room: shelf sections with labels, a card per section, books that come off the shelf while they play, day and night with stars and the moon.
+The Hidden Library audiobook page as a 3D reading room: shelf sections with labels, a card per section, books that come off the shelf while they play, day and night with stars, the moon and now and then a shooting star.
 
 **Live:** https://michaeltran75.github.io/hidden-library-3d/
 
