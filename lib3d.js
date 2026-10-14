@@ -2695,39 +2695,45 @@ function buildFireflies() {
   pts.frustumCulled = false; pts.visible = false; OVER.scene.add(pts); FLY.pts = pts;
 }
 /* ---------------------------------------------------------------- the cat and the chicken
-   A black cat with white paws lives in the room ("Cat Walk", CC BY-NC 4.0: its mesh and skeleton; see the credits). By
-   day it lies on the floor by the left glass, awake, watching a chicken ("Chicken", CC BY 4.0) forage outside; at night
-   it sleeps curled up on the chaise and the chicken has gone to roost. Both are drawn crisp over the painted room (not
-   watercoloured), lit by the room's own lights, hidden where the room stands in front of them.
-   The cat's poses are made on its own skeleton: each bone is aimed (turned about its joint so the line to its next joint
-   takes a chosen direction, parents first) in the cat's frame (forward +z, up +y, left +x); then it is laid on its right
-   side and set down. What both do follows how the animals behave:
-   - the cat: a resting cat breathes 16 to 25 times a minute, a sleeper slower; one watching a bird through glass keeps
-     its head on it and its ears forward, its tail tip twitches, now and then its jaw chatters; a relaxed cat blinks
-     slowly. So: breathing; head (and gaze) on the chicken with glances back into the room; ear flicks; tail-tip
-     twitches, quicker while the hen is busy; blinks, slow ones when it looks away; chatter when the hen pecks. Asleep:
-     slower breathing with a sigh now and then, an ear or the tail tip twitching, eyes shut.
-   - the chicken: a walking bird's head holds still in space while the body passes under it, then thrusts ahead, one
-     bob a step; a foraging hen scratches in a four-stroke bout (one foot, the other twice, the first again), steps
-     back, looks at the ground with one eye and pecks in quick bouts; between bouts it stands and looks about, and it
-     wanders within its patch. Its model has no skeleton: its head and neck, body and feet move in the vertex shader,
-     by regions of the mesh (measured on it).
-   Both come from pets.glb (src/tools/pets/pack.mjs), fetched once the room shows; they are on layer 1, which only
-   their crisp pass sees (the painted pass, the shadows and the picking see layer 0).                              */
-const PETS = { ok: false, cat: null, holder: null, chicken: null, bones: {}, poses: {}, state: null, layer: 1, last: 0 };
-// where the cat stays: by day the floor between the stump table and the glass, by night the chaise of the sofa
+   A black cat with white paws lives in the room ("Cat Walk", CC BY-NC 4.0: its mesh, skeleton and walk; see the
+   credits). By day it lies on the floor by the left glass, watching a chicken ("Chicken", CC BY 4.0) forage outside;
+   at dusk it gets up, walks to the sofa, jumps onto the chaise, turns round and curls up to sleep (at dawn the other
+   way). Both are drawn crisp over the painted room (not watercoloured), lit by the room's lights and toned like the
+   painting, hidden where the room stands in front of them.
+   Moving on the ground, as legged animals do: a foot in stance stays where it was put down while the body passes over
+   it, so the body has to move exactly as fast as the planted feet go back under it (the walk clip's paws slide back at
+   0.665 m/s at its own pace: the cat is moved at that speed times the clip's pace, never slid); a foot in swing lifts,
+   clears the ground and comes down ahead; a walking foot is down about 60 % of the stride; a walking biped's body rides
+   over its stance leg like an inverted pendulum, highest at mid-stance, lowest when both feet are down, and sways over
+   the foot it stands on; a jump is a ballistic arc (g = 9.81 m/s²), with a crouch before and a give on landing.
+   Behaviour: a resting cat breathes 16 to 25 times a minute, a sleeper slower; one watching a bird keeps its head on it
+   and its ears forward, its tail tip twitches, now and then its jaw chatters; a relaxed cat blinks slowly, grooms, yawns
+   and stretches. A walking chicken's head holds still in space while the body passes, then thrusts ahead (one bob a
+   step); foraging, it scratches in a four-stroke bout (one foot, the other twice, the first again), steps back, looks
+   at the ground with one eye and pecks in quick bouts. The chicken has no skeleton: its head and neck, body and feet
+   move in the vertex shader by regions of its mesh. Both come from pets.glb (src/tools/pets/pack.mjs), fetched once
+   the room shows; they are on layer 1, which only their crisp pass sees.                                         */
+const PETS = { ok: false, cat: null, holder: null, chicken: null, bones: {}, poses: {}, state: null, layer: 1, last: 0, surfaceAt: (x, z) => surfaceAt(x, z) };
+const WALK = { v: 0.665, pace: 0.75 };   // the walk clip's ground speed at its own pace (m/s), and the pace it is played at
+// where the cat stays (by day the floor between the stump table and the glass, by night the chaise), and where it jumps
 const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12 }, night: { x: 1.6, z: -5.95, yaw: 0.6 } };
+const CAT_WAY = { floor: [1.22, -5.22], seat: [1.5, -6.02] };   // the floor left of the deck, the chaise's cushion
 // the chicken's patch of lawn outside the left glass (it wanders in it), and its height
 const HEN_AREA = { x0: -2.3, x1: -1.6, z0: -5.7, z1: -4.5, h: 0.42 };
+const DAY_POSE = { spine: [4, 6, 8, 10, [0.45, -0.05, 0.89], [0.75, 0.05, 0.66]], head: [[0, 0, 1], -55],
+  arm: [[0, -0.8, 0.6], [0, -0.42, 0.91], [0, -0.15, 0.99]], leg: [[0, -0.72, 0.69], [0, -0.5, -0.87], [0, -0.8, 0.6]],
+  tail: [[-0.3, 0, -0.95], [-0.15, -0.3, -0.94], [0, -0.7, -0.71], [0, -0.95, -0.3]] };
+const NIGHT_POSE = { spine: [32, 68, 104, 142, 176, 206], head: [[1, 0, 0], 45],
+  arm: [[0, 0.3, -0.95], [0, -0.95, -0.3], [0, -0.6, 0.8]], leg: [[0, -0.55, 0.83], [0, -0.35, -0.94], [0, -0.5, 0.87]],
+  tail: [[-0.3, 0.1, -0.95], [-0.3, -0.5, -0.81], [-0.25, -0.93, -0.25], [-0.2, -0.8, 0.56]] };
 const CAT_POSES = {
-  // awake, lying on its side: back nearly straight, head up and looking ahead, front legs reaching, tail along the floor
-  day: { spine: [4, 6, 8, 10, [0.45, -0.05, 0.89], [0.75, 0.05, 0.66]], head: [[0, 0, 1], -55],
-    arm: [[0, -0.8, 0.6], [0, -0.42, 0.91], [0, -0.15, 0.99]], leg: [[0, -0.72, 0.69], [0, -0.5, -0.87], [0, -0.8, 0.6]],
-    tail: [[-0.3, 0, -0.95], [-0.15, -0.3, -0.94], [0, -0.7, -0.71], [0, -0.95, -0.3]] },
-  // asleep, curled into a ring: back bent round, head tucked toward the hind legs, legs folded in, tail wrapped round
-  night: { spine: [32, 68, 104, 142, 176, 206], head: [[1, 0, 0], 45],
-    arm: [[0, 0.3, -0.95], [0, -0.95, -0.3], [0, -0.6, 0.8]], leg: [[0, -0.55, 0.83], [0, -0.35, -0.94], [0, -0.5, 0.87]],
-    tail: [[-0.3, 0.1, -0.95], [-0.3, -0.5, -0.81], [-0.25, -0.93, -0.25], [-0.2, -0.8, 0.56]] },
+  day: DAY_POSE,     // awake, lying on its side: back nearly straight, head up, front legs reaching, tail along the floor
+  night: NIGHT_POSE, // asleep, curled into a ring: back bent round, head tucked toward the hind legs, tail wrapped round
+  groom: { ...DAY_POSE, spine: [4, 6, 8, 10, [0.25, -0.5, 0.83], [0.15, -0.88, 0.45]], head: [[1, 0, 0], 20] },   // head down to its paws
+  yawn: { ...DAY_POSE, spine: [4, 6, 8, 10, [0.6, 0.15, 0.78], [0.85, 0.3, 0.42]], head: [[0, 0, 1], -45] },      // head up and back
+  stretch: { ...DAY_POSE, spine: [0, 2, 6, 9, [0.42, -0.05, 0.91], [0.65, 0.02, 0.76]],                             // front legs reach, hind legs ease back
+    arm: [[0, -0.6, 0.8], [0, -0.22, 0.97], [0, -0.05, 1]], leg: [[0, -0.85, -0.2], [0, -0.7, -0.71], [0, -0.75, -0.2]] },
+  stir: { ...NIGHT_POSE, spine: [32, 68, 104, 132, 150, 165], head: [[1, 0, 0], 15] },                            // asleep, lifts its head a little
 };
 const _pq = new THREE.Quaternion(), _r = new THREE.Quaternion(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
 function aimBone(b, child, dir) {
@@ -2780,50 +2786,65 @@ function contactShadow(w, d) {
   m.rotation.x = -Math.PI / 2; m.renderOrder = 1; return m;
 }
 /* ---- crisp: drawn over the picture, a fragment is dropped where the room is nearer (the room's depth, as the deck) */
-const SHARP = { rt: null, cam: new THREE.Camera(), quad: null, exp: { value: 1 }, v: new THREE.Vector3() };
+const SHARP = { rt: null, cam: new THREE.Camera(), quad: null, v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } } };
 function crispPatch(sh) {
   sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
   sh.fragmentShader = 'uniform sampler2D uDepth; uniform vec2 uFull, uOff;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (gl_FragCoord.z > texture2D(uDepth, (gl_FragCoord.xy + uOff) / uFull).r + 2e-6) discard;');
 }
 /* ---- the chicken's head and neck, body and feet, moved in the vertex shader. Its mesh is baked into a frame where it
    stands on y = 0 facing +x, 0.42 m tall: head and neck are what lies above 0.26 m ahead of x = 0.02 (turning about the
-   neck's base), the feet and shanks what lies under 0.13 m (left foot at +z); the body pitches about the hips. */
+   neck's base), the feet and shanks what lies under 0.13 m (left foot at +z); the rest of the body pitches and rolls
+   about the hips and rides up and sideways over the feet. */
 const HEN = { u: { uNeck: { value: new THREE.Vector3(0.085, 0.255, 0.02) }, uHeadR: { value: new THREE.Matrix3() }, uHeadT: { value: new THREE.Vector3() },
-  uHip: { value: new THREE.Vector3(0, 0.12, 0) }, uBodyR: { value: new THREE.Matrix3() }, uFootL: { value: new THREE.Vector3() }, uFootR: { value: new THREE.Vector3() } } };
+  uHip: { value: new THREE.Vector3(0, 0.12, 0) }, uBodyR: { value: new THREE.Matrix3() }, uBodyT: { value: new THREE.Vector3() }, uFootL: { value: new THREE.Vector3() }, uFootR: { value: new THREE.Vector3() } } };
 function henPatch(sh) {
   crispPatch(sh); Object.assign(sh.uniforms, HEN.u);
-  sh.vertexShader = 'uniform vec3 uNeck, uHeadT, uHip, uFootL, uFootR; uniform mat3 uHeadR, uBodyR;\n' + sh.vertexShader
+  sh.vertexShader = 'uniform vec3 uNeck, uHeadT, uHip, uBodyT, uFootL, uFootR; uniform mat3 uHeadR, uBodyR;\n' + sh.vertexShader
     .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
       float wH = smoothstep(0.26, 0.33, position.y) * smoothstep(0.02, 0.1, position.x), wF = 1.0 - smoothstep(0.08, 0.13, position.y);
       objectNormal = normalize(mix(objectNormal, uHeadR * objectNormal, wH)); objectNormal = normalize(mix(uBodyR * objectNormal, objectNormal, wF));`)
     .replace('#include <begin_vertex>', `vec3 transformed = position;
       transformed += wF * (1.0 - position.y / 0.13) * mix(uFootR, uFootL, smoothstep(-0.02, 0.02, position.z));
       transformed = mix(transformed, uHeadR * (transformed - uNeck) + uNeck + uHeadT, wH);
-      transformed = mix(uBodyR * (transformed - uHip) + uHip, transformed, wF);`);
+      transformed = mix(uBodyR * (transformed - uHip) + uHip + uBodyT, transformed, wF);`);
 }
 const toFloat = (attr, m, normal) => {   // a (quantized) attribute as plain floats, moved by a matrix
   const out = new Float32Array(attr.count * 3), v = new THREE.Vector3(), nm = new THREE.Matrix3().getNormalMatrix(m);
   for (let i = 0; i < attr.count; i++) { v.fromBufferAttribute(attr, i); if (normal) v.applyMatrix3(nm).normalize(); else v.applyMatrix4(m); v.toArray(out, i * 3); }
   return new THREE.BufferAttribute(out, 3);
 };
+// fur and feathers take a soft sheen at grazing angles (a black cat keeps its shape), the eyes a wet gloss
+function petMaterial(src, o) {
+  const m = new THREE.MeshPhysicalMaterial({ map: src.map, color: src.color, roughness: 0.65, metalness: 0, ...o });
+  if (m.map) m.map.anisotropy = 8; return m;
+}
 async function loadPets() {
   const buf = await getPetsBuffer(); if (!buf) return;
   const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(buf, '');
   const cat = gltf.scene.getObjectByName('cat'), hen = gltf.scene.getObjectByName('chicken');
   if (!cat) return;
   const L = PETS.layer;
-  // the cat: centimetres to metres; its bones by name (the jaw is fst-Xtra01)
+  // the cat: centimetres to metres; its bones by name (the jaw is fst-Xtra01; fst_1 carries the walk's bob)
   cat.removeFromParent(); const body = new THREE.Group(); body.add(cat); body.scale.setScalar(0.01);
   cat.traverse(o => {
     if (/^cat_bip-|^fst-Xtra01/.test(o.name)) PETS.bones[o.name.replace(/^cat_bip-/, '').replace(/_\d+$/, '')] = o;
-    if (o.isMesh) { o.frustumCulled = false; o.layers.set(L); [].concat(o.material).forEach(m => { m.fog = false; m.onBeforeCompile = crispPatch; if (/eye/i.test(m.name)) PETS.eyes = o; }); }
+    if (o.isMesh) {
+      o.frustumCulled = false; o.layers.set(L);
+      const eye = /eye/i.test(o.material.name), m = eye ? petMaterial(o.material, { roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05 })
+        : petMaterial(o.material, { roughness: 0.62, sheen: 0.6, sheenRoughness: 0.45, sheenColor: new THREE.Color(0x6c7480) });
+      m.fog = false; m.onBeforeCompile = crispPatch; o.material = m; if (eye) PETS.eyes = o;
+    }
   });
   PETS.cat = body; PETS.rest = new Map(Object.values(PETS.bones).map(b => [b, b.quaternion.clone()]));
+  PETS.fst = cat.getObjectByName('fst_1'); PETS.fstRest = PETS.fst ? PETS.fst.position.clone() : null;
   // where the head looks, in its own frame (the cat faces +z in its rest pose)
   body.updateMatrixWorld(true); PETS.nose = new THREE.Vector3(0, 0, 1).applyQuaternion(PETS.bones.Head.getWorldQuaternion(new THREE.Quaternion()).invert());
-  PETS.poses.day = catPose(CAT_POSES.day); PETS.poses.night = catPose(CAT_POSES.night);
+  for (const [k, P] of Object.entries(CAT_POSES)) PETS.poses[k] = catPose(P);
+  for (const [b, q] of PETS.rest) b.quaternion.copy(q); body.position.set(0, 0, 0); body.quaternion.identity();
+  if (gltf.animations.length) { PETS.mixer = new THREE.AnimationMixer(body); PETS.walk = PETS.mixer.clipAction(gltf.animations[0]); PETS.walk.play(); PETS.walkDur = gltf.animations[0].duration; }
   const holder = new THREE.Group(); holder.add(body); PETS.holder = holder;
   for (const k of ['day', 'night']) { const s = CAT_SPOT[k]; s.y = surfaceAt(s.x, s.z); }
+  CAT_WAY.seatY = surfaceAt(...CAT_WAY.seat);
   PETS.catShadow = contactShadow(0.7, 0.42); room.add(PETS.catShadow);
   if (hen) {   // the chicken: its mesh baked into its own frame (standing on y = 0, facing +x, 0.42 m tall)
     hen.removeFromParent(); hen.updateMatrixWorld(true);
@@ -2832,42 +2853,126 @@ async function loadPets() {
     const m = new THREE.Matrix4().makeScale(k, k, k).multiply(new THREE.Matrix4().makeTranslation(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2)).multiply(mesh.matrixWorld);
     const g = new THREE.BufferGeometry(); g.setAttribute('position', toFloat(mesh.geometry.attributes.position, m)); g.setAttribute('normal', toFloat(mesh.geometry.attributes.normal, m, true));
     if (mesh.geometry.attributes.uv) g.setAttribute('uv', mesh.geometry.attributes.uv); if (mesh.geometry.index) g.setIndex(mesh.geometry.index);
-    const mat = mesh.material; mat.onBeforeCompile = henPatch; mat.fog = true;
+    const mat = petMaterial(mesh.material, { roughness: 0.8, sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xffefd8) }); mat.onBeforeCompile = henPatch; mat.fog = true;
     const bird = new THREE.Mesh(g, mat); bird.frustumCulled = false; bird.layers.set(L);
     PETS.chicken = new THREE.Group(); PETS.chicken.add(bird);
     PETS.henShadow = contactShadow(0.36, 0.22); PETS.henShadow.material.fog = true; scene.add(PETS.henShadow);
-    Object.assign(HEN, { x: -1.75, z: -5.0, yaw: 0.25, act: null, queue: null, t: 0, look: 0, tilt: 0, lookT: 0, tiltT: 0 });
+    Object.assign(HEN, { x: -1.75, z: -5.0, yaw: 0.25, act: null, queue: null, t: 0, look: 0, tilt: 0, lookT: 0, tiltT: 0, phase: 0, v: 0, feet: [0, 0, 0, 0] });
   }
   // the room's lights light them too (they are on their own layer, which only the crisp pass sees)
   scene.traverse(o => { if (o.isLight) o.layers.enable(L); });
   SHARP.cam.layers.set(L);
-  SHARP.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uExp: SHARP.exp }, transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false,
-    vertexShader: QUAD_VS, fragmentShader: 'uniform sampler2D t; uniform vec2 uScale; uniform float uExp; varying vec2 vUv; void main(){ vec4 c = texture2D(t, vUv * uScale); gl_FragColor = vec4(c.rgb * uExp, c.a);\n#include <colorspace_fragment>\n}' }));
+  // laid over the picture through the room's own tone: its exposure, the filmic curve, the paper's lift and warmth, its veil
+  SHARP.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, ...SHARP.u }, transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false,
+    vertexShader: QUAD_VS, fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil; varying vec2 vUv;
+      vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+      vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
+      void main(){ vec4 c = texture2D(t, vUv * uScale); if (c.a < 0.002) discard;
+        vec3 col = toS(aces(c.rgb / c.a * uExp * 0.85));
+        col = mix(vec3(dot(col, vec3(0.299,0.587,0.114))), col, 0.97);
+        col = 1.0 - (1.0 - col) * mix(1.0, uLift, 0.75);   // most of the paper's lift: blacks as deep as the painting's
+        col = mix(col, col * vec3(1.02,1.0,0.95), 0.6) * (1.0 - uVeil);
+        gl_FragColor = vec4(col * c.a, c.a); }` }));
   // their shaders compiled in the background (for a linear target like theirs) before they appear
   scene.add(holder); if (PETS.chicken) scene.add(PETS.chicken);
   if (renderer.compileAsync) { renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(holder, SHARP.cam, scene); if (PETS.chicken) await renderer.compileAsync(PETS.chicken, SHARP.cam, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
   PETS.ok = true; PETS.state = null; petsForHour(HOUR.S); setNeeds(true);
 }
+/* ---- the cat: in place (a pose with its small life) or on its way between its two places */
+const CAT = { mode: 'pose', pose: 'day', trip: null };
+PETS.CAT = CAT;   // (for tests: an act can be started by hand)
+const rnd = (a, b) => a + (b - a) * Math.random();
+const ease = k => k * k * (3 - 2 * k), angTo = (a, b) => ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _hp = new THREE.Vector3(), _fp = new THREE.Vector3();
+const _Z = new THREE.Vector3(0, 0, 1), _Y = new THREE.Vector3(0, 1, 0), _ID = new THREE.Quaternion(), _O = new THREE.Vector3();
+function setPose(P, A, wa) {   // the bones and the body as pose P (blended toward pose A by wa)
+  for (const [b, q] of P.q) { b.quaternion.copy(q); if (A && wa > 0) b.quaternion.slerp(A.q.get(b), wa); }
+  PETS.cat.position.copy(P.pos); PETS.cat.quaternion.copy(P.quat);
+  if (A && wa > 0) { PETS.cat.position.lerp(A.pos, wa); PETS.cat.quaternion.slerp(A.quat, wa); }
+  if (PETS.fst) PETS.fst.position.copy(PETS.fstRest);
+}
+function walkAt(time, P, w) {   // the walk clip at a time, blended from pose P by w (0: the pose, 1: the walk)
+  PETS.walk.time = ((time % PETS.walkDur) + PETS.walkDur) % PETS.walkDur; PETS.mixer.update(0);
+  if (w >= 1) { PETS.cat.position.set(0, 0, 0); PETS.cat.quaternion.identity(); return; }
+  for (const [b, q] of P.q) { _q.copy(b.quaternion); b.quaternion.copy(q).slerp(_q, w); }
+  PETS.cat.position.copy(P.pos).lerp(_O, w); PETS.cat.quaternion.copy(P.quat).slerp(_ID, w);
+  if (PETS.fst) { _fp.copy(PETS.fst.position); PETS.fst.position.copy(PETS.fstRest).lerp(_fp, w); }
+}
+function placeShadow(x, y, z, yaw, lying, curled) {
+  const sh = PETS.catShadow; sh.position.set(x, y + 0.004, z); sh.rotation.z = yaw + Math.PI / 2;
+  sh.scale.set(curled ? 0.62 : lying ? 1 : 0.7, curled ? 1 : lying ? 1 : 0.55, 1);
+}
 // by day on the floor (and the chicken outside), by night asleep on the chaise (the chicken has gone to roost)
-const CAT = {};
 function petsForHour(S) {
   if (!PETS.ok) return;
   const state = S.n > 0.5 ? 'night' : 'day'; if (state === PETS.state) return;
-  PETS.state = state; const P = PETS.poses[state], s = CAT_SPOT[state];
-  for (const [b, q] of P.q) b.quaternion.copy(q);
-  PETS.cat.position.copy(P.pos); PETS.cat.quaternion.copy(P.quat);
-  PETS.holder.position.set(s.x, s.y, s.z); PETS.holder.rotation.y = s.yaw; PETS.holder.scale.set(1, 1, 1); PETS.holder.updateMatrixWorld(true);
-  const sh = PETS.catShadow; sh.position.set(s.x, s.y + 0.004, s.z); sh.rotation.z = s.yaw + Math.PI / 2; sh.scale.set(state === 'night' ? 0.62 : 1, 1, 1);
+  const first = PETS.state === null; PETS.state = state;
   if (PETS.chicken) PETS.chicken.visible = PETS.henShadow.visible = state === 'day';
-  Object.assign(CAT, { look: null, ear: [0, 0], earT: [1, 2.5], tail: 0, tailT: 1, blink: 0, blinkT: 2, slow: false, chatter: 0, chatterT: 8, sigh: 0, sighT: 20, glance: 0, glanceT: 5 });
+  if (CAT.trip) settle(CAT.trip.to);   // already on its way the other way: there at once, then off again
+  if (first || reduceMotion || !on || document.hidden || !PETS.walk) settle(state); else startTrip(state);
   setShadowsDirty(true); setNeeds(true);
 }
-/* ---- the cat's small life, on top of its pose */
-const rnd = (a, b) => a + (b - a) * Math.random();
-const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _hp = new THREE.Vector3(), _Z = new THREE.Vector3(0, 0, 1);
+function settle(state) {   // in its place for that time of day, at once
+  const s = CAT_SPOT[state]; CAT.mode = 'pose'; CAT.pose = state; CAT.trip = null;
+  PETS.holder.position.set(s.x, s.y, s.z); PETS.holder.rotation.y = s.yaw; PETS.holder.scale.set(1, 1, 1);
+  setPose(PETS.poses[state]); placeShadow(s.x, s.y, s.z, s.yaw, true, state === 'night');
+  Object.assign(CAT, { look: null, ear: [0, 0], earT: [1, 2.5], tail: 0, tailT: 1, blink: 0, blinkT: 2, slow: false, chatter: 0, chatterT: 8,
+    sigh: 0, sighT: 20, glance: 0, glanceT: 5, act: null, actT: rnd(14, 26) });
+}
+// its way from one place to the other: get up, turn, walk, crouch, jump, land, turn round once, lie down (or back)
+function startTrip(to) {
+  const from = to === 'night' ? 'day' : 'night', S0 = CAT_SPOT[from], S1 = CAT_SPOT[to], F = CAT_WAY.floor, Sx = CAT_WAY.seat, sy = CAT_WAY.seatY;
+  const segs = to === 'night'
+    ? [{ k: 'rise', from, dur: 1.0 }, { k: 'walk', to: F }, { k: 'face', at: Sx }, { k: 'crouch', dur: 0.32 }, { k: 'jump', to: [Sx[0], sy, Sx[1]], T: 0.42 }, { k: 'land', dur: 0.24 },
+       { k: 'circle', dur: 1.7 }, { k: 'face', yaw: S1.yaw }, { k: 'lie', to, dur: 1.4 }]
+    : [{ k: 'rise', from, dur: 1.1 }, { k: 'face', at: F }, { k: 'crouch', dur: 0.26 }, { k: 'jump', to: [F[0], 0, F[1]], T: 0.36 }, { k: 'land', dur: 0.26 },
+       { k: 'walk', to: [S1.x, S1.z] }, { k: 'face', yaw: S1.yaw }, { k: 'lie', to, dur: 1.2 }];
+  CAT.mode = 'trip'; CAT.trip = { to, from, segs, i: 0, t: 0, x: S0.x, y: S0.y, z: S0.z, yaw: S0.yaw, time: 0, dy: 0, w: 0 };
+  if (PETS.eyes) PETS.eyes.visible = true;
+}
+function stepTrip(dt) {
+  const T = CAT.trip, seg = T.segs[T.i];
+  if (!seg) { settle(T.to); return; }
+  if (T.t === 0) seg.start = { x: T.x, y: T.y, z: T.z, yaw: T.yaw };
+  T.t += dt; const st = seg.start; let done = false, pose = PETS.poses[T.from], w = 1;
+  const stepIn = rate => { T.time += dt * WALK.pace * rate; };   // the paws stepping (at rate 1 they keep pace with the ground)
+  if (seg.k === 'rise') { const k = Math.min(1, T.t / seg.dur); w = ease(k); done = k >= 1; }
+  else if (seg.k === 'face') {   // turn on the spot toward a point or a heading, stepping round (a cat does not pivot on planted feet)
+    if (seg.yaw0 === undefined) { seg.yaw0 = T.yaw; seg.d = angTo(T.yaw, seg.yaw !== undefined ? seg.yaw : Math.atan2(seg.at[0] - T.x, seg.at[1] - T.z)); seg.dur = Math.max(0.3, Math.abs(seg.d) / 2.2); }
+    const k = Math.min(1, T.t / seg.dur); T.yaw = seg.yaw0 + seg.d * ease(k); stepIn(0.6); done = k >= 1;
+  } else if (seg.k === 'walk') {   // the body goes exactly as fast as the planted paws go back: the clip's ground speed at its pace
+    const v = WALK.v * WALK.pace, dx = seg.to[0] - T.x, dz = seg.to[1] - T.z, d = Math.hypot(dx, dz);
+    const want = Math.atan2(dx, dz), turn = angTo(T.yaw, want); T.yaw += Math.sign(turn) * Math.min(Math.abs(turn), dt * 3.2);
+    const s = Math.min(d, v * dt); T.x += Math.sin(T.yaw) * s; T.z += Math.cos(T.yaw) * s; T.time += s / WALK.v;   // clip time from distance: no slip
+    done = d < 0.02; if (done) { T.x = seg.to[0]; T.z = seg.to[1]; }
+  } else if (seg.k === 'crouch') { const k = Math.min(1, T.t / seg.dur); T.dy = -0.035 * ease(k); done = k >= 1; }
+  else if (seg.k === 'jump') {   // ballistic: up as much faster as it has to rise, g pulling it back down
+    if (seg.vy === undefined) { seg.vy = (seg.to[1] - st.y + 0.5 * 9.81 * seg.T * seg.T) / seg.T; seg.yaw = T.yaw; }
+    const t = Math.min(seg.T, T.t), k = t / seg.T;
+    T.x = st.x + (seg.to[0] - st.x) * k; T.z = st.z + (seg.to[2] - st.z) * k; T.y = st.y + seg.vy * t - 0.5 * 9.81 * t * t; T.dy = -0.035 * (1 - Math.min(1, k * 4));
+    T.time = 0.2 * PETS.walkDur;   // legs reaching
+    done = T.t >= seg.T; if (done) T.y = seg.to[1];
+  } else if (seg.k === 'land') { const k = Math.min(1, T.t / seg.dur); T.dy = -0.03 * Math.sin(Math.PI * k); done = k >= 1; }
+  else if (seg.k === 'circle') { const k = Math.min(1, T.t / seg.dur); T.yaw = st.yaw + Math.PI * 2 * ease(k); stepIn(0.7); done = k >= 1; }   // round once before lying down
+  else if (seg.k === 'lie') {
+    const k = Math.min(1, T.t / seg.dur), S1 = CAT_SPOT[seg.to]; pose = PETS.poses[seg.to]; w = 1 - ease(k);
+    T.x = st.x + (S1.x - st.x) * ease(k); T.z = st.z + (S1.z - st.z) * ease(k); T.y = st.y + (S1.y - st.y) * ease(k); T.yaw = st.yaw + angTo(st.yaw, S1.yaw) * ease(k);
+    done = k >= 1;
+  }
+  walkAt(T.time, pose, w);
+  PETS.holder.position.set(T.x, T.y + T.dy, T.z); PETS.holder.rotation.y = T.yaw; PETS.holder.scale.set(1, 1, 1);
+  placeShadow(T.x, seg.k === 'jump' ? (T.y > 0.2 ? CAT_WAY.seatY : 0) : T.y, T.z, T.yaw, w < 0.5, w < 0.5 && T.to === 'night' && seg.k === 'lie');
+  if (done) { T.i++; T.t = 0; }
+}
 function stepCat(t, dt) {
-  const B = PETS.bones, P = PETS.poses[PETS.state], night = PETS.state === 'night';
-  for (const k of ['Neck1', 'Head', 'Ponytail1', 'Ponytail2', 'Tail2', 'Tail3', 'fst-Xtra01']) { const b = B[k]; if (b) b.quaternion.copy(P.q.get(b)); }
+  if (CAT.mode === 'trip') { stepTrip(dt); return; }
+  const B = PETS.bones, night = CAT.pose === 'night', P = PETS.poses[CAT.pose];
+  // now and then something else for a few seconds: by day a groom, a yawn or a stretch; asleep, the head lifts a little
+  CAT.actT -= dt;
+  if (!CAT.act && CAT.actT <= 0) { const r = Math.random(); CAT.act = { k: night ? 'stir' : r < 0.5 ? 'groom' : r < 0.78 ? 'yawn' : 'stretch', t: 0 }; CAT.act.dur = { groom: 5.5, yawn: 3.2, stretch: 3.6, stir: 4.5 }[CAT.act.k]; }
+  let wa = 0; const act = CAT.act;
+  if (act) { act.t += dt; const k = act.t / act.dur; wa = ease(Math.min(1, k * 4, (1 - k) * 4)); if (k >= 1) { CAT.act = null; CAT.actT = night ? rnd(35, 80) : rnd(18, 40); } }
+  setPose(P, act ? PETS.poses[act.k] : null, wa);
   // breathing: about 22 breaths a minute awake, 17 asleep; asleep, now and then a deeper sigh
   CAT.sighT -= dt; if (night && CAT.sighT <= 0) { CAT.sigh = 1; CAT.sighT = rnd(25, 60); }
   CAT.sigh = Math.max(0, CAT.sigh - dt / 4.5);
@@ -2886,8 +2991,9 @@ function stepCat(t, dt) {
   const tw = Math.sin(Math.PI * CAT.tail) * (night ? 0.25 : 0.45), sway = night ? 0 : 0.12 * Math.sin(t * 0.7);
   if (B.Tail2) B.Tail2.quaternion.multiply(_q.setFromAxisAngle(_Z, sway + tw * 0.5));
   if (B.Tail3) B.Tail3.quaternion.multiply(_q.setFromAxisAngle(_Z, tw));
+  const jaw = B['fst-Xtra01'];
   if (night) { if (PETS.eyes) PETS.eyes.visible = false; return; }   // asleep: eyes shut
-  // awake: the head follows the chicken's head, with glances back into the room
+  // awake: the head follows the chicken's head, with glances back into the room (less of it while busy with itself)
   CAT.glanceT -= dt; if (CAT.glanceT <= 0) { CAT.glance = CAT.glance ? 0 : 1; CAT.glanceT = CAT.glance ? rnd(1.2, 2.8) : rnd(4, 10); }
   const head = B.Head; PETS.holder.updateMatrixWorld(true); head.getWorldPosition(_hp);
   const target = hen && !CAT.glance ? _w.set(HEN.x + Math.cos(HEN.yaw) * 0.12, 0.25, HEN.z - Math.sin(HEN.yaw) * 0.12) : _w.copy(camera.position).lerp(_hp, 0.4);
@@ -2897,58 +3003,72 @@ function stepCat(t, dt) {
   const nose = _v.copy(PETS.nose).applyQuaternion(head.getWorldQuaternion(_q2));
   _q.setFromUnitVectors(nose, CAT.look); const lim = 2 * Math.acos(Math.min(1, Math.abs(_q.w)));
   if (lim > 1.2) _q.slerp(_q3.identity(), 1 - 1.2 / lim);   // a cat lying down turns its head ~70° at most
-  const half = _q3.identity().slerp(_q, 0.5).clone(); turnWorld(B.Neck1, half); turnWorld(head, half);
+  const half = _q3.identity().slerp(_q, 0.5 * (1 - wa)).clone(); turnWorld(B.Neck1, half); turnWorld(head, half);
+  // the acts' own motion: licking (the head nods to the paw), the yawn's wide jaw, eyes shut through a yawn
+  if (act && act.k === 'groom') turnWorld(head, _q.setFromAxisAngle(_Y, 0.13 * Math.sin(act.t * Math.PI * 2 * 2.3) * wa));
+  const yawn = act && act.k === 'yawn' ? Math.max(0, Math.sin(Math.PI * Math.min(1, act.t / act.dur * 1.15))) : 0;
+  if (jaw && yawn > 0) jaw.quaternion.multiply(_q.setFromAxisAngle(_Z, 0.62 * yawn));
   // blinks: a quick one every few seconds; a slow one (the relaxed cat's) when it looks away from the hen
   CAT.blinkT -= dt; if (CAT.blinkT <= 0) { CAT.slow = !!CAT.glance && Math.random() < 0.6; CAT.blink = 1; CAT.blinkT = rnd(3, 8); }
-  CAT.blink = Math.max(0, CAT.blink - dt / (CAT.slow ? 0.9 : 0.16)); if (PETS.eyes) PETS.eyes.visible = CAT.blink <= 0.05;
-  // chatter: the jaw clicks fast when the chicken pecks and the cat is watching
-  CAT.chatterT -= dt; if (CAT.chatterT <= 0 && busy && !CAT.glance) { CAT.chatter = 1; CAT.chatterT = rnd(10, 25); }
+  CAT.blink = Math.max(0, CAT.blink - dt / (CAT.slow ? 0.9 : 0.16)); if (PETS.eyes) PETS.eyes.visible = CAT.blink <= 0.05 && yawn < 0.35;
+  // chatter: the jaw clicks fast (opening a little, seven times a second) when the chicken pecks and the cat is watching
+  CAT.chatterT -= dt; if (CAT.chatterT <= 0 && busy && !CAT.glance && !act) { CAT.chatter = 1; CAT.chatterT = rnd(10, 25); }
   CAT.chatter = Math.max(0, CAT.chatter - dt / 1.3);
-  const jaw = B['fst-Xtra01']; if (jaw && CAT.chatter > 0) jaw.quaternion.multiply(_q.setFromAxisAngle(_Z, -0.3 * Math.max(0, Math.sin(t * 2 * Math.PI * 7)) * Math.min(1, CAT.chatter * 3)));
+  if (jaw && CAT.chatter > 0) jaw.quaternion.multiply(_q.setFromAxisAngle(_Z, 0.2 * Math.max(0, Math.sin(t * 2 * Math.PI * 7)) * Math.min(1, CAT.chatter * 3)));
 }
-/* ---- the chicken's foraging: a queue of acts, each moving its body, head and feet for a while */
+/* ---- the chicken: acts (walk, scratch, step back, peer, peck, stand, turn) over a gait that keeps its feet planted */
 const HEN_ACTS = {
-  walk: n => ({ kind: 'walk', dur: n * 0.36, steps: n }), scratch: () => ({ kind: 'scratch', dur: 4 * 0.27 }), back: () => ({ kind: 'back', dur: 0.32 }),
-  peer: () => ({ kind: 'peer', dur: rnd(0.5, 0.9) }), peck: n => ({ kind: 'peck', dur: n * 0.24 }), stand: () => ({ kind: 'stand', dur: rnd(1, 2.6) }), turn: a => ({ kind: 'turn', dur: 0.5, a }),
+  walk: n => ({ kind: 'walk', steps: n, v: 0.18 }), back: () => ({ kind: 'walk', steps: 1, v: -0.12 }), scratch: () => ({ kind: 'scratch', dur: 4 * 0.27 }),
+  peer: () => ({ kind: 'peer', dur: rnd(0.5, 0.9) }), peck: n => ({ kind: 'peck', dur: n * 0.24 }), stand: () => ({ kind: 'stand', dur: rnd(1, 2.6) }), turn: a => ({ kind: 'turn', a }),
 };
 function henPlan() {   // what it does next: forage (scratch, step back, look, peck), wander, or stand and look about
   const A = HEN_AREA, inside = HEN.x > A.x0 + 0.12 && HEN.x < A.x1 - 0.12 && HEN.z > A.z0 + 0.12 && HEN.z < A.z1 - 0.12;
-  if (!inside) { const cx = (A.x0 + A.x1) / 2 + rnd(-0.15, 0.15), cz = (A.z0 + A.z1) / 2 + rnd(-0.2, 0.2); return [HEN_ACTS.turn(Math.atan2(-(cz - HEN.z), cx - HEN.x)), HEN_ACTS.walk(3)]; }
+  if (!inside) { const cx = (A.x0 + A.x1) / 2 + rnd(-0.15, 0.15), cz = (A.z0 + A.z1) / 2 + rnd(-0.2, 0.2); return [HEN_ACTS.turn(Math.atan2(-(cz - HEN.z), cx - HEN.x)), HEN_ACTS.walk(4)]; }
   const r = Math.random();
   if (r < 0.5) return [HEN_ACTS.scratch(), HEN_ACTS.back(), HEN_ACTS.peer(), HEN_ACTS.peck(2 + Math.floor(rnd(0, 4)))];
-  if (r < 0.75) return [HEN_ACTS.walk(2 + Math.floor(rnd(0, 4))), HEN_ACTS.peck(1 + Math.floor(rnd(0, 3)))];
+  if (r < 0.75) return [HEN_ACTS.walk(2 + 2 * Math.floor(rnd(0, 3))), HEN_ACTS.peck(1 + Math.floor(rnd(0, 3)))];
   if (r < 0.88) return [HEN_ACTS.turn(HEN.yaw + rnd(-1.4, 1.4)), HEN_ACTS.walk(2)];
   return [HEN_ACTS.stand()];
 }
+const STRIDE_T = 0.72, DUTY = 0.6;   // a stride (two steps) and the part of it a foot is down
 const _m4 = new THREE.Matrix4(), _e = new THREE.Euler();
 function stepHen(dt) {
   if (!HEN.queue || !HEN.queue.length) HEN.queue = henPlan();
-  if (!HEN.act) { HEN.act = HEN.queue.shift(); HEN.t = 0; HEN.from = { x: HEN.x, z: HEN.z, yaw: HEN.yaw }; }
-  const A = HEN.act; HEN.t += dt; const k = Math.min(1, HEN.t / A.dur), ease = k * k * (3 - 2 * k);
-  let pitch = 0, neck = 0, headX = 0, headY = 0; const foot = [0, 0, 0, 0];   // left x, y, right x, y
-  const fwd = d => { HEN.x = HEN.from.x + Math.cos(HEN.yaw) * d; HEN.z = HEN.from.z - Math.sin(HEN.yaw) * d; };
-  if (A.kind === 'walk') {   // one bob a step: the head holds still in space as the body passes under it, then thrusts ahead
-    const step = 0.065, s = Math.min(A.steps - 1e-6, HEN.t / 0.36), i = Math.floor(s), f = s - i; fwd(s * step);
-    headX = f < 0.62 ? 0.03 - f / 0.62 * step : 0.03 - step + (f - 0.62) / 0.38 * step;
-    const a = i % 2 ? 2 : 0, lift = Math.sin(Math.PI * f); foot[a] = (f - 0.5) * 0.07; foot[a + 1] = 0.028 * lift; foot[2 - a] = -(f - 0.5) * 0.03;
-    pitch = -0.04 * lift;
-  } else if (A.kind === 'scratch') {   // four strokes, each raking the ground backwards: one foot, the other twice, the first again
-    const s = HEN.t / 0.27, i = Math.min(3, Math.floor(s)), f = s - Math.floor(s), a = [0, 2, 2, 0][i];
-    foot[a] = f < 0.35 ? 0.03 * f / 0.35 : 0.03 - 0.11 * (f - 0.35) / 0.65; foot[a + 1] = 0.022 * Math.sin(Math.PI * Math.min(1, f / 0.5));
-    pitch = 0.08; neck = 0.15;
-  } else if (A.kind === 'back') { fwd(-0.06 * ease); pitch = 0.05 * Math.sin(Math.PI * k); }   // a step back to see what it turned up
-  else if (A.kind === 'peer') { pitch = -0.25 * Math.sin(Math.PI * Math.min(1, k * 2)); neck = -0.45 * Math.min(1, k * 3); HEN.tiltT = 0.5; }   // one eye to the ground
-  else if (A.kind === 'peck') {   // quick strikes at the ground: the body leans, the neck bends right down
-    const f = (HEN.t / 0.24) % 1, d = f < 0.35 ? f / 0.35 : 1 - (f - 0.35) / 0.65, e = d * d * (3 - 2 * d);
+  if (!HEN.act) { HEN.act = HEN.queue.shift(); HEN.t = 0; if (HEN.act.kind === 'walk') HEN.act.dur = HEN.act.steps * STRIDE_T / 2; if (HEN.act.kind === 'turn') { HEN.act.yaw0 = HEN.yaw; HEN.act.d = angTo(HEN.yaw, HEN.act.a); HEN.act.dur = Math.max(0.36, Math.abs(HEN.act.d) / 2.4); } }
+  const A = HEN.act; HEN.t += dt; const k = Math.min(1, HEN.t / A.dur);
+  let pitch = 0, roll = 0, neck = 0, headX = 0, headY = 0, by = 0, bz = 0, stepping = false, v = 0;
+  if (A.kind === 'walk' || A.kind === 'turn') {
+    stepping = true; v = A.kind === 'walk' ? A.v : 0;
+    if (A.kind === 'turn') HEN.yaw = A.yaw0 + A.d * ease(k);
+    HEN.x += Math.cos(HEN.yaw) * v * dt; HEN.z -= Math.sin(HEN.yaw) * v * dt; HEN.phase += dt / STRIDE_T;
+  } else if (A.kind === 'scratch') {   // four strokes, each raking backwards: one foot, the other twice, the first again; it leans over the other foot
+    const s = HEN.t / 0.27, i = Math.min(3, Math.floor(s)), f = s - Math.floor(s), left = [1, 0, 0, 1][i];
+    const fx = f < 0.35 ? 0.03 * f / 0.35 : 0.03 - 0.11 * (f - 0.35) / 0.65, fy = 0.022 * Math.sin(Math.PI * Math.min(1, f / 0.5));
+    HEN.feet = left ? [fx, fy, 0, 0] : [0, 0, fx, fy]; pitch = 0.08; neck = 0.15; bz = left ? -0.01 : 0.01; roll = left ? 0.05 : -0.05;
+  } else if (A.kind === 'peer') { pitch = -0.25 * Math.sin(Math.PI * Math.min(1, k * 2)); neck = -0.45 * Math.min(1, k * 3); HEN.tiltT = 0.5; }   // one eye to the ground
+  else if (A.kind === 'peck') {   // quick strikes at the ground: the body leans about its hips, the neck bends right down, the feet stay
+    const f = (HEN.t / 0.24) % 1, d = f < 0.35 ? f / 0.35 : 1 - (f - 0.35) / 0.65, e = ease(d);
     pitch = -0.6 * e; neck = -1.3 * e; HEN.tiltT = 0;
-  } else if (A.kind === 'turn') HEN.yaw = HEN.from.yaw + (A.a - HEN.from.yaw) * ease;
-  else if (A.kind === 'stand') { headY = 0.015; if (HEN.t > A.dur * 0.3 && !A.looked) { A.looked = true; HEN.lookT = rnd(-0.8, 0.8); HEN.tiltT = rnd(-0.35, 0.35); } }
-  if (k >= 1) { HEN.act = null; HEN.lookT = Math.random() < 0.3 ? rnd(-0.6, 0.6) : 0; }
+  } else if (A.kind === 'stand') { headY = 0.015; if (HEN.t > A.dur * 0.3 && !A.looked) { A.looked = true; HEN.lookT = rnd(-0.8, 0.8); HEN.tiltT = rnd(-0.35, 0.35); } }
+  if (stepping) {
+    // each foot: down for 60 % of the stride, moving back under the body exactly as fast as the body goes (so it stays put
+    // on the ground), then up, clearing the ground, and forward to land ahead; the two feet half a stride apart
+    const a = Math.max(0.006, Math.abs(v) * STRIDE_T * DUTY / 2) * (v < 0 ? -1 : 1), foot = ph => {
+      const p = ((ph % 1) + 1) % 1; if (p < DUTY) return [a - 2 * a * p / DUTY, 0];
+      const s = (p - DUTY) / (1 - DUTY); return [-a + 2 * a * ease(s), 0.024 * Math.sin(Math.PI * s)]; };
+    const L = foot(HEN.phase), R = foot(HEN.phase + 0.5); HEN.feet = [L[0], L[1], R[0], R[1]];
+    // the body rides over the standing leg (highest mid-stance, lowest when both feet are down) and sways over it
+    const ps = (HEN.phase * 2) % 1; by = -0.007 * Math.cos(Math.PI * 2 * ps) * (v ? 1 : 0.4);
+    bz = 0.008 * Math.cos(Math.PI * 2 * (HEN.phase - DUTY / 2)); roll = -0.04 * Math.cos(Math.PI * 2 * (HEN.phase - DUTY / 2)); pitch = v > 0 ? -0.05 : 0;
+    // the head holds still in space while the body passes, then thrusts ahead: one bob a step
+    if (v > 0) { const step = v * STRIDE_T / 2; headX = ps < 0.62 ? 0.012 - step * ps : 0.012 - step * 0.62 + step * 0.62 * ease((ps - 0.62) / 0.38); }
+  } else if (A.kind !== 'scratch') { HEN.feet = HEN.feet.map(f => f * Math.max(0, 1 - dt * 10)); }   // the feet set down square
+  if (k >= 1) { HEN.act = null; HEN.lookT = Math.random() < 0.3 ? rnd(-0.6, 0.6) : 0; if (stepping) HEN.phase = Math.round(HEN.phase * 2) / 2; }
   // the head turns and tilts in quick moves, then holds
   HEN.look += (HEN.lookT - HEN.look) * Math.min(1, dt * 12); HEN.tilt += (HEN.tiltT - HEN.tilt) * Math.min(1, dt * 12);
   HEN.u.uHeadR.value.setFromMatrix4(_m4.makeRotationFromEuler(_e.set(HEN.tilt, HEN.look, neck, 'YXZ')));
-  HEN.u.uHeadT.value.set(headX, headY, 0); HEN.u.uBodyR.value.setFromMatrix4(_m4.makeRotationZ(pitch));
-  HEN.u.uFootL.value.set(foot[0], foot[1], 0); HEN.u.uFootR.value.set(foot[2], foot[3], 0);
+  HEN.u.uHeadT.value.set(headX, headY, 0); HEN.u.uBodyR.value.setFromMatrix4(_m4.makeRotationFromEuler(_e.set(roll, 0, pitch, 'XYZ'))); HEN.u.uBodyT.value.set(0, by, bz);
+  HEN.u.uFootL.value.set(HEN.feet[0], HEN.feet[1], 0); HEN.u.uFootR.value.set(HEN.feet[2], HEN.feet[3], 0);
   PETS.chicken.position.set(HEN.x, -0.12, HEN.z); PETS.chicken.rotation.y = HEN.yaw;
   PETS.henShadow.position.set(HEN.x + Math.cos(HEN.yaw) * 0.02, -0.116, HEN.z - Math.sin(HEN.yaw) * 0.02); PETS.henShadow.rotation.z = HEN.yaw;
 }
@@ -2958,11 +3078,12 @@ function drawPets() {
   if (!PETS.ok) return;
   const t = clock.getElapsedTime(), dt = Math.min(0.1, Math.max(0, t - PETS.last)); PETS.last = t;
   if (!reduceMotion) { stepCat(t, dt); if (PETS.chicken && PETS.chicken.visible) stepHen(dt); }
+  else if (CAT.mode === 'trip') settle(CAT.trip.to);
   const W = OVER.u.uRes.value.x, H = OVER.u.uRes.value.y, pr = renderer.getPixelRatio();
   let x0 = W, y0 = H, x1 = 0, y1 = 0, any = false;
   const add = (cx, cy, cz, rx, ry, rz) => { for (let i = 0; i < 8; i++) { const v = SHARP.v.set(cx + (i & 1 ? rx : -rx), cy + (i & 2 ? ry : 0), cz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
     any = true; const px = (v.x + 1) / 2 * W, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } };
-  const hp = PETS.holder.position; add(hp.x, hp.y - 0.02, hp.z, 0.48, 0.42, 0.48);
+  const hp = PETS.holder.position; add(hp.x, hp.y - 0.04, hp.z, 0.5, 0.52, 0.5);
   if (PETS.chicken && PETS.chicken.visible) add(HEN.x, -0.14, HEN.z, 0.3, 0.52, 0.3);
   if (!any) return;
   x0 = Math.max(0, Math.floor(x0) - 4); y0 = Math.max(0, Math.floor(y0) - 4); x1 = Math.min(W, Math.ceil(x1) + 4); y1 = Math.min(H, Math.ceil(y1) + 4);
@@ -2976,7 +3097,8 @@ function drawPets() {
   const cx = (x0 + x1) / W - 1, cy = (y0 + y1) / H - 1, sx = W / w, sy = H / h, C = SHARP.cam;
   C.projectionMatrix.set(sx, 0, 0, -sx * cx, 0, sy, 0, -sy * cy, 0, 0, 1, 0, 0, 0, 0, 1).multiply(camera.projectionMatrix);
   C.projectionMatrixInverse.copy(C.projectionMatrix).invert(); camera.matrixWorld.decompose(C.position, C.quaternion, C.scale); C.updateMatrixWorld(true);
-  DECKR.u.uFull.value.set(W, H); DECKR.u.uOff.value.set(x0, y0); SHARP.exp.value = POST.mat.uniforms.exposure.value;
+  DECKR.u.uFull.value.set(W, H); DECKR.u.uOff.value.set(x0, y0);
+  const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
   const cc = renderer.getClearColor(_c), ca = renderer.getClearAlpha();
   SHARP.rt.viewport.set(0, 0, w, h); SHARP.rt.scissor.set(0, 0, w, h); SHARP.rt.scissorTest = true;
   renderer.setRenderTarget(SHARP.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, C);
