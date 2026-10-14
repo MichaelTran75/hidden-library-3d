@@ -1172,6 +1172,7 @@ function candleJar() {
 }
 /* ---------------------------------------------------------------- outside */
 const outside = new THREE.Group(); scene.add(outside);
+const LEFT_KEEP = 0.65;   // the share of their leaves the trees and shrubs past the left glass keep (G, 14/10/2026: 35 % fewer)
 function buildOutside(assets) {
   // ground: lawn + patio
   const gc = canvas(512, 512), gg = gc.getContext('2d'); const id = gg.createImageData(512, 512);
@@ -1250,14 +1251,16 @@ function buildOutside(assets) {
     const a = az * Math.PI / 180, h = REF.eye.y + 0.12 + d * Math.tan(top * Math.PI / 180);
     spots[k].push({ x: -Math.sin(a) * d, z: -Math.cos(a) * d, s: h / (dims[k].top * T[k].scale), ry, near: true });
   }
-  // far trees get a thinned leaf LOD (fewer, larger leaf cards)
+  // far trees get a thinned leaf LOD (fewer, larger leaf cards); past the left glass every tree keeps LEFT_KEEP of its
+  // leaves (the same cards less a third: the garden there had crowded the view out)
   const cx = (R.xL + R.xW) / 2, cz = (R.zB + R.zF) / 2;
-  for (const k of ['A', 'B', 'C']) for (const p of spots[k]) p.far = !p.near && Math.hypot(p.x - cx, (p.z - cz) * 0.8) > 17;
+  for (const k of ['A', 'B', 'C']) for (const p of spots[k]) { p.far = !p.near && Math.hypot(p.x - cx, (p.z - cz) * 0.8) > 17; p.thin = p.x < R.xL; }
   for (const k of ['A', 'B', 'C']) {
-    for (const far of [false, true]) {
-      const list = spots[k].filter(p => p.far === far); if (!list.length) continue;
+    for (const far of [false, true]) for (const thin of [false, true]) {
+      const list = spots[k].filter(p => p.far === far && p.thin === thin); if (!list.length) continue;
       for (const part of T[k].parts) {
-        const geo = far && part.leaf ? (part.lod ||= lodLeaves(part.geometry, k === 'A' ? 0.55 : 0.4, k === 'A' ? 1.2 : 1.32)) : part.geometry;
+        const lods = part.lods ||= {}, key = (far ? 'far' : 'near') + (thin ? '-thin' : '');
+        const geo = part.leaf && (far || thin) ? (lods[key] ||= lodLeaves(part.geometry, (far ? (k === 'A' ? 0.55 : 0.4) : 1) * (thin ? LEFT_KEEP : 1), far ? (k === 'A' ? 1.2 : 1.32) : 1)) : part.geometry;
         const im = new THREE.InstancedMesh(geo, part.material, list.length);
         list.forEach((p, i) => { const m = new THREE.Matrix4().compose(new THREE.Vector3(p.x, -0.12, p.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, p.ry, 0)), new THREE.Vector3().setScalar(T[k].scale * p.s)); im.setMatrixAt(i, m); });
         im.frustumCulled = false; outside.add(im);
@@ -1286,7 +1289,7 @@ function buildOutside(assets) {
   // shrubs right outside the glass
   const leafMat = T.A.parts.find(p => p.leaf).material;
   for (const [x, z, sc] of [[-2.0, -1.0, 1.2], [-2.2, -6.0, 1.1], [-2.5, -8.3, 1.4], [-1.9, 1.3, 1.0], [-4.8, -4.6, 0.9], [-5.0, -7.4, 1.3], [-4.6, -0.6, 1.0], [-0.4, -9.9, 1.3], [1.3, -9.8, 1.1], [2.8, -10.1, 1.2], [-1.9, -10.2, 1.3], [-3.6, -9.5, 1.2], [-0.8, 3.6, 1.1], [1.8, 3.9, 1.0], [-6.2, -10.8, 1.5], [-6.8, 0.2, 1.4], [-6.6, -3.2, 1.3], [4.2, -12.4, 1.4]])
-    if (!unseen(x, z, 1.6 * sc)) outside.add(shrub(x, z, sc, leafMat));
+    if (!unseen(x, z, 1.6 * sc)) outside.add(shrub(x, z, sc, leafMat, x < R.xL ? Math.floor(90 * LEFT_KEEP) : 90));
 }
 function lodLeaves(geo, keep, grow, seed = 5) {
   // drop whole leaf cards (connected by index) and enlarge the survivors around their own centre. A card is kept or
@@ -1305,8 +1308,9 @@ function lodLeaves(geo, keep, grow, seed = 5) {
   for (let i = 0; i < n; i++) { const root = find(i); if (!kept.get(root)) continue; const s = sum.get(root), cx = s[0] / s[3], cy = s[1] / s[3], cz = s[2] / s[3]; p2.setXYZ(i, cx + (p2.getX(i) - cx) * grow, cy + (p2.getY(i) - cy) * grow, cz + (p2.getZ(i) - cz) * grow); }
   g.setIndex(out); return g;
 }
-function shrub(x, z, s, mat) {   // cards of A's first sprig, stem down (the old GLB texture showed it that way up)
-  const n = 90; const q = new THREE.PlaneGeometry(0.5625, 0.9); q.translate(0, 0.45, 0);
+function shrub(x, z, s, mat, n = 90) {   // cards of A's first sprig, stem down (the old GLB texture showed it that way up); fewer
+  // cards keep the first n of the same draw, so a thinned shrub is the same shrub less some leaves
+  const q = new THREE.PlaneGeometry(0.5625, 0.9); q.translate(0, 0.45, 0);
   const uv = q.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.5, 1 - uv.getY(i));
   const im = new THREE.InstancedMesh(q, mat, n); const r = rng(Math.floor(x * 100 + z * 7 + 999)); const m = new THREE.Matrix4();
   for (let i = 0; i < n; i++) { const a = r() * Math.PI * 2, u = r(), rad = Math.sqrt(u) * 1.0 * s, h = Math.sqrt(Math.max(0, 1 - u)) * 1.3 * s * (0.4 + 0.6 * r()); const sc = (0.75 + r() * 0.6) * s;
