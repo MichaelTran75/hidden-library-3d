@@ -1085,7 +1085,7 @@
      'examples/jsm/utils/BufferGeometryUtils.js', 'examples/jsm/postprocessing/Pass.js'].forEach(function (u) {
       var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = 'https://cdn.jsdelivr.net/npm/three@0.170.0/' + u; document.head.appendChild(l);
     });
-    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=46b3cc993f'; document.head.appendChild(p);
+    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=eeca954c63'; document.head.appendChild(p);
   }
   // the room replaces the painted backgrounds: drop them before anything paints, so they are never downloaded
   (function () {
@@ -3120,14 +3120,17 @@
   - "Tree" by SomeKevin - https://sketchfab.com/3d-models/tree-66a8d0ef9b49415a9eaf6af216cb9bce
   - "Stylized Tree" by yonimantz - https://sketchfab.com/3d-models/stylized-tree-6d1aeea748f147789004bc03e1930d32
   - "Platano Tree" by gelmi.com.br - https://sketchfab.com/3d-models/platano-tree-ef48485b7c534acc905c0d9964c5fe7c
-  The cat and the chicken (pets.glb: re-posed in code, decimated, re-materialled, compressed):
-  - "Animated cat" by xman - https://sketchfab.com/3d-models/animated-cat-dfda55ca3d494fcabf96d020b1256447 (CC BY 4.0; coat
-    recoloured, re-posed and animated in code)
-  - "Chicken" by pooiloui2 - https://sketchfab.com/3d-models/chicken-98830a78e8c54354a7fbe5ca8346fbf9 (CC BY 4.0)
+  The cat and the chicken:
+  - "cat" by artofaria - https://sketchfab.com/3d-models/cat-7e8cbcad506041dc9c3a0cb74edb3360 (Sketchfab Free Standard
+    licence, https://sketchfab.com/licenses; rigged, re-materialled, posed and animated in code). Under that licence the
+    model may not be extracted from this page, republished, retransmitted or reproduced; cat.bin is not a model file.
+  - "Chicken" by pooiloui2 - https://sketchfab.com/3d-models/chicken-98830a78e8c54354a7fbe5ca8346fbf9 (CC BY 4.0;
+    decimated, re-materialled, compressed; hen.glb)
   Architecture, shelves and shelf books, pouf, bolsters, rug, lamps, plants and trees are built in code.
 -->
 <script id="lib-glb" type="application/octet-stream" data-src="lib.glb"></script>
-<script id="pets-glb" type="application/octet-stream" data-src="pets.glb"></script>
-<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=46b3cc993f'; document.body.appendChild(m); }</script>
+<script id="cat-bin" type="application/octet-stream" data-src="cat.bin"></script>
+<script id="hen-glb" type="application/octet-stream" data-src="hen.glb"></script>
+<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=eeca954c63'; document.body.appendChild(m); }</script>
 </body>
 </html>

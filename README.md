@@ -4,7 +4,7 @@ The Hidden Library audiobook page as a 3D reading room: shelf sections with labe
 
 **Live:** https://michaeltran75.github.io/hidden-library-3d/
 
-- `index.html`: the page (three.js 0.170 from jsDelivr); `lib3d.js`: the 3D room (a module, fetched only on screens that show the room); `lib.glb`: the room's models, loaded next to it; `pets.glb`: the cat and the chicken, fetched once the room shows.
+- `index.html`: the page (three.js 0.170 from jsDelivr); `lib3d.js`: the 3D room (a module, fetched only on screens that show the room); `lib.glb`: the room's models, loaded next to it; `cat.bin` and `hen.glb`: the cat and the chicken, fetched once the room shows.
 - Built from `3D Library ver 01/src` (`build.py --pages`); publish with `./publish.sh "message"`.
 - Phones (≤ 768 px) and browsers without WebGL 2 get the original card layout.
 
@@ -26,7 +26,7 @@ The garden's trees are rebuilt in code from measurements of these CC BY 4.0 mode
 
 Architecture, shelves and shelf books, pouf, bolsters, rug, lamps, plants and trees are built in code.
 
-The cat and the chicken (`pets.glb`: re-posed in code, decimated, re-materialled, compressed):
+The cat and the chicken:
 
-- "Animated cat" by xman: https://sketchfab.com/3d-models/animated-cat-dfda55ca3d494fcabf96d020b1256447 (CC BY 4.0; coat recoloured, re-posed and animated in code)
-- "Chicken" by pooiloui2: https://sketchfab.com/3d-models/chicken-98830a78e8c54354a7fbe5ca8346fbf9 (CC BY 4.0)
+- "cat" by artofaria: https://sketchfab.com/3d-models/cat-7e8cbcad506041dc9c3a0cb74edb3360 (Sketchfab Free Standard licence, https://sketchfab.com/licenses; rigged, re-materialled, posed and animated in code). Under that licence the model may not be extracted from this site, republished, retransmitted or reproduced: `cat.bin` is not a model file.
+- "Chicken" by pooiloui2: https://sketchfab.com/3d-models/chicken-98830a78e8c54354a7fbe5ca8346fbf9 (CC BY 4.0; decimated, re-materialled, compressed: `hen.glb`)
