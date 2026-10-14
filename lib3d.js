@@ -2753,9 +2753,11 @@ function buildFireflies() {
    at rest, keeps the speed a bone already had, and needs no blend time fixed in advance.
    Its gait follows measurements of walking cats: a lateral sequence (left hind, left fore, right hind, right fore, a
    quarter of a stride apart), each paw down about 60 % of the stride (Zubair et al. 2016); a swing that lasts about
-   as long at every speed, a faster cat shortening the stance instead (Halbertsma 1983); and a hind paw that comes down
-   where the forepaw on its side stood ("direct register"), which sets the stride at 4/3 of the distance between the
-   fore and hind paws: 0.27 m here, in 0.6 s (0.44 m/s, the walk of a small cat by its leg length). Walking, its head is
+   as long at every speed, a faster cat shortening the stance instead (Halbertsma 1983); a body carried a little lower
+   as it walks (cats walk crouched: Bishop et al. 2008). How far a paw sweeps under the body is what its leg can reach:
+   measured on the skeleton (each paw's sweep centred under its shoulder or hip, the shortest leg, the forearm, setting
+   it), so no leg is ever pulled straight (a leg stretched past its reach drags its skin into a thin stick). For this
+   short-legged cat that is a stride of ~0.16 m in 0.6 s. Walking, its head is
    held steady and a little nose-down while the trunk rises and falls twice a stride and sways once (Zubair et al.);
    its shoulder blades ride up over each forepaw in stance; its tail, carried up, follows the body as a damped chain. */
 const CATR = { bones: {}, rest: null, body: null, mesh: null, ground: null, gaze: null, poses: {}, legs: null, S: null, scale: 1.25, tail: null };
@@ -2879,8 +2881,16 @@ function catLegs() {
     CATR.legs[f] = { up, mid, end, toe, hind: !!hind, l1: A.distanceTo(K), l2: K.distanceTo(J), home: contact.clone(), jo: J.clone().sub(contact),
       dEnd: (toe ? ball.clone().sub(J) : tip.clone().sub(J)).normalize(), dToe: toe ? tip.clone().sub(ball).normalize() : null, scap: hind ? null : B['scap_' + s] };
   }
-  const L = CATR.legs;   // the stride that puts a hind paw where the forepaw stood
-  CGAIT.sref = (L.lf.home.z - L.lh.home.z) * 4 / 3; CGAIT.vref = CGAIT.sref / CGAIT.Tref; CGAIT.sst = CGAIT.sref * (1 - CGAIT.tsw / CGAIT.Tref);
+  // the stride its legs can make: each paw's sweep centred under its shoulder or hip, as far either way as the leg reaches
+  // (93 % of it, never straight) with the body lowered by the walk's crouch; the shortest sets it
+  let half = Infinity;
+  for (const L of Object.values(CATR.legs)) {
+    const A = cwp(L.up), J = L.home.clone().add(L.jo), c = J.z - A.z;
+    L.home.z -= c;   // (the paw's home moved under the joint above it)
+    const h = A.y - J.y - CGAIT.crouch, R = 0.93 * (L.l1 + L.l2);
+    half = Math.min(half, Math.sqrt(Math.max(0, R * R - h * h)));
+  }
+  CGAIT.sst = 2 * 0.9 * half; CGAIT.sref = CGAIT.sst / (1 - CGAIT.tsw / CGAIT.Tref); CGAIT.vref = CGAIT.sref / CGAIT.Tref;
 }
 /* ---- reach: a leg to a paw on the ground, by two-bone inverse kinematics (thigh and shin to the hock, upper arm and
    forearm to the wrist; the knee bending forward, the elbow back), the foot down to the pad and the toes ahead; a paw in
@@ -2888,7 +2898,7 @@ function catLegs() {
 function catReach(f, P, curl, yawQ) {
   const L = CATR.legs[f], fwd = _c5.set(0, 0, 1).applyQuaternion(yawQ), up = C_AX.y;
   const J = L.jo.clone().applyQuaternion(yawQ);
-  if (curl > 0) J.applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(yawQ), (L.hind ? -0.35 : -0.55) * curl);   // the joint above swings back as the paw lifts
+  if (curl > 0) J.applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(yawQ), (L.hind ? -0.25 : -0.3) * curl);   // the joint above swings back as the paw lifts
   J.add(P);
   L.up.updateWorldMatrix(true, false); const A = cwp(L.up), u = J.clone().sub(A);
   const d = Math.min(Math.max(u.length(), Math.abs(L.l1 - L.l2) + 1e-4), L.l1 + L.l2 - 1e-4); u.normalize();
@@ -2897,13 +2907,13 @@ function catReach(f, P, curl, yawQ) {
   const K = A.clone().addScaledVector(u, ca).addScaledVector(n, hh);
   catAim(L.up, K.clone().sub(A)); catAim(L.mid, J.clone().sub(K));
   const dEnd = L.dEnd.clone().applyQuaternion(yawQ);
-  if (curl > 0) dEnd.applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(yawQ), (L.hind ? 0.5 : 1.25) * curl);   // the paw folds under
+  if (curl > 0) dEnd.applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(yawQ), (L.hind ? 0.35 : 0.7) * curl);   // the paw folds under
   catAim(L.end, dEnd);
-  if (L.toe) { const dt = L.dToe.clone().applyQuaternion(yawQ); if (curl > 0) dt.applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(yawQ), 0.8 * curl); catAim(L.toe, dt); }
+  if (L.toe) { const dt = L.dToe.clone().applyQuaternion(yawQ); if (curl > 0) dt.applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(yawQ), 0.5 * curl); catAim(L.toe, dt); }
 }
 /* ---- the gait: where each paw is. A paw in stance stays where it came down; a paw in swing lifts, clears the ground and
    comes down where its home under the body will be when it lands, half a stance ahead of it. */
-const CGAIT = { Tref: 0.6, tsw: 0.24, off: { lh: 0, lf: 0.25, rh: 0.5, rf: 0.75 }, lift: 0.022, sref: 0.27, vref: 0.45, sst: 0.16 };
+const CGAIT = { Tref: 0.6, tsw: 0.24, off: { lh: 0, lf: 0.25, rh: 0.5, rf: 0.75 }, lift: 0.022, crouch: 0.02, sref: 0.16, vref: 0.27, sst: 0.1 };
 function catGait(G, dt, v, w) {   // G: { x, z, yaw, y (the ground), phase, feet }; v its speed (m/s), w its turning (rad/s)
   const L = CATR.legs, moving = Math.abs(v) > 0.004 || Math.abs(w) > 0.05;
   const ve = Math.max(Math.abs(v), Math.abs(w) * 0.1, 0.1);   // the pace its steps keep (turning on the spot too)
@@ -2933,14 +2943,14 @@ function catGait(G, dt, v, w) {   // G: { x, z, yaw, y (the ground), phase, feet
 function catStride(G, k) {
   if (k <= 0) return;
   const p = G.phase, B = CATR.bones, body = CATR.body;
-  body.position.y += -0.0035 * Math.cos(4 * Math.PI * (p - 0.08)) * k;
+  body.position.y += (-CGAIT.crouch - 0.003 * Math.cos(4 * Math.PI * (p - 0.08))) * k;   // a little crouched, rising and falling
   body.position.x += 0.003 * Math.sin(2 * Math.PI * (p - 0.15)) * k;
   body.quaternion.multiply(_cq4.setFromEuler(new THREE.Euler(0.018 * Math.sin(4 * Math.PI * (p - 0.2)) * k, 0, 0.028 * Math.sin(2 * Math.PI * (p - 0.15)) * k)));
   body.updateMatrixWorld(true);
   const side = catAxis('x', new THREE.Vector3()), upw = catAxis('y', new THREE.Vector3());
   catTurn(B.chest, _cq4.setFromAxisAngle(upw, 0.045 * Math.sin(2 * Math.PI * (p - 0.3)) * k));   // the trunk bends a little toward the reaching forepaw
   for (const [f, s] of [['lf', '_L'], ['rf', '_R']]) {   // a shoulder blade: forward as its paw swings, back and up over it in stance
-    const q = (((p + CGAIT.off[f]) % 1) + 1) % 1, a = q < G.beta ? -0.12 + 0.24 * q / G.beta : 0.12 - 0.24 * (q - G.beta) / (1 - G.beta);
+    const q = (((p + CGAIT.off[f]) % 1) + 1) % 1, a = q < G.beta ? -0.06 + 0.12 * q / G.beta : 0.06 - 0.12 * (q - G.beta) / (1 - G.beta);
     catTurn(B['scap' + s], _cq4.setFromAxisAngle(side, a * k));
   }
 }
@@ -3426,7 +3436,8 @@ function moveCat(t, dt, night) {
   // the holder: where it is and which way it faces; the body over it, pitched and lowered as wished
   H.position.set(G.x, G.y, G.z); H.rotation.set(0, G.yaw, 0);
   const sl = CAT.sigh > 0 ? 1 + 1.4 * Math.sin(Math.PI * CAT.sigh) : 1, br = Math.sin(t * Math.PI * 2 * (night ? 0.3 : 0.38)) * sl;   // breaths: ~23 a minute awake, 18 asleep
-  H.scale.set(1 + (night ? 0.012 : 0.008) * br, 1 + (night ? 0.016 : 0.01) * br, 1); H.updateMatrixWorld(true);
+  const bk = 1 - CAT.ikW;   // (not while it stands or walks: the whole body swelling would thicken and thin its legs)
+  H.scale.set(1 + (night ? 0.012 : 0.008) * br * bk, 1 + (night ? 0.016 : 0.01) * br * bk, 1); H.updateMatrixWorld(true);
   const body = CATR.body;
   if (W.pitch || W.roll) body.quaternion.multiply(_q.setFromEuler(_e3.set(W.pitch, 0, W.roll)));
   body.position.y += W.dy; body.position.x += W.sway + 0.009 * W.wiggle;
@@ -3523,11 +3534,12 @@ const HEN_ACTS = {
 function henPlan() {   // what it does next: forage (scratch, step back, look, peck), wander, or stand and look about
   const A = HEN_AREA, inside = HEN.x > A.x0 + 0.12 && HEN.x < A.x1 - 0.12 && HEN.z > A.z0 + 0.12 && HEN.z < A.z1 - 0.12;
   if (!inside) { const cx = (A.x0 + A.x1) / 2 + rnd(-0.15, 0.15), cz = (A.z0 + A.z1) / 2 + rnd(-0.2, 0.2); return [HEN_ACTS.turn(Math.atan2(-(cz - HEN.z), cx - HEN.x)), HEN_ACTS.walk(4)]; }
-  // (pecking only now and then, G 14/10/2026: about a quarter as often as before, more walking and looking about)
+  // (pecking only now and then, G 14/10/2026, twice over: about a tenth as often as at first; more walking, standing
+  // and looking about)
   const r = Math.random();
-  if (r < 0.28) return [HEN_ACTS.scratch(), HEN_ACTS.back(), HEN_ACTS.peer(), ...(Math.random() < 0.6 ? [HEN_ACTS.peck(1 + Math.floor(rnd(0, 2)))] : [])];
-  if (r < 0.58) return [HEN_ACTS.walk(2 + 2 * Math.floor(rnd(0, 3))), Math.random() < 0.35 ? HEN_ACTS.peck(1) : HEN_ACTS.peer()];
-  if (r < 0.78) return [HEN_ACTS.turn(HEN.yaw + rnd(-1.4, 1.4)), HEN_ACTS.walk(2 + 2 * Math.floor(rnd(0, 2)))];
+  if (r < 0.18) return [HEN_ACTS.scratch(), HEN_ACTS.back(), HEN_ACTS.peer(), ...(Math.random() < 0.4 ? [HEN_ACTS.peck(1)] : [])];
+  if (r < 0.5) return [HEN_ACTS.walk(2 + 2 * Math.floor(rnd(0, 3))), Math.random() < 0.15 ? HEN_ACTS.peck(1) : HEN_ACTS.stand()];
+  if (r < 0.72) return [HEN_ACTS.turn(HEN.yaw + rnd(-1.4, 1.4)), HEN_ACTS.walk(2 + 2 * Math.floor(rnd(0, 2)))];
   return [HEN_ACTS.stand(), HEN_ACTS.stand()];
 }
 const STRIDE_T = 0.72, DUTY = 0.6;   // a stride (two steps) and the part of it a foot is down
@@ -3545,7 +3557,7 @@ function stepHen(dt) {
     const s = HEN.t / 0.27, i = Math.min(3, Math.floor(s)), f = s - Math.floor(s), left = [1, 0, 0, 1][i];
     const fx = f < 0.35 ? 0.03 * f / 0.35 : 0.03 - 0.11 * (f - 0.35) / 0.65, fy = 0.022 * Math.sin(Math.PI * Math.min(1, f / 0.5));
     HEN.feet = left ? [fx, fy, 0, 0, 0, 0] : [0, 0, fx, fy, 0, 0]; pitch = 0.08; neck = 0.15; bz = left ? -0.01 : 0.01; roll = left ? 0.05 : -0.05;
-  } else if (A.kind === 'peer') { pitch = -0.25 * Math.sin(Math.PI * Math.min(1, k * 2)); neck = -0.45 * Math.min(1, k * 3); HEN.tiltT = 0.5; }   // one eye to the ground
+  } else if (A.kind === 'peer') { pitch = -0.12 * Math.sin(Math.PI * Math.min(1, k * 2)); neck = -0.25 * Math.min(1, k * 3); HEN.tiltT = 0.5; }   // one eye to the ground (a glance, not a bow)
   else if (A.kind === 'peck') {   // quick strikes at the ground: the body leans about its hips, the neck bends right down, the feet stay
     const f = (HEN.t / 0.24) % 1, d = f < 0.35 ? f / 0.35 : 1 - (f - 0.35) / 0.65, e = ease(d);
     pitch = -0.6 * e; neck = -1.3 * e; HEN.tiltT = 0;
