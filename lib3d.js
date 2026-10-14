@@ -2020,14 +2020,20 @@ function bakePaper(w, h) {   // the screen-fixed noise of the paint pass, for th
    be watercolour: its colours wobbled by the paper, Kuwahara-smoothed (radius 2, the strokes as wide as the picture's),
    brown ink on its colour and cover edges, pigment granulation, wet-in-wet blotches and the paper's grain, all from the
    same baked paper noise at the same screen place as the picture's. The user defines vec4 shadeAt(vec2 uv) after it: the
-   layer as shown (display colour, cover) at a point of its target. uStep: the stroke step, in the target's pixels. */
+   layer as shown (display colour, cover) at a point of its target. uStep: the stroke step, in the target's pixels.
+   From watercolour rendering research (Montesdeoca et al., "Art-directed watercolor rendered animation", 2016, and
+   "Edge- and substrate-based effects for watercolor stylization", NPAR 2017): pigment gathers at the edges of a wash
+   (edge darkening, from a difference of the wash and its blur), settles in the paper's valleys the more the darker it
+   is (granulation), and a dry brush leaves the paper's tops bare along a wash's edge. And from painters: "lost and found"
+   edges, the busiest detail kept crisper and the plain washes let go (paintAt's detail: how busy the place is). */
 const PAINT_GLSL = `uniform sampler2D tN1, tN2; uniform vec2 uCanvas, uTexel; uniform float uStep; vec4 shadeAt(vec2 uv);
-  vec4 paintAt(vec2 uv) {
+  vec4 paintAt(vec2 uv, out float detail) {
     vec2 sp = gl_FragCoord.xy / uCanvas; vec4 n1 = texture2D(tN1, sp), n2 = texture2D(tN2, sp);
     vec2 d = uTexel * uStep, uvw = uv + (n1.xy - 0.5) * d * 2.8;
-    vec4 m0 = vec4(0.0), m1 = vec4(0.0), m2 = vec4(0.0), m3 = vec4(0.0); vec3 s0 = vec3(0.0), s1 = vec3(0.0), s2 = vec3(0.0), s3 = vec3(0.0);
+    vec4 m0 = vec4(0.0), m1 = vec4(0.0), m2 = vec4(0.0), m3 = vec4(0.0), blr = vec4(0.0), mid = vec4(0.0); vec3 s0 = vec3(0.0), s1 = vec3(0.0), s2 = vec3(0.0), s3 = vec3(0.0);
     for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
       vec4 c = shadeAt(uvw + vec2(float(i), float(j)) * d); vec3 pc = c.rgb * c.a; vec4 q = vec4(pc, c.a); vec3 qq = pc * pc;
+      blr += q; if (i == 0 && j == 0) mid = q;
       if (i <= 0 && j <= 0) { m0 += q; s0 += qq; } if (i >= 0 && j <= 0) { m1 += q; s1 += qq; }
       if (i <= 0 && j >= 0) { m2 += q; s2 += qq; } if (i >= 0 && j >= 0) { m3 += q; s3 += qq; } }
     vec4 best = m0 / 9.0; vec3 v = abs(s0 / 9.0 - best.rgb * best.rgb); float bv = v.r + v.g + v.b, sv;
@@ -2035,6 +2041,8 @@ const PAINT_GLSL = `uniform sampler2D tN1, tN2; uniform vec2 uCanvas, uTexel; un
     mu = m2 / 9.0; v = abs(s2 / 9.0 - mu.rgb * mu.rgb); sv = v.r + v.g + v.b; if (sv < bv) { bv = sv; best = mu; }
     mu = m3 / 9.0; v = abs(s3 / 9.0 - mu.rgb * mu.rgb); sv = v.r + v.g + v.b; if (sv < bv) { bv = sv; best = mu; }
     float a = best.a; vec3 col = a > 0.002 ? best.rgb / a : vec3(0.0);
+    detail = bv;   // the calmest quarter's spread: high only where the place is busy all round (a label, small parts)
+    blr /= 25.0; float dog = length(mid.rgb - blr.rgb) + abs(mid.a - blr.a) * 0.5;   // the wash against its blur
     vec4 a1 = shadeAt(uvw + vec2(1.5, 0.0) * d), a2 = shadeAt(uvw - vec2(1.5, 0.0) * d), a3 = shadeAt(uvw + vec2(0.0, 1.5) * d), a4 = shadeAt(uvw - vec2(0.0, 1.5) * d);
     float ce = length(a1.rgb * a1.a - a2.rgb * a2.a) + length(a3.rgb * a3.a - a4.rgb * a4.a), ae = abs(a1.a - a2.a) + abs(a3.a - a4.a);
     float ink = max(smoothstep(0.25, 0.65, ce) * 0.38, smoothstep(0.35, 1.0, ae) * 0.6) * (0.55 + 0.6 * n1.z);
@@ -2042,9 +2050,12 @@ const PAINT_GLSL = `uniform sampler2D tN1, tN2; uniform vec2 uCanvas, uTexel; un
     col = mix(vec3(lum), col, 1.08);
     col *= 1.0 + (n1.w - 0.5) * 0.10 * (1.0 - lum) + (n2.x - 0.5) * 0.03;
     col *= 1.0 - smoothstep(0.08, 0.5, ce) * 0.10;
+    col *= 1.0 - 0.26 * smoothstep(0.03, 0.22, dog);                                  // pigment gathered at the wash's edge
+    col *= 1.0 - 0.14 * (1.0 - n2.z) * (1.0 - lum);                                   // granulation: in the paper's valleys, the darker the more
     col = mix(col, col * col * 1.06 + 0.02, 0.10 + 0.1 * n2.y);   // wet-in-wet blotches
     col = mix(col, vec3(0.24, 0.17, 0.11), ink * 0.55);            // brown ink line
     col *= 0.96 + n2.z * 0.07;                                     // paper texture
+    a *= mix(1.0, smoothstep(0.32, 0.62, n2.z + a * 0.45), smoothstep(0.15, 0.6, ae) * (1.0 - smoothstep(0.85, 1.0, a)));   // a dry brush's broken edge
     return vec4(col, max(a, ink * 0.5 * step(0.05, max(max(a1.a, a2.a), max(a3.a, a4.a)))));   // (the ink may run just past the edge)
   }`;
 // the uniforms PAINT_GLSL reads, and their values for a target of w x h device pixels on a canvas of W x H
@@ -3284,7 +3295,7 @@ async function loadPets() {
         col = 1.0 - (1.0 - col) * mix(1.0, uLift, 0.75);   // most of the paper's lift: blacks as deep as the painting's
         return mix(col, col * vec3(1.02,1.0,0.95), 0.6) * (1.0 - uVeil); }
       vec4 shadeAt(vec2 uv){ vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(tone(c.rgb / c.a), c.a); }
-      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) o = mix(o, paintAt(uv), uPaint);
+      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
         if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
   // their shaders compiled in the background (for a linear target like theirs) before they appear
   scene.add(holder); if (PETS.chicken) scene.add(PETS.chicken);
@@ -3715,8 +3726,8 @@ function syncActive() {   // which book is "current" in the page's player
    the platter turns and the arm tracks the song. A click on it brings out the page's player in the left corner (or
    puts it away); the player stays hidden otherwise.
    The canvas has no depth buffer of its own, so the deck is drawn into a small multisampled target that just covers
-   it on screen (the camera's projection narrowed to that rectangle), then laid over the picture, 40 % of it painted as
-   the picture is (G, 14/10/2026: 10 %, then 30 % more; the paint pass's own steps, post.js PAINT_GLSL, so the turning
+   it on screen (the camera's projection narrowed to that rectangle), then laid over the picture, 60 % of it painted as
+   the picture is (G, 14/10/2026: 10 %, then 30 % more, then 20 % more; the paint pass's own steps, post.js PAINT_GLSL, so the turning
    label is painted as it turns). */
 const DECK = { ok: false, angle: 0, speed: 0, playing: false, progress: 0, hover: false, scene: new THREE.Scene() };
 const DECKR = { rt: null, cam: new THREE.Camera(), corners: [], u: { uDepth: OVER.u.uDepth, uFull: { value: new THREE.Vector2(1, 1) }, uOff: { value: new THREE.Vector2() } }, quad: null };
@@ -3791,13 +3802,13 @@ function buildRecordPlayer() {
   { const b = new THREE.Box3(); deck.traverse(m => { if (m.isMesh) { m.geometry.computeBoundingBox(); b.union(m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld)); } });
     const inv = deck.matrixWorld.clone().invert(); for (let i = 0; i < 8; i++) DECKR.corners.push(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(inv)); }
   DECKR.cam.matrixAutoUpdate = false;
-  DECKR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: 0.4 }, ...paintUniforms() },
+  DECKR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: 0.6 }, ...paintUniforms() },
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
     fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uPaint; varying vec2 vUv;
       ${PAINT_GLSL}
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
       vec4 shadeAt(vec2 uv) { vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(toS(c.rgb / c.a), c.a); }
-      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) o = mix(o, paintAt(uv), uPaint);
+      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
         if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
   // its contact shadow on the floor (in the room, so it is painted with it)
   { const c = canvas(128, 128), g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 6, 64, 64, 62);
