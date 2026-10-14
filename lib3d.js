@@ -2015,6 +2015,44 @@ function bakePaper(w, h) {   // the screen-fixed noise of the paint pass, for th
   for (const [rt, which] of [[POST.n1, 0], [POST.n2, 1]]) { U.which.value = which; renderer.setRenderTarget(rt); POST.bakeQuad.render(renderer); }
   renderer.setRenderTarget(null);
 }
+
+/* ---- the paint pass's own steps for a layer drawn sharp over the picture (the deck, the chicken), so some of it can
+   be watercolour: its colours wobbled by the paper, Kuwahara-smoothed (radius 2, the strokes as wide as the picture's),
+   brown ink on its colour and cover edges, pigment granulation, wet-in-wet blotches and the paper's grain, all from the
+   same baked paper noise at the same screen place as the picture's. The user defines vec4 shadeAt(vec2 uv) after it: the
+   layer as shown (display colour, cover) at a point of its target. uStep: the stroke step, in the target's pixels. */
+const PAINT_GLSL = `uniform sampler2D tN1, tN2; uniform vec2 uCanvas, uTexel; uniform float uStep; vec4 shadeAt(vec2 uv);
+  vec4 paintAt(vec2 uv) {
+    vec2 sp = gl_FragCoord.xy / uCanvas; vec4 n1 = texture2D(tN1, sp), n2 = texture2D(tN2, sp);
+    vec2 d = uTexel * uStep, uvw = uv + (n1.xy - 0.5) * d * 2.8;
+    vec4 m0 = vec4(0.0), m1 = vec4(0.0), m2 = vec4(0.0), m3 = vec4(0.0); vec3 s0 = vec3(0.0), s1 = vec3(0.0), s2 = vec3(0.0), s3 = vec3(0.0);
+    for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
+      vec4 c = shadeAt(uvw + vec2(float(i), float(j)) * d); vec3 pc = c.rgb * c.a; vec4 q = vec4(pc, c.a); vec3 qq = pc * pc;
+      if (i <= 0 && j <= 0) { m0 += q; s0 += qq; } if (i >= 0 && j <= 0) { m1 += q; s1 += qq; }
+      if (i <= 0 && j >= 0) { m2 += q; s2 += qq; } if (i >= 0 && j >= 0) { m3 += q; s3 += qq; } }
+    vec4 best = m0 / 9.0; vec3 v = abs(s0 / 9.0 - best.rgb * best.rgb); float bv = v.r + v.g + v.b, sv;
+    vec4 mu = m1 / 9.0; v = abs(s1 / 9.0 - mu.rgb * mu.rgb); sv = v.r + v.g + v.b; if (sv < bv) { bv = sv; best = mu; }
+    mu = m2 / 9.0; v = abs(s2 / 9.0 - mu.rgb * mu.rgb); sv = v.r + v.g + v.b; if (sv < bv) { bv = sv; best = mu; }
+    mu = m3 / 9.0; v = abs(s3 / 9.0 - mu.rgb * mu.rgb); sv = v.r + v.g + v.b; if (sv < bv) { bv = sv; best = mu; }
+    float a = best.a; vec3 col = a > 0.002 ? best.rgb / a : vec3(0.0);
+    vec4 a1 = shadeAt(uvw + vec2(1.5, 0.0) * d), a2 = shadeAt(uvw - vec2(1.5, 0.0) * d), a3 = shadeAt(uvw + vec2(0.0, 1.5) * d), a4 = shadeAt(uvw - vec2(0.0, 1.5) * d);
+    float ce = length(a1.rgb * a1.a - a2.rgb * a2.a) + length(a3.rgb * a3.a - a4.rgb * a4.a), ae = abs(a1.a - a2.a) + abs(a3.a - a4.a);
+    float ink = max(smoothstep(0.25, 0.65, ce) * 0.38, smoothstep(0.35, 1.0, ae) * 0.6) * (0.55 + 0.6 * n1.z);
+    float lum = dot(col, vec3(0.299, 0.587, 0.114));
+    col = mix(vec3(lum), col, 1.08);
+    col *= 1.0 + (n1.w - 0.5) * 0.10 * (1.0 - lum) + (n2.x - 0.5) * 0.03;
+    col *= 1.0 - smoothstep(0.08, 0.5, ce) * 0.10;
+    col = mix(col, col * col * 1.06 + 0.02, 0.10 + 0.1 * n2.y);   // wet-in-wet blotches
+    col = mix(col, vec3(0.24, 0.17, 0.11), ink * 0.55);            // brown ink line
+    col *= 0.96 + n2.z * 0.07;                                     // paper texture
+    return vec4(col, max(a, ink * 0.5 * step(0.05, max(max(a1.a, a2.a), max(a3.a, a4.a)))));   // (the ink may run just past the edge)
+  }`;
+// the uniforms PAINT_GLSL reads, and their values for a target of w x h device pixels on a canvas of W x H
+function paintUniforms() { return { tN1: { value: POST.n1.texture }, tN2: { value: POST.n2.texture }, uCanvas: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1, 1) }, uStep: { value: 1 } }; }
+function setPaint(u, rt, W, H) {
+  u.uCanvas.value.set(W, H); u.uTexel.value.set(1 / rt.width, 1 / rt.height);
+  u.uStep.value = 1.875 * H / 1000;   // the picture's strokes (radius 3 at 1.25 px a step, per 1000 px of height), as radius 2 here, in device pixels
+}
 /* ---------------------------------------------------------------- views
    The camera moves between views: home (the painting's framing, cropped like a cover background; it holds still
    under the pointer), one view per shelf section (the section on the right of the screen, its card on the left) and
@@ -3098,7 +3136,9 @@ function contactShadow(w, d) {
   m.rotation.x = -Math.PI / 2; m.renderOrder = 1; return m;
 }
 /* ---- crisp: drawn over the picture, a fragment is dropped where the room is nearer (the room's depth, as the deck) */
-const SHARP = { rt: null, cam: new THREE.Camera(), quad: null, v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } } };
+const SHARP = { cam: new THREE.Camera(), v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } },
+  cat: { rt: null, quad: null, paint: 0 }, hen: { rt: null, quad: null, paint: 0.5 } };   // (each its own target; the chicken half painted: G, 14/10/2026)
+PETS.sharp = SHARP;   // (for tests)
 function crispPatch(sh) {
   sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
   sh.fragmentShader = 'uniform sampler2D uDepth; uniform vec2 uFull, uOff;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (gl_FragCoord.z > texture2D(uDepth, (gl_FragCoord.xy + uOff) / uFull).r + 2e-6) discard;');
@@ -3217,17 +3257,21 @@ async function loadPets() {
   // the room's lights light them too (they are on their own layer, which only the crisp pass sees)
   scene.traverse(o => { if (o.isLight) { o.layers.enable(L); o.layers.enable(FUR.layer); } });   // (and the cat's skin lit for its fur)
   SHARP.cam.layers.set(L);
-  // laid over the picture through the room's own tone: its exposure, the filmic curve, the paper's lift and warmth, its veil
-  SHARP.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, ...SHARP.u }, transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false,
-    vertexShader: QUAD_VS, fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil; varying vec2 vUv;
+  // laid over the picture through the room's own tone (its exposure, the filmic curve, the paper's lift and warmth, its
+  // veil), the chicken's half painted as the picture is (the paint pass's own steps: post.js PAINT_GLSL)
+  for (const P of [SHARP.cat, SHARP.hen]) P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, ...SHARP.u, ...paintUniforms() },
+    transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint; varying vec2 vUv;
+      ${PAINT_GLSL}
       vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
-      void main(){ vec4 c = texture2D(t, vUv * uScale); if (c.a < 0.002) discard;
-        vec3 col = toS(aces(c.rgb / c.a * uExp * 0.85));
+      vec3 tone(vec3 c){ vec3 col = toS(aces(c * uExp * 0.85));
         col = mix(vec3(dot(col, vec3(0.299,0.587,0.114))), col, 0.97);
         col = 1.0 - (1.0 - col) * mix(1.0, uLift, 0.75);   // most of the paper's lift: blacks as deep as the painting's
-        col = mix(col, col * vec3(1.02,1.0,0.95), 0.6) * (1.0 - uVeil);
-        gl_FragColor = vec4(col * c.a, c.a); }` }));
+        return mix(col, col * vec3(1.02,1.0,0.95), 0.6) * (1.0 - uVeil); }
+      vec4 shadeAt(vec2 uv){ vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(tone(c.rgb / c.a), c.a); }
+      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) o = mix(o, paintAt(uv), uPaint);
+        if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
   // their shaders compiled in the background (for a linear target like theirs) before they appear
   scene.add(holder); if (PETS.chicken) scene.add(PETS.chicken);
   if (renderer.compileAsync) { renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(holder, SHARP.cam, scene); if (PETS.chicken) await renderer.compileAsync(PETS.chicken, SHARP.cam, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
@@ -3530,33 +3574,41 @@ function drawPets() {
   const t = clock.getElapsedTime(), dt = Math.min(0.1, Math.max(0, t - PETS.last)); PETS.last = t;
   if (!reduceMotion) { stepCat(t, dt); if (PETS.chicken && PETS.chicken.visible) stepHen(dt); }
   else if (CAT.mode === 'trip') settle(PETS.state);
+  const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
+  // the chicken first (beyond the glass, so the cat is never behind it), then the cat and its Zzz, each alone
+  const hen = PETS.chicken && PETS.chicken.visible, zzz = ZZZ.grp && ZZZ.grp.visible, hp = PETS.holder.position;
+  if (hen) { PETS.holder.visible = false; if (zzz) ZZZ.grp.visible = false;
+    crispPass(SHARP.hen, [HEN.x, -0.14, HEN.z, 0.3, 0.52, 0.3]);
+    PETS.holder.visible = true; if (zzz) ZZZ.grp.visible = true; PETS.chicken.visible = false; }
+  crispPass(SHARP.cat, [hp.x, hp.y - 0.04, hp.z, 0.5, zzz ? 0.8 : 0.55, 0.5], C => { if (PETS.fur && PETS.fur.visible) furLight(renderer, scene, C); });   // (high enough for the Zzz)
+  if (hen) PETS.chicken.visible = true;
+}
+// one crisp pass: what is shown on layer 1 inside a box (centre, half widths, height), into a target just covering it on
+// screen (the camera's projection narrowed to that rectangle, depth as in the picture), then laid over the picture
+function crispPass(P, [bx, by, bz, rx, ry, rz], before) {
   const W_ = OVER.u.uRes.value.x, H = OVER.u.uRes.value.y, pr = renderer.getPixelRatio();
   let x0 = W_, y0 = H, x1 = 0, y1 = 0, any = false;
-  const add = (cx, cy, cz, rx, ry, rz) => { for (let i = 0; i < 8; i++) { const v = SHARP.v.set(cx + (i & 1 ? rx : -rx), cy + (i & 2 ? ry : 0), cz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
-    any = true; const px = (v.x + 1) / 2 * W_, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } };
-  const hp = PETS.holder.position; add(hp.x, hp.y - 0.04, hp.z, 0.5, ZZZ.grp && ZZZ.grp.visible ? 0.8 : 0.55, 0.5);   // (high enough for the Zzz)
-  if (PETS.chicken && PETS.chicken.visible) add(HEN.x, -0.14, HEN.z, 0.3, 0.52, 0.3);
+  for (let i = 0; i < 8; i++) { const v = SHARP.v.set(bx + (i & 1 ? rx : -rx), by + (i & 2 ? ry : 0), bz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
+    any = true; const px = (v.x + 1) / 2 * W_, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
   if (!any) return;
-  x0 = Math.max(0, Math.floor(x0) - 4); y0 = Math.max(0, Math.floor(y0) - 4); x1 = Math.min(W_, Math.ceil(x1) + 4); y1 = Math.min(H, Math.ceil(y1) + 4);
+  x0 = Math.max(0, Math.floor(x0) - 8); y0 = Math.max(0, Math.floor(y0) - 8); x1 = Math.min(W_, Math.ceil(x1) + 8); y1 = Math.min(H, Math.ceil(y1) + 8);   // (room for the paint's strokes)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return;
-  if (!SHARP.rt || SHARP.rt.width < w || SHARP.rt.height < h) {
-    if (SHARP.rt) SHARP.rt.dispose();
-    SHARP.rt = new THREE.WebGLRenderTarget(Math.ceil(w * 1.25), Math.ceil(h * 1.25), { samples: 4, type: THREE.HalfFloatType });
-    SHARP.quad.material.uniforms.t.value = SHARP.rt.texture;
+  if (!P.rt || P.rt.width < w || P.rt.height < h) {
+    if (P.rt) P.rt.dispose();
+    P.rt = new THREE.WebGLRenderTarget(Math.ceil(w * 1.25), Math.ceil(h * 1.25), { samples: 4, type: THREE.HalfFloatType });
+    P.quad.material.uniforms.t.value = P.rt.texture;
   }
-  // the camera's projection narrowed to that rectangle (x, y scaled in clip space; depth as in the picture)
   const cx = (x0 + x1) / W_ - 1, cy = (y0 + y1) / H - 1, sx = W_ / w, sy = H / h, C = SHARP.cam;
   C.projectionMatrix.set(sx, 0, 0, -sx * cx, 0, sy, 0, -sy * cy, 0, 0, 1, 0, 0, 0, 0, 1).multiply(camera.projectionMatrix);
   C.projectionMatrixInverse.copy(C.projectionMatrix).invert(); camera.matrixWorld.decompose(C.position, C.quaternion, C.scale); C.updateMatrixWorld(true);
   DECKR.u.uFull.value.set(W_, H); DECKR.u.uOff.value.set(x0, y0);
-  const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
   const cc = renderer.getClearColor(_c), ca = renderer.getClearAlpha();
-  if (PETS.fur && PETS.fur.visible) furLight(renderer, scene, C);   // the skin lit for the fur's layers
-  SHARP.rt.viewport.set(0, 0, w, h); SHARP.rt.scissor.set(0, 0, w, h); SHARP.rt.scissorTest = true;
-  renderer.setRenderTarget(SHARP.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, C);
+  if (before) before(C);
+  P.rt.viewport.set(0, 0, w, h); P.rt.scissor.set(0, 0, w, h); P.rt.scissorTest = true;
+  renderer.setRenderTarget(P.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, C);
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca);
-  SHARP.quad.material.uniforms.uScale.value.set(w / SHARP.rt.width, h / SHARP.rt.height);
-  renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); SHARP.quad.render(renderer);   // over the picture: no clear
+  const Q = P.quad.material.uniforms; Q.uScale.value.set(w / P.rt.width, h / P.rt.height); setPaint(Q, P.rt, W_, H);
+  renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true;
 }
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -3637,13 +3689,12 @@ function syncActive() {   // which book is "current" in the page's player
    the platter turns and the arm tracks the song. A click on it brings out the page's player in the left corner (or
    puts it away); the player stays hidden otherwise.
    The canvas has no depth buffer of its own, so the deck is drawn into a small multisampled target that just covers
-   it on screen (the camera's projection narrowed to that rectangle), then laid over the picture. A tenth of it is
-   watercolour (G, 14/10/2026): a copy of it stands in the room, so the paint pass paints it, and the sharp deck is laid
-   over that at 90 %. The copy writes no depth (the sharp deck is tested against the room's), has no ink hull (without
-   depth it would cover the paper) and no label art (the room is not redrawn while the record turns, so a painted label
-   would stand still). */
+   it on screen (the camera's projection narrowed to that rectangle), then laid over the picture, 40 % of it painted as
+   the picture is (G, 14/10/2026: 10 %, then 30 % more; the paint pass's own steps, post.js PAINT_GLSL, so the turning
+   label is painted as it turns). */
 const DECK = { ok: false, angle: 0, speed: 0, playing: false, progress: 0, hover: false, scene: new THREE.Scene() };
 const DECKR = { rt: null, cam: new THREE.Camera(), corners: [], u: { uDepth: OVER.u.uDepth, uFull: { value: new THREE.Vector2(1, 1) }, uOff: { value: new THREE.Vector2() } }, quad: null };
+DECK.R = DECKR;   // (for tests)
 function sharpDepth(mat) {   // fragments behind the room are dropped (the target's pixels map back to the whole picture)
   mat.onBeforeCompile = sh => {
     sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
@@ -3674,7 +3725,7 @@ function drawDeck() {   // the deck over the finished picture
   DECKR.rt.viewport.set(0, 0, w, h); DECKR.rt.scissor.set(0, 0, w, h); DECKR.rt.scissorTest = true;
   renderer.setRenderTarget(DECKR.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(DECK.scene, C);
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca);
-  DECKR.quad.material.uniforms.uScale.value.set(w / DECKR.rt.width, h / DECKR.rt.height);
+  DECKR.quad.material.uniforms.uScale.value.set(w / DECKR.rt.width, h / DECKR.rt.height); setPaint(DECKR.quad.material.uniforms, DECKR.rt, W, H);
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); DECKR.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W / pr, H / pr); renderer.autoClear = true;
 }
@@ -3714,15 +3765,14 @@ function buildRecordPlayer() {
   { const b = new THREE.Box3(); deck.traverse(m => { if (m.isMesh) { m.geometry.computeBoundingBox(); b.union(m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld)); } });
     const inv = deck.matrixWorld.clone().invert(); for (let i = 0; i < 8; i++) DECKR.corners.push(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(inv)); }
   DECKR.cam.matrixAutoUpdate = false;
-  DECKR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) } }, transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false,
-    vertexShader: QUAD_VS, fragmentShader: 'uniform sampler2D t; uniform vec2 uScale; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv * uScale);\n#include <colorspace_fragment>\n  gl_FragColor *= 0.9;   // the painted copy under it shows through a tenth\n}' }));
-  // its painted copy in the room (the same parts and paper and ink, untested against the room's depth: the room's own
-  // depth test places it), turned as the sharp one each frame
-  { const ghost = deck.clone(true), b3 = new THREE.ShaderMaterial({ uniforms: body3.uniforms, vertexShader: body3.vertexShader, side: THREE.FrontSide, transparent: true, depthWrite: false,
-      fragmentShader: body3.fragmentShader.replace(/if \(gl_FragCoord\.z > texture2D\(uDepth[^;]*discard;/, '') }), rec = new THREE.MeshBasicMaterial({ color: 0x1c1712, transparent: true, depthWrite: false });
-    const drop = []; ghost.traverse(o => { if (!o.isMesh) return; if (o.material === line) drop.push(o); else { o.material = o.material === recMat ? rec : b3; o.renderOrder = 5; } });
-    drop.forEach(o => o.removeFromParent());   // (no ink hull: drawn without depth it would cover the paper; the sharp deck has it)
-    DECK.ghost = { deck: ghost, platter: ghost.children[1], arm: ghost.children[2] }; room.add(ghost); }
+  DECKR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: 0.4 }, ...paintUniforms() },
+    transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uPaint; varying vec2 vUv;
+      ${PAINT_GLSL}
+      vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
+      vec4 shadeAt(vec2 uv) { vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(toS(c.rgb / c.a), c.a); }
+      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) o = mix(o, paintAt(uv), uPaint);
+        if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
   // its contact shadow on the floor (in the room, so it is painted with it)
   { const c = canvas(128, 128), g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 6, 64, 64, 62);
     gr.addColorStop(0, 'rgba(20,12,6,.8)'); gr.addColorStop(0.5, 'rgba(20,12,6,.5)'); gr.addColorStop(1, 'rgba(20,12,6,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
@@ -3747,7 +3797,6 @@ function stepDeck(dt) {   // follows the sidebar deck: spins while the music pla
   const omega = DECK.playing ? 33.333 / 60 * Math.PI * 2 * 0.25 : 0;
   DECK.speed += (omega - DECK.speed) * Math.min(1, dt * (omega > DECK.speed ? 1.3 : 0.55)); if (Math.abs(omega - DECK.speed) < 0.01) DECK.speed = omega;
   DECK.angle = (DECK.angle - DECK.speed * dt) % (Math.PI * 2); DECK.platter.rotation.y = DECK.angle;
-  if (DECK.ghost) { DECK.ghost.platter.rotation.y = DECK.angle; DECK.ghost.arm.rotation.y = DECK.arm.rotation.y; }
   const armMoving = Math.abs(target - DECK.arm.rotation.y) > 0.001;
   DECK.arm.rotation.y += (target - DECK.arm.rotation.y) * Math.min(1, dt * 1.6);
   // the page's day and night paper and ink (its sidebar deck's theme), dimmed and warmed a little with the room's light
