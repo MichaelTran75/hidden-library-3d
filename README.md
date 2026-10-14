@@ -30,3 +30,5 @@ The cat and the chicken:
 
 - "cat" by artofaria: https://sketchfab.com/3d-models/cat-7e8cbcad506041dc9c3a0cb74edb3360 (Sketchfab Free Standard licence, https://sketchfab.com/licenses; rigged, re-materialled, posed and animated in code). Under that licence the model may not be extracted from this site, republished, retransmitted or reproduced: `cat.bin` is not a model file.
 - "Chicken" by pooiloui2: https://sketchfab.com/3d-models/chicken-98830a78e8c54354a7fbe5ca8346fbf9 (CC BY 4.0; decimated, re-materialled, compressed: `hen.glb`)
+
+Book covers (`covers/`, shown on a book as it leaves the shelf): the original English editions' covers from Open Library, https://openlibrary.org (the covers are their publishers'; resized).

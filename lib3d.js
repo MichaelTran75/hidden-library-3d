@@ -2332,33 +2332,34 @@ function researchView() { return { pos: new V3(0.55, 1.95, -4.4), tgt: new V3(0.
    and this table lacks keeps the page's title and the shelf book it was given. */
 const BOOK_INFO = [
   // the title as the page has it, the English title (and the full one), author · year when the page lacks them, pages
-  // (t: a thickness in metres where there are no pages to go by; h: a height, for a book of a larger format)
-  { page: 'Nguyên lý Pareto: 80/20', en: 'The 80/20 Principle', full: 'The 80/20 Principle: The Secret to Achieving More with Less', by: 'Richard Koch · 1997', pages: 283 },
+  // (t: a thickness in metres where there are no pages to go by; h: a height, for a book of a larger format; cover:
+  // its cover image, see BOOK_COVERS)
+  { page: 'Nguyên lý Pareto: 80/20', en: 'The 80/20 Principle', full: 'The 80/20 Principle: The Secret to Achieving More with Less', by: 'Richard Koch · 1997', pages: 283, cover: '80-20-principle' },
   { page: 'Lịch Sử Mô Hình DISC. Từ Lý Thuyết Đến Ứng Dụng', en: 'The DISC Model: From Theory to Practice', pages: null, t: 0.012 },   // a talk: no printed edition found; a slim booklet
-  { page: '"Damn Right!" Bí Ẩn Charlie Munger', en: 'Damn Right!', full: 'Damn Right! Behind the Scenes with Berkshire Hathaway Billionaire Charlie Munger', pages: 304 },
-  { page: 'Paths to Wealth Through Common Stocks', en: 'Paths to Wealth Through Common Stocks', pages: 214 },
-  { page: 'Money Masters of Our Time', en: 'Money Masters of Our Time', pages: 400 },
-  { page: "The Innovator's Dilemma", en: "The Innovator's Dilemma", full: "The Innovator's Dilemma: When New Technologies Cause Great Firms to Fail", pages: 286 },
+  { page: '"Damn Right!" Bí Ẩn Charlie Munger', en: 'Damn Right!', full: 'Damn Right! Behind the Scenes with Berkshire Hathaway Billionaire Charlie Munger', pages: 304, cover: 'damn-right' },
+  { page: 'Paths to Wealth Through Common Stocks', en: 'Paths to Wealth Through Common Stocks', pages: 214, cover: 'paths-to-wealth' },
+  { page: 'Money Masters of Our Time', en: 'Money Masters of Our Time', pages: 400, cover: 'money-masters' },
+  { page: "The Innovator's Dilemma", en: "The Innovator's Dilemma", full: "The Innovator's Dilemma: When New Technologies Cause Great Firms to Fail", pages: 286, cover: 'innovators-dilemma' },
   { page: 'Phong cách NVIDIA: Chiến lược và Văn hóa dẫn đầu AI', en: 'The Nvidia Way', full: 'The Nvidia Way: Jensen Huang and the Making of a Tech Giant', by: 'Tae Kim · 2024', pages: 272 },   // W. W. Norton
-  { page: 'A. Charlie Munger: Poor Charlie’s Almanack Tư Duy Đa Chiều', en: "Poor Charlie's Almanack", full: "Poor Charlie's Almanack: The Wit and Wisdom of Charles T. Munger", by: 'Charles T. Munger, ed. Peter D. Kaufman · 2005', pages: 512, h: 0.31 },   // a large-format book
-  { page: 'Khuyến Học', en: 'An Encouragement of Learning', pages: 192 },   // Fukuzawa's Gakumon no susume, tr. David A. Dilworth
-  { page: 'Động lực và Nhân cách', en: 'Motivation and Personality', pages: 400 },
-  { page: 'Phi Lý Trí', en: 'Predictably Irrational', full: 'Predictably Irrational: The Hidden Forces That Shape Our Decisions', pages: 368 },
-  { page: 'Tâm lý học Hài hước', en: 'Quirkology', full: 'Quirkology: How We Discover the Big Truths in Small Things', pages: 322 },
-  { page: 'Tư duy như một kẻ lập dị', en: 'Think Like a Freak', pages: 274 },
-  { page: 'Khi nào cướp nhà băng', en: 'When to Rob a Bank', full: 'When to Rob a Bank: …And 131 More Warped Suggestions and Well-Intended Rants', pages: 400 },
-  { page: 'Quy Luật Bản Chất Con Người', en: 'The Laws of Human Nature', pages: 617 },
-  { page: 'Tâm lý học về tiền', en: 'The Psychology of Money', full: 'The Psychology of Money: Timeless Lessons on Wealth, Greed, and Happiness', pages: 288 },
-  { page: 'Think Again', en: 'Think Again', full: "Think Again: The Power of Knowing What You Don't Know", pages: 320 },
+  { page: 'A. Charlie Munger: Poor Charlie’s Almanack Tư Duy Đa Chiều', en: "Poor Charlie's Almanack", full: "Poor Charlie's Almanack: The Wit and Wisdom of Charles T. Munger", by: 'Charles T. Munger, ed. Peter D. Kaufman · 2005', pages: 512, h: 0.31, cover: 'poor-charlies-almanack' },   // a large-format book
+  { page: 'Khuyến Học', en: 'An Encouragement of Learning', pages: 192, cover: 'encouragement-of-learning' },   // Fukuzawa's Gakumon no susume, tr. David A. Dilworth
+  { page: 'Động lực và Nhân cách', en: 'Motivation and Personality', pages: 400, cover: 'motivation-and-personality' },
+  { page: 'Phi Lý Trí', en: 'Predictably Irrational', full: 'Predictably Irrational: The Hidden Forces That Shape Our Decisions', pages: 368, cover: 'predictably-irrational' },
+  { page: 'Tâm lý học Hài hước', en: 'Quirkology', full: 'Quirkology: How We Discover the Big Truths in Small Things', pages: 322, cover: 'quirkology' },
+  { page: 'Tư duy như một kẻ lập dị', en: 'Think Like a Freak', pages: 274, cover: 'think-like-a-freak' },
+  { page: 'Khi nào cướp nhà băng', en: 'When to Rob a Bank', full: 'When to Rob a Bank: …And 131 More Warped Suggestions and Well-Intended Rants', pages: 400, cover: 'when-to-rob-a-bank' },
+  { page: 'Quy Luật Bản Chất Con Người', en: 'The Laws of Human Nature', pages: 617, cover: 'laws-of-human-nature' },
+  { page: 'Tâm lý học về tiền', en: 'The Psychology of Money', full: 'The Psychology of Money: Timeless Lessons on Wealth, Greed, and Happiness', pages: 288, cover: 'psychology-of-money' },
+  { page: 'Think Again', en: 'Think Again', full: "Think Again: The Power of Knowing What You Don't Know", pages: 320, cover: 'think-again' },
   { page: '[Mô hình kinh tế]', en: '[Economic models]', pages: null },   // a heading on the page, not a book
-  { page: 'Súng, Vi Trùng và Thép', en: 'Guns, Germs, and Steel', full: 'Guns, Germs, and Steel: The Fates of Human Societies', pages: 528 },
-  { page: 'Sự giàu có và nghèo đói của các Quốc gia', en: 'The Wealth and Poverty of Nations', full: 'The Wealth and Poverty of Nations: Why Some Are So Rich and Some So Poor', pages: 650 },
-  { page: 'Những Tù Nhân Của Địa Lý', en: 'Prisoners of Geography', full: 'Prisoners of Geography: Ten Maps That Explain Everything About the World', pages: 291 },
-  { page: 'Quốc Gia Thăng Trầm', en: 'The Rise and Fall of Nations', full: 'The Rise and Fall of Nations: Forces of Change in the Post-Crisis World', pages: 466 },
+  { page: 'Súng, Vi Trùng và Thép', en: 'Guns, Germs, and Steel', full: 'Guns, Germs, and Steel: The Fates of Human Societies', pages: 528, cover: 'guns-germs-and-steel' },
+  { page: 'Sự giàu có và nghèo đói của các Quốc gia', en: 'The Wealth and Poverty of Nations', full: 'The Wealth and Poverty of Nations: Why Some Are So Rich and Some So Poor', pages: 650, cover: 'wealth-and-poverty-of-nations' },
+  { page: 'Những Tù Nhân Của Địa Lý', en: 'Prisoners of Geography', full: 'Prisoners of Geography: Ten Maps That Explain Everything About the World', pages: 291, cover: 'prisoners-of-geography' },
+  { page: 'Quốc Gia Thăng Trầm', en: 'The Rise and Fall of Nations', full: 'The Rise and Fall of Nations: Forces of Change in the Post-Crisis World', pages: 466, cover: 'rise-and-fall-of-nations' },
   { page: 'Trò chơi quyền lực', en: 'The Power Game', full: 'The Power Game: The Past, Present and Future of the World Order', pages: 370 },   // Omega+ 2024 (no English edition)
-  { page: 'Người thợ đồng hồ mù', en: 'The Blind Watchmaker', pages: 368 },
-  { page: 'Lược Sử Thời Gian', en: 'A Brief History of Time', pages: 241 },
-  { page: 'Deep Simplicity', en: 'Deep Simplicity', full: 'Deep Simplicity: Bringing Order to Chaos and Complexity', pages: 304 },
+  { page: 'Người thợ đồng hồ mù', en: 'The Blind Watchmaker', pages: 368, cover: 'blind-watchmaker' },
+  { page: 'Lược Sử Thời Gian', en: 'A Brief History of Time', pages: 241, cover: 'brief-history-of-time' },
+  { page: 'Deep Simplicity', en: 'Deep Simplicity', full: 'Deep Simplicity: Bringing Order to Chaos and Complexity', pages: 304, cover: 'deep-simplicity' },
 ];
 const bookKey = s => String(s || '').normalize('NFC').replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 const BOOK_BY_TITLE = new Map(BOOK_INFO.map(b => [bookKey(b.page), b]));
@@ -2368,6 +2369,11 @@ const pageLang = () => document.documentElement.getAttribute('data-lang') === 'v
 const titleIn = (it, lang = pageLang()) => { const b = bookInfo(it); return lang === 'en' && b ? b.en : it.title; };
 // the page's author · year, or the table's where the page has none (or only the year)
 const byOf = it => { const b = bookInfo(it); return b && b.by && (!it.by || /^\d{3,4}$/.test(it.by.trim())) ? b.by : it.by || ''; };
+// a book's cover, where there is one: the original English edition's, from Open Library (tools/covers/make.py; the
+// covers are their publishers'). The page carries where each is (#book-covers: a file next to the page on GitHub Pages,
+// the image itself in the one-file build)
+const BOOK_COVERS = (() => { try { return JSON.parse(document.getElementById('book-covers').textContent); } catch (e) { return {}; } })();
+const coverOf = it => { const b = bookInfo(it); return (b && b.cover && BOOK_COVERS[b.cover]) || null; };
 // a book's thickness from its pages: ~0.06 mm a page (about 420 pages to the inch, common book paper) and ~4 mm of covers
 const spineOf = pages => 0.004 + pages * 0.00006;
 /* ---- categories and items, read from the page's own (hidden) cards */
@@ -2509,12 +2515,21 @@ function wrapText(g, text, maxW) {
   if (line) lines.push(line); return lines;
 }
 function inkFor(col) { const hsl = {}; col.getHSL(hsl, THREE.SRGBColorSpace); return hsl.l < 0.55 ? '#f3ead6' : '#2a2118'; }
-function coverTexture(bk) {   // cloth and a printed frame; the words are drawn sharp on top (see bookWords)
+function coverTexture(bk) {   // cloth and a printed frame, the words drawn sharp on top (see bookWords); or, where there is one,
+  // the book's own cover (book-data.js coverOf), laid on as it comes: filling the board if its shape is near the board's,
+  // else whole on the cloth
   const W = 420, H = Math.round(420 * bk.h / bk.d), c = canvas(W, H), g = c.getContext('2d');
   g.fillStyle = '#' + bk.color.getHexString(THREE.SRGBColorSpace); g.fillRect(0, 0, W, H);
   const r = rng(bk.idx + 7); for (let k = 0; k < 2600; k++) { g.fillStyle = `rgba(${r() < .5 ? '0,0,0' : '255,255,255'},${r() * .05})`; g.fillRect(r() * W, r() * H, 1 + r() * 2, 1 + r() * 2); }
   const ink = inkFor(bk.color); g.strokeStyle = ink; g.globalAlpha = 0.55; g.lineWidth = 2; g.strokeRect(22, 22, W - 44, H - 44); g.lineWidth = 1; g.strokeRect(30, 30, W - 60, H - 60); g.globalAlpha = 1;
-  const t = ctex(c, { rep: false }); t.anisotropy = 8; return t;
+  const t = ctex(c, { rep: false }); t.anisotropy = 8;
+  const src = coverOf(bk.it);
+  if (src) { const img = new Image(); img.onload = () => {
+    const a = img.width / img.height, b = W / H; let w, h;
+    if (Math.abs(a / b - 1) < 0.14) { if (a > b) { h = H; w = H * a; } else { w = W; h = W / a; } } else if (a > b) { w = W - 40; h = w / a; } else { h = H - 40; w = h * a; }
+    g.drawImage(img, (W - w) / 2, (H - h) / 2, w, h); t.needsUpdate = true; setNeeds(true);
+  }; img.src = src; }
+  return t;
 }
 function spineTexture(bk) {
   const W = 96, H = Math.round(96 * bk.h / bk.t), c = canvas(W, H), g = c.getContext('2d');
@@ -2602,8 +2617,8 @@ function relabelBooks() {
     if (bk.spineTex) { bk.spineTex.dispose(); bk.spineTex = null; }
     if (bk.shelfSpine) bk.shelfSpine.material.uniforms.map.value = spineWords(bk);
     if (bk.words) {
-      const [cover, spine] = bk.words.children; cover.material.uniforms.map.value.dispose();
-      cover.material.uniforms.map.value = coverWords(bk); spine.material.uniforms.map.value = spineWords(bk);
+      const { cover, spine } = bk.words.userData;
+      if (cover) { cover.material.uniforms.map.value.dispose(); cover.material.uniforms.map.value = coverWords(bk); } spine.material.uniforms.map.value = spineWords(bk);
     }
   }
 }
@@ -2615,11 +2630,12 @@ function spinePx(bk) {   // how wide the spine shows on screen, in pixels
 function bookWords(bk) {   // planes 2 mm off the cover and the spine, in the book's own unit-box frame
   if (bk.words) return bk.words;
   const grp = new THREE.Group(); grp.matrixAutoUpdate = false; grp.visible = false;
-  const cover = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), crispMaterial(coverWords(bk)));
-  cover.matrixAutoUpdate = false; cover.matrix.makeRotationY(Math.PI / 2).setPosition(0.5 + 0.002 / bk.t, 0.5, -0.5);
+  let cover = null;   // (a book with its own cover image keeps the title printed on it: no words over it)
+  if (!coverOf(bk.it)) { cover = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), crispMaterial(coverWords(bk)));
+    cover.matrixAutoUpdate = false; cover.matrix.makeRotationY(Math.PI / 2).setPosition(0.5 + 0.002 / bk.t, 0.5, -0.5); grp.add(cover); }
   const spine = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), crispMaterial(spineWords(bk)));
   spine.matrixAutoUpdate = false; spine.matrix.makeTranslation(0, 0.5, 0.002 / bk.d);
-  grp.add(cover, spine); OVER.scene.add(grp); OVER.words.push(bk); bk.words = grp; return grp;
+  grp.add(spine); grp.userData = { cover, spine }; OVER.scene.add(grp); OVER.words.push(bk); bk.words = grp; return grp;
 }
 function drawWords() {   // the sharp layer: titles on the spines, words of the books on the move, and the night sky
   let any = false;
@@ -2778,6 +2794,7 @@ const C_TAIL = ['tail1', 'tail2', 'tail3', 'tail4', 'tail5', 'tail6', 'tail7'];
 const _c1 = new THREE.Vector3(), _c2 = new THREE.Vector3(), _c3 = new THREE.Vector3(), _c4 = new THREE.Vector3(), _c5 = new THREE.Vector3();
 const _cq1 = new THREE.Quaternion(), _cq2 = new THREE.Quaternion(), _cq3 = new THREE.Quaternion(), _cq4 = new THREE.Quaternion();
 const cwp = (o, v = new THREE.Vector3()) => v.setFromMatrixPosition(o.matrixWorld);
+const _cE = new THREE.Euler(), _cS = new THREE.Vector3(), _cU = new THREE.Vector3(), _cL1 = new THREE.Quaternion(), _cL2 = new THREE.Quaternion();   // (per-frame scratch)
 function catTurn(b, q) {   // a turn given in world space, through the bone's own joint
   b.parent.updateWorldMatrix(true, false); b.parent.getWorldQuaternion(_cq1);
   b.quaternion.premultiply(_cq2.copy(_cq1).invert().multiply(q).multiply(_cq1)); b.updateWorldMatrix(false, true);
@@ -2906,21 +2923,22 @@ function catLegs() {
 /* ---- reach: a leg to a paw on the ground, by two-bone inverse kinematics (thigh and shin to the hock, upper arm and
    forearm to the wrist; the knee bending forward, the elbow back), the foot down to the pad and the toes ahead; a paw in
    the air curls under (a cat's forepaw folds at the wrist as it swings) */
-function catReach(f, P, curl, yawQ) {
-  const L = CATR.legs[f], fwd = _c5.set(0, 0, 1).applyQuaternion(yawQ), up = C_AX.y;
-  const J = L.jo.clone().applyQuaternion(yawQ);
-  if (curl > 0) J.applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(yawQ), (L.hind ? -0.25 : -0.3) * curl);   // the joint above swings back as the paw lifts
+const _r = { J: new THREE.Vector3(), A: new THREE.Vector3(), u: new THREE.Vector3(), n: new THREE.Vector3(), K: new THREE.Vector3(), d: new THREE.Vector3(), side: new THREE.Vector3(), fwd: new THREE.Vector3() };
+function catReach(f, P, curl, yawQ) {   // (no new objects: it runs for four legs every frame)
+  const L = CATR.legs[f], R = _r, fwd = R.fwd.set(0, 0, 1).applyQuaternion(yawQ), up = C_AX.y, side = R.side.set(1, 0, 0).applyQuaternion(yawQ);
+  const J = R.J.copy(L.jo).applyQuaternion(yawQ);
+  if (curl > 0) J.applyAxisAngle(side, (L.hind ? -0.25 : -0.3) * curl);   // the joint above swings back as the paw lifts
   J.add(P);
-  L.up.updateWorldMatrix(true, false); const A = cwp(L.up), u = J.clone().sub(A);
+  L.up.updateWorldMatrix(true, false); const A = cwp(L.up, R.A), u = R.u.copy(J).sub(A);
   const d = Math.min(Math.max(u.length(), Math.abs(L.l1 - L.l2) + 1e-4), L.l1 + L.l2 - 1e-4); u.normalize();
   const ca = (L.l1 * L.l1 - L.l2 * L.l2 + d * d) / (2 * d), hh = Math.sqrt(Math.max(0, L.l1 * L.l1 - ca * ca));
-  const n = fwd.clone().multiplyScalar(L.hind ? 1 : -1).addScaledVector(up, -0.05); n.addScaledVector(u, -n.dot(u)).normalize();
-  const K = A.clone().addScaledVector(u, ca).addScaledVector(n, hh);
-  catAim(L.up, K.clone().sub(A)); catAim(L.mid, J.clone().sub(K));
-  const dEnd = L.dEnd.clone().applyQuaternion(yawQ);
-  if (curl > 0) dEnd.applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(yawQ), (L.hind ? 0.35 : 0.7) * curl);   // the paw folds under
+  const n = R.n.copy(fwd).multiplyScalar(L.hind ? 1 : -1).addScaledVector(up, -0.05); n.addScaledVector(u, -n.dot(u)).normalize();
+  const K = R.K.copy(A).addScaledVector(u, ca).addScaledVector(n, hh);
+  catAim(L.up, R.d.copy(K).sub(A)); catAim(L.mid, R.d.copy(J).sub(K));
+  const dEnd = R.d.copy(L.dEnd).applyQuaternion(yawQ);
+  if (curl > 0) dEnd.applyAxisAngle(side, (L.hind ? 0.35 : 0.7) * curl);   // the paw folds under
   catAim(L.end, dEnd);
-  if (L.toe) { const dt = L.dToe.clone().applyQuaternion(yawQ); if (curl > 0) dt.applyAxisAngle(new THREE.Vector3(1, 0, 0).applyQuaternion(yawQ), 0.5 * curl); catAim(L.toe, dt); }
+  if (L.toe) { const dt = R.d.copy(L.dToe).applyQuaternion(yawQ); if (curl > 0) dt.applyAxisAngle(side, 0.5 * curl); catAim(L.toe, dt); }
 }
 /* ---- the gait: where each paw is. A paw in stance stays where it came down; a paw in swing lifts, clears the ground and
    comes down where its home under the body will be when it lands, half a stance ahead of it. */
@@ -2956,9 +2974,9 @@ function catStride(G, k) {
   const p = G.phase, B = CATR.bones, body = CATR.body;
   body.position.y += (-CGAIT.crouch - 0.003 * Math.cos(4 * Math.PI * (p - 0.08))) * k;   // a little crouched, rising and falling
   body.position.x += 0.003 * Math.sin(2 * Math.PI * (p - 0.15)) * k;
-  body.quaternion.multiply(_cq4.setFromEuler(new THREE.Euler(0.018 * Math.sin(4 * Math.PI * (p - 0.2)) * k, 0, 0.028 * Math.sin(2 * Math.PI * (p - 0.15)) * k)));
+  body.quaternion.multiply(_cq4.setFromEuler(_cE.set(0.018 * Math.sin(4 * Math.PI * (p - 0.2)) * k, 0, 0.028 * Math.sin(2 * Math.PI * (p - 0.15)) * k)));
   body.updateMatrixWorld(true);
-  const side = catAxis('x', new THREE.Vector3()), upw = catAxis('y', new THREE.Vector3());
+  const side = catAxis('x', _cS), upw = catAxis('y', _cU);
   catTurn(B.chest, _cq4.setFromAxisAngle(upw, 0.045 * Math.sin(2 * Math.PI * (p - 0.3)) * k));   // the trunk bends a little toward the reaching forepaw
   for (const [f, s] of [['lf', '_L'], ['rf', '_R']]) {   // a shoulder blade: forward as its paw swings, back and up over it in stance
     const q = (((p + CGAIT.off[f]) % 1) + 1) % 1, a = q < G.beta ? -0.06 + 0.12 * q / G.beta : 0.06 - 0.12 * (q - G.beta) / (1 - G.beta);
@@ -2971,14 +2989,14 @@ function catLook(dir, k, lim = 1.2) {
   const nose = _c1.copy(CATR.gaze).applyQuaternion(head.getWorldQuaternion(_cq4)).normalize();
   _cq4.setFromUnitVectors(nose, _c2.copy(dir).normalize()); const a = 2 * Math.acos(Math.min(1, Math.abs(_cq4.w)));
   if (a > lim) _cq4.slerp(_cq3.identity(), 1 - lim / a);
-  const part = new THREE.Quaternion().slerp(_cq4, 0.45 * k), rest = new THREE.Quaternion().slerp(_cq4, 0.55 * k);
+  const part = _cL1.identity().slerp(_cq4, 0.45 * k), rest = _cL2.identity().slerp(_cq4, 0.55 * k);
   catTurn(CATR.bones.neck, part); catTurn(head, rest);
 }
 /* ---- the tail: each joint's bend away from its pose, a damped spring pushed by the body's own moves (it swings out
    on a turn, drops as the cat speeds up, lifts as it lands), stiffer at the root than at the tip */
 function catTail(dt, acc, yawAcc, sway) {
   const T = CATR.tail, B = CATR.bones; if (!T) return;
-  const side = catAxis('y', new THREE.Vector3()), pitch = catAxis('x', new THREE.Vector3());
+  const side = catAxis('y', _cS), pitch = catAxis('x', _cU);
   for (let i = 1; i < 7; i++) {
     const st = T[i], kk = 120 - 14 * i, c = 2 * Math.sqrt(kk) * 0.55;   // natural frequency falling toward the tip, under-damped
     const fx = -yawAcc * 0.004 * i + sway * (i > 2 ? 1 : 0.3), fy = -(acc.z * 0.03 + acc.y * 0.02);   // a turn swings it out behind, a start or a landing drops it
@@ -3427,7 +3445,7 @@ function startTrip(to) {
   play(steps, () => settle(to, true));
 }
 /* ---- every frame */
-const _ikq = new Map(), FEET = ['lh', 'rh', 'lf', 'rf'];
+const _ikq = new Map(), FEET = ['lh', 'rh', 'lf', 'rf'], _yawQ = new THREE.Quaternion(), _tgt = new THREE.Vector3(), _nv = new THREE.Vector3(), _acc = new THREE.Vector3();
 function stepCat(t, dt) {
   const night = CAT.place === 'night' && CAT.mode === 'still';
   wishes();
@@ -3438,6 +3456,11 @@ function stepCat(t, dt) {
     CAT.actT -= dt; CAT.huntT -= dt;
     if (CAT.actT <= 0) { if (night) nightActs(); else dayActs(); }
     else if (!night && henBusy() && CAT.huntT <= 0 && Math.random() < dt * 0.15) dayActs();
+    if (!night && !CAT.seq) {   // awake in its place: its eyes on the chicken, with glances into the room (at you)
+      CAT.glanceT -= dt; if (CAT.glanceT <= 0) { CAT.glance = CAT.glance ? 0 : 1; CAT.glanceT = CAT.glance ? rnd(2, 3.5) : rnd(5, 11); if (CAT.glance) CAT.blinkT = 0.8; }
+      const hen = PETS.chicken && PETS.chicken.visible;
+      W.look = hen && !CAT.glance ? henHead(_w) : _w.copy(camera.position); W.lookK = 1; W.ears = hen && !CAT.glance ? 0.8 : 0;
+    }
   }
   moveCat(t, dt, night);
 }
@@ -3449,10 +3472,15 @@ function moveCat(t, dt, night) {
   const sl = CAT.sigh > 0 ? 1 + 1.4 * Math.sin(Math.PI * CAT.sigh) : 1, br = Math.sin(t * Math.PI * 2 * (night ? 0.3 : 0.38)) * sl;   // breaths: ~23 a minute awake, 18 asleep
   const bk = 1 - CAT.ikW;   // (not while it stands or walks: the whole body swelling would thicken and thin its legs)
   H.scale.set(1 + (night ? 0.012 : 0.008) * br * bk, 1 + (night ? 0.016 : 0.01) * br * bk, 1); H.updateMatrixWorld(true);
-  const body = CATR.body;
-  if (W.pitch || W.roll) body.quaternion.multiply(_q.setFromEuler(_e3.set(W.pitch, 0, W.roll)));
-  body.position.y += W.dy; body.position.x += W.sway + 0.009 * W.wiggle;
-  if (W.wiggle) body.quaternion.multiply(_q.setFromEuler(_e3.set(0, 0.05 * W.wiggle, -0.04 * W.wiggle)));   // the haunches swing side to side
+  const body = CATR.body, M = CAT.sm || (CAT.sm = { dy: 0, pitch: 0, roll: 0, sway: 0, wiggle: 0, ears: 0, lookK: 0 });
+  // what the steps wish for changes at a step's edge: the body follows it in a few hundredths of a second, never at a jump
+  // (the leap's own arc is not smoothed: it follows g)
+  const kf = 1 - Math.exp(-dt / (W.pose === 'air' ? 0.02 : 0.07));
+  for (const k of ['dy', 'pitch', 'roll', 'sway', 'wiggle']) M[k] += (W[k] - M[k]) * kf;
+  M.ears += (W.ears - M.ears) * (1 - Math.exp(-dt / 0.12)); M.lookK += ((W.look ? W.lookK : 0) - M.lookK) * (1 - Math.exp(-dt / 0.15));
+  if (M.pitch || M.roll) body.quaternion.multiply(_q.setFromEuler(_e3.set(M.pitch, 0, M.roll)));
+  body.position.y += M.dy; body.position.x += M.sway + 0.009 * M.wiggle;
+  if (Math.abs(M.wiggle) > 1e-4) body.quaternion.multiply(_q.setFromEuler(_e3.set(0, 0.05 * M.wiggle, -0.04 * M.wiggle)));   // the haunches swing side to side
   body.updateMatrixWorld(true);
   if (W.lick || W.wipe) { const B = CATR.bones; catAxis('x', _ax);
     if (W.lick) catTurn(B.head, _q.setFromAxisAngle(_ax, 0.09 * W.lick));   // the tongue's strokes: the head nods to the paw
@@ -3468,30 +3496,32 @@ function moveCat(t, dt, night) {
   if (CAT.ikW > 0.01) {
     catGait(G, dt, W.v, W.w);
     catStride(G, W.walk);
-    const yawQ = H.getWorldQuaternion(new THREE.Quaternion());
+    const yawQ = H.getWorldQuaternion(_yawQ);
     for (const f of FEET) {
-      const L = CATR.legs[f], F = G.feet[f], bones = [L.up, L.mid, L.end, L.toe].filter(Boolean);
-      bones.forEach(b => _ikq.set(b, (_ikq.get(b) || new THREE.Quaternion()).copy(b.quaternion)));
-      const p = F.target.clone(); let curl = F.curl;
+      const L = CATR.legs[f], F = G.feet[f], bones = L.bones || (L.bones = [L.up, L.mid, L.end, L.toe].filter(Boolean));
+      for (const b of bones) { let q = _ikq.get(b); if (!q) _ikq.set(b, q = new THREE.Quaternion()); q.copy(b.quaternion); }
+      const p = _tgt.copy(F.target); let curl = F.curl;
       if (L.hind && W.hindUp > 0) { p.y += 0.03 * W.hindUp; p.addScaledVector(_v.set(Math.sin(G.yaw), 0, Math.cos(G.yaw)), -0.02 * W.hindUp); curl = Math.max(curl, 0.5 * W.hindUp); }
       if (!L.hind && W.knead >= 0) { const s = Math.sin(Math.PI * 2 * W.knead + (f === 'rf' ? Math.PI : 0)); if (s > 0) { p.y += 0.014 * s; curl = Math.max(curl, 0.35 * s); } }
-      if (L.hind && W.wiggle) p.y += 0.006 * Math.max(0, (f === 'lh' ? 1 : -1) * W.wiggle);   // treading as it wiggles
+      if (L.hind && M.wiggle) p.y += 0.006 * Math.max(0, (f === 'lh' ? 1 : -1) * M.wiggle);   // treading as it wiggles
       catReach(f, p, curl, yawQ);
-      if (CAT.ikW < 1) bones.forEach(b => { const q = b.quaternion.clone(); b.quaternion.copy(_ikq.get(b)).slerp(q, CAT.ikW); b.updateWorldMatrix(false, true); });
+      if (CAT.ikW < 1) for (const b of bones) { _q.copy(b.quaternion); b.quaternion.copy(_ikq.get(b)).slerp(_q, CAT.ikW); b.updateWorldMatrix(false, true); }
       catKeep(bones, dt);
     }
   } else G.feet = null;
   // the head: on what it looks at (or held steady), the gaze springing toward it
-  if (W.look && W.lookK > 0) {
-    CATR.bones.head.getWorldPosition(_hp); const want = _v.copy(W.look).sub(_hp).normalize();
-    if (!CAT.look) CAT.look = want.clone(); const a = CAT.look.angleTo(want); if (a > 1e-4) CAT.look.lerp(want, Math.min(1, dt * 5 / Math.max(a, 0.25))).normalize();
-    catLook(CAT.look, W.lookK, 1.2);
+  if (W.look) CAT.lookAt = (CAT.lookAt || new THREE.Vector3()).copy(W.look);
+  if (M.lookK > 0.005 && CAT.lookAt) {
+    const head = CATR.bones.head; head.getWorldPosition(_hp); const want = _v.copy(CAT.lookAt).sub(_hp).normalize();
+    if (!CAT.look) CAT.look = _w.copy(CATR.gaze).applyQuaternion(head.getWorldQuaternion(_q)).normalize().clone();   // from where it looks now
+    const a = CAT.look.angleTo(want); if (a > 1e-4) CAT.look.lerp(want, Math.min(1, dt * 5 / Math.max(a, 0.25))).normalize();
+    catLook(CAT.look, M.lookK, 1.2);
   } else CAT.look = null;
   idleLife(t, dt, night);
   stepZzz(t, dt, night && !CAT.seq && CAT_EYE.u.uBlink.value > 0.9);   // Zzz while it sleeps
   // its tail: pushed by the body's own moves (and swinging once a stride as it walks, lashing as it stalks)
   const vel = _v.set(G.x, G.y, G.z), prev = CAT.prev || (CAT.prev = { p: vel.clone(), v: new THREE.Vector3(), yaw: G.yaw, w: 0 });
-  const nv = vel.clone().sub(prev.p).divideScalar(Math.max(dt, 1e-3)), acc = nv.clone().sub(prev.v).divideScalar(Math.max(dt, 1e-3)).clampLength(0, 12);
+  const nv = _nv.copy(vel).sub(prev.p).divideScalar(Math.max(dt, 1e-3)), acc = _acc.copy(nv).sub(prev.v).divideScalar(Math.max(dt, 1e-3)).clampLength(0, 12);
   const yw = angTo(prev.yaw, G.yaw) / Math.max(dt, 1e-3), yawAcc = THREE.MathUtils.clamp((yw - prev.w) / Math.max(dt, 1e-3), -40, 40);
   prev.p.copy(vel); prev.v.copy(nv); prev.yaw = G.yaw; prev.w = yw;
   acc.applyQuaternion(_q.copy(H.quaternion).invert());
@@ -3517,20 +3547,11 @@ function idleLife(t, dt, night) {
     CAT.earT[e] -= dt; if (CAT.earT[e] <= 0) { CAT.ear[e] = 1; CAT.earT[e] = night ? rnd(6, 18) : rnd(2, 7); }
     CAT.ear[e] = Math.max(0, CAT.ear[e] - dt / 0.24);
     const b = B[e ? 'ear_R' : 'ear_L'];
-    catTurn(b, _q.setFromAxisAngle(side, 0.2 * W.ears - 0.45 * Math.sin(Math.PI * CAT.ear[e])));
+    catTurn(b, _q.setFromAxisAngle(side, 0.2 * (CAT.sm ? CAT.sm.ears : W.ears) - 0.45 * Math.sin(Math.PI * CAT.ear[e])));
   }
   // the tail's tip: a flick, often while the chicken is busy (asleep, rarely)
   CAT.tailT -= dt; if (CAT.tailT <= 0) { CAT.kick = (Math.random() < 0.5 ? -1 : 1) * 0.35; CAT.tailT = night ? rnd(8, 20) : henBusy() ? rnd(0.6, 1.8) : rnd(2.5, 6); }
   CAT.kick *= Math.max(0, 1 - dt * 6);
-  // awake in its place: its eyes on the chicken, with glances into the room (at you)
-  if (CAT.mode === 'still' && !CAT.seq && !night) {
-    CAT.glanceT -= dt; if (CAT.glanceT <= 0) { CAT.glance = CAT.glance ? 0 : 1; CAT.glanceT = CAT.glance ? rnd(2, 3.5) : rnd(5, 11); if (CAT.glance) CAT.blinkT = 0.8; }
-    const hen = PETS.chicken && PETS.chicken.visible;
-    W.look = hen && !CAT.glance ? henHead(_w) : _w.copy(camera.position); W.lookK = 1; W.ears = hen && !CAT.glance ? 0.8 : 0;
-    B.head.getWorldPosition(_hp); const want = _v.copy(W.look).sub(_hp).normalize();
-    if (!CAT.look) CAT.look = want.clone(); const a = CAT.look.angleTo(want); if (a > 1e-4) CAT.look.lerp(want, Math.min(1, dt * 4.5 / Math.max(a, 0.2))).normalize();
-    catLook(CAT.look, 1, 1.15);
-  }
 }
 function placeShadow(G, pose) {   // the contact shadow: its shape (lying, sitting, curled, standing) and where the cat is
   const sh = PETS.catShadow, S = { sphinx: [1, 1], sit: [0.62, 0.9], lick: [0.62, 0.9], wipe: [0.62, 0.9], curl: [0.75, 1.15], air: [0.5, 0.5] }[pose] || [0.85, 0.65];
@@ -3579,7 +3600,9 @@ function stepHen(dt) {
     const a = Math.max(0.006, Math.abs(v) * STRIDE_T * DUTY / 2) * (v < 0 ? -1 : 1), foot = ph => {
       const p = ((ph % 1) + 1) % 1; if (p < DUTY) return [a - 2 * a * p / DUTY, 0, 0];
       const s = (p - DUTY) / (1 - DUTY); return [-a + 2 * a * ease(s), 0.032 * Math.pow(Math.sin(Math.PI * s), 0.8), Math.sin(Math.PI * Math.min(1, s * 1.25))]; };   // up early, toes in; down flat, toes spread
-    const L = foot(HEN.phase), R = foot(HEN.phase + 0.5); HEN.feet = [L[0], L[1], R[0], R[1], L[2] || 0, R[2] || 0];
+    const L = foot(HEN.phase), R = foot(HEN.phase + 0.5), g = [L[0], L[1], R[0], R[1], L[2] || 0, R[2] || 0];
+    if (!HEN.gw0) HEN.gw0 = HEN.feet.slice(); HEN.gw = Math.min(1, (HEN.gw || 0) + dt / 0.18);   // (the gait eased in from where the feet were)
+    const e = ease(HEN.gw); HEN.feet = g.map((x, i) => HEN.gw0[i] + (x - HEN.gw0[i]) * e);
     // the body rides over the standing leg (highest mid-stance, lowest when both feet are down) and sways over it
     const ps = (HEN.phase * 2) % 1; by = -0.007 * Math.cos(Math.PI * 2 * ps) * (v ? 1 : 0.4);
     bz = 0.008 * Math.cos(Math.PI * 2 * (HEN.phase - DUTY / 2)); roll = -0.04 * Math.cos(Math.PI * 2 * (HEN.phase - DUTY / 2)); pitch = v > 0 ? -0.05 : 0;
@@ -3595,11 +3618,14 @@ function stepHen(dt) {
       F[j] = st.x0 * (1 - ease(q)); F[j + 1] = 0.022 * Math.sin(Math.PI * q); F[4 + st.i] = Math.sin(Math.PI * Math.min(1, q * 1.25)); if (q >= 1) st.i = -1; }
   }
   if (stepping || A.kind === 'scratch') HEN.settle = null;
-  if (k >= 1) { HEN.act = null; HEN.lookT = Math.random() < 0.3 ? rnd(-0.6, 0.6) : 0; if (stepping) HEN.phase = Math.round(HEN.phase * 2) / 2; }
+  if (!stepping) { HEN.gw = 0; HEN.gw0 = null; }
+  if (k >= 1) { HEN.act = null; HEN.lookT = Math.random() < 0.3 ? rnd(-0.6, 0.6) : 0; }
   // the head turns and tilts in quick moves, then holds
   HEN.look += (HEN.lookT - HEN.look) * Math.min(1, dt * 12); HEN.tilt += (HEN.tiltT - HEN.tilt) * Math.min(1, dt * 12);
-  HEN.u.uHeadR.value.setFromMatrix4(_m4.makeRotationFromEuler(_e.set(HEN.tilt, HEN.look, neck, 'YXZ')));
-  HEN.u.uHeadT.value.set(headX, headY, 0); HEN.u.uBodyR.value.setFromMatrix4(_m4.makeRotationFromEuler(_e.set(roll, 0, pitch, 'XYZ'))); HEN.u.uBodyT.value.set(0, by, bz);
+  const S = HEN.sm || (HEN.sm = { pitch: 0, roll: 0, neck: 0, headX: 0, headY: 0, by: 0, bz: 0 }), T = { pitch, roll, neck, headX, headY, by, bz };
+  for (const k in S) S[k] += (T[k] - S[k]) * (1 - Math.exp(-dt / (k === 'neck' || k === 'pitch' ? 0.035 : 0.06)));   // (quick, but never a jump)
+  HEN.u.uHeadR.value.setFromMatrix4(_m4.makeRotationFromEuler(_e.set(HEN.tilt, HEN.look, S.neck, 'YXZ')));
+  HEN.u.uHeadT.value.set(S.headX, S.headY, 0); HEN.u.uBodyR.value.setFromMatrix4(_m4.makeRotationFromEuler(_e.set(S.roll, 0, S.pitch, 'XYZ'))); HEN.u.uBodyT.value.set(0, S.by, S.bz);
   HEN.u.uFootL.value.set(HEN.feet[0], HEN.feet[1], HEN.feet[4] || 0); HEN.u.uFootR.value.set(HEN.feet[2], HEN.feet[3], HEN.feet[5] || 0);
   PETS.chicken.position.set(HEN.x, HEN_GROUND, HEN.z); PETS.chicken.rotation.y = HEN.yaw;
   PETS.henShadow.position.set(HEN.x + Math.cos(HEN.yaw) * 0.02, HEN_GROUND + 0.004, HEN.z - Math.sin(HEN.yaw) * 0.02); PETS.henShadow.rotation.z = HEN.yaw;
@@ -3614,22 +3640,25 @@ function drawPets() {
   const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
   // the chicken first (beyond the glass, so the cat is never behind it), then the cat and its Zzz, each alone
   const hen = PETS.chicken && PETS.chicken.visible, zzz = ZZZ.grp && ZZZ.grp.visible, hp = PETS.holder.position;
+  let henDrawn = false;
   if (hen) { PETS.holder.visible = false; if (zzz) ZZZ.grp.visible = false;
-    crispPass(SHARP.hen, [HEN.x, HEN_GROUND - 0.02, HEN.z, 0.3, 0.52, 0.3]);
+    henDrawn = crispPass(SHARP.hen, [HEN.x, HEN_GROUND - 0.02, HEN.z, 0.3, 0.52, 0.3]);
     PETS.holder.visible = true; if (zzz) ZZZ.grp.visible = true; PETS.chicken.visible = false; }
-  crispPass(SHARP.cat, [hp.x, hp.y - 0.04, hp.z, 0.5, zzz ? 0.8 : 0.55, 0.5], C => { if (PETS.fur && PETS.fur.visible) furLight(renderer, scene, C); });   // (high enough for the Zzz)
+  const catDrawn = crispPass(SHARP.cat, [hp.x, hp.y - 0.04, hp.z, 0.5, zzz ? 0.8 : 0.55, 0.5], C => { if (PETS.fur && PETS.fur.visible) furLight(renderer, scene, C); });   // (high enough for the Zzz)
+  // on screen and on the move (the hen always is; the cat on its way or busy): the sharp layer at 60 frames a second
+  PETS.fast = henDrawn || (catDrawn && (CAT.mode === 'trip' || !!CAT.seq || CAT.ikW > 0.01));
   if (hen) PETS.chicken.visible = true;
 }
 // one crisp pass: what is shown on layer 1 inside a box (centre, half widths, height), into a target just covering it on
 // screen (the camera's projection narrowed to that rectangle, depth as in the picture), then laid over the picture
-function crispPass(P, [bx, by, bz, rx, ry, rz], before) {
+function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
   const W_ = OVER.u.uRes.value.x, H = OVER.u.uRes.value.y, pr = renderer.getPixelRatio();
   let x0 = W_, y0 = H, x1 = 0, y1 = 0, any = false;
   for (let i = 0; i < 8; i++) { const v = SHARP.v.set(bx + (i & 1 ? rx : -rx), by + (i & 2 ? ry : 0), bz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
     any = true; const px = (v.x + 1) / 2 * W_, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
-  if (!any) return;
+  if (!any) return false;
   x0 = Math.max(0, Math.floor(x0) - 8); y0 = Math.max(0, Math.floor(y0) - 8); x1 = Math.min(W_, Math.ceil(x1) + 8); y1 = Math.min(H, Math.ceil(y1) + 8);   // (room for the paint's strokes)
-  const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return;
+  const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return false;
   if (!P.rt || P.rt.width < w || P.rt.height < h) {
     if (P.rt) P.rt.dispose();
     P.rt = new THREE.WebGLRenderTarget(Math.ceil(w * 1.25), Math.ceil(h * 1.25), { samples: 4, type: THREE.HalfFloatType });
@@ -3647,6 +3676,7 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {
   const Q = P.quad.material.uniforms; Q.uScale.value.set(w / P.rt.width, h / P.rt.height); setPaint(Q, P.rt, W_, H);
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true;
+  return true;
 }
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
@@ -4129,7 +4159,7 @@ function loop(now) {
     // between the room's own frames too), which costs a blit and a few points
     const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok);
     if (still || now - lastDraw < FRAME_MS - 2) {
-      if (live && now - lastSharp >= (FLY.on || PETS.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }
+      if (live && now - lastSharp >= (PETS.fast ? 1000 / 60 : FLY.on || PETS.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }   // (animals on the move: 60 a second)
       return;
     }
   }
