@@ -2655,7 +2655,7 @@ function placeMoon() {   // in the left glass, between the posts at z −6.6 and
   const el = yUp - 21 - 5 >= top ? upper : 7.4 * Math.PI / 180, dir = new V3(-Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
   OVER.moon.position.copy(REF.eye).addScaledVector(dir, 240); OVER.moon.lookAt(REF.eye);
 }
-/* ---- fireflies: from dusk on, three drift through the room and nineteen through the garden outside, and flash, drawn sharp over the picture like the stars
+/* ---- fireflies: from dusk on, three drift through the room and twelve through the garden outside, and flash, drawn sharp over the picture like the stars
    (the paint pass would smear points this small) and hidden behind whatever the room puts in front of them. Each one
    wanders slowly around its own spot (three unrelated sways, so no two paths repeat together) and flashes on its own
    beat: a ~0.7 s yellow-green pulse every 3 to 7 s, with a dimmer glow in between. They come out as the sun goes under
@@ -2679,8 +2679,12 @@ function buildFireflies() {
     }
     beat.set([3 + r() * 4, r() * 10, (0.6 + r() * 0.4) * (i < inside ? 1 : 1.35)], i * 3);   // period (s), phase, size (larger outside: seen far off)
   }
+  // 30 % fewer than were placed (G, 14/10/2026): the room's three, seven of the eleven by the glass, five of the eight in the
+  // trees; the ones kept stay where they were
+  const kept = [...Array(n).keys()].filter(i => i < inside || (i < inside + 11 ? i < inside + 7 : i < inside + 11 + 5));
+  const pick = (a, k) => Float32Array.from(kept.flatMap(i => Array.from(a.subarray(i * k, i * k + k))));
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(home, 3)); g.setAttribute('aSway', new THREE.BufferAttribute(sway, 4)); g.setAttribute('aBeat', new THREE.BufferAttribute(beat, 3));
+  g.setAttribute('position', new THREE.BufferAttribute(pick(home, 3), 3)); g.setAttribute('aSway', new THREE.BufferAttribute(pick(sway, 4), 4)); g.setAttribute('aBeat', new THREE.BufferAttribute(pick(beat, 3), 3));
   const pts = new THREE.Points(g, new THREE.ShaderMaterial({
     uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: FLY.t, uOn: FLY.u },
     vertexShader: `attribute vec4 aSway; attribute vec3 aBeat; uniform float uTime, uOn; uniform vec2 uRes; varying float vB;
@@ -3118,6 +3122,30 @@ function catPatch(sh) {
       }`)
     .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n  roughnessFactor = mix(roughnessFactor, 1.0, catLid);');   // a lid is not wet
 }
+/* ---- Zzz over the sleeping cat, drawn as the garden draws them (3d-garden: van/sleep-fx.js and the nap in
+   engineer/routine-fx.js): three small cream z's with a dark halo, each rising from just over its head, swaying a
+   little, growing and fading as it goes, a third of a cycle apart; here at the cat's size (rising 32 cm in 3.3 s). They
+   come only while it sleeps (eyes shut, not stirring) and fade in and out. In the crisp pass, like the cat. */
+const ZZZ = { grp: null, zs: [], k: 0 };
+function buildZzz() {
+  const c = canvas(64, 64), x = c.getContext('2d');
+  x.font = 'bold 46px Outfit, system-ui, sans-serif'; x.fillStyle = '#E2D6C0'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.shadowColor = '#243240'; x.shadowBlur = 6; x.fillText('z', 32, 34);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  ZZZ.grp = new THREE.Group(); ZZZ.grp.visible = false; scene.add(ZZZ.grp);
+  for (let n = 0; n < 3; n++) {
+    const m = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, fog: false }); m.onBeforeCompile = crispPatch;
+    const sp = new THREE.Sprite(m); sp.layers.set(PETS.layer); sp.frustumCulled = false; ZZZ.grp.add(sp); ZZZ.zs.push({ s: sp, ph: n / 3 });
+  }
+}
+function stepZzz(t, dt, asleep) {
+  ZZZ.k += ((asleep ? 1 : 0) - ZZZ.k) * Math.min(1, dt * 1.2); ZZZ.grp.visible = ZZZ.k > 0.01; if (!ZZZ.grp.visible) return;
+  CATR.bones.head.getWorldPosition(_hp);
+  for (const z of ZZZ.zs) {
+    const k = (t * 0.3 + z.ph) % 1;
+    z.s.position.set(_hp.x + Math.sin(t * 1.6 + z.ph * 6) * 0.025, _hp.y + 0.07 + k * 0.32, _hp.z);
+    z.s.material.opacity = 0.9 * Math.min(1, (1 - k) * 2.5, k * 6) * ZZZ.k; z.s.scale.setScalar(0.035 + k * 0.065);
+  }
+}
 /* ---- the chicken's head and neck, body and feet, moved in the vertex shader. Its mesh is baked into a frame where it
    stands on y = 0 facing +x, 0.42 m tall: head and neck are what lies above 0.26 m ahead of x = 0.02 (turning about the
    neck's base), the feet and shanks what lies under 0.13 m, each going with the shank it is nearest to (its toes spread
@@ -3167,7 +3195,7 @@ async function loadPets() {
   const holder = new THREE.Group(); holder.add(PETS.cat); PETS.holder = holder;
   for (const k of ['day', 'night']) { const s = CAT_SPOT[k]; s.y = surfaceAt(s.x, s.z); }
   CAT_WAY.seatY = surfaceAt(...CAT_WAY.seat);
-  PETS.catShadow = contactShadow(0.62, 0.36); room.add(PETS.catShadow);
+  PETS.catShadow = contactShadow(0.62, 0.36); room.add(PETS.catShadow); buildZzz();
   const hen = henBuf && (await loader.parseAsync(henBuf, '')).scene.getObjectByName('chicken');
   if (hen) {   // the chicken: its mesh baked into its own frame (standing on y = 0, facing +x, 0.42 m tall)
     hen.removeFromParent(); hen.updateMatrixWorld(true);
@@ -3390,6 +3418,7 @@ function moveCat(t, dt, night) {
     catLook(CAT.look, W.lookK, 1.2);
   } else CAT.look = null;
   idleLife(t, dt, night);
+  stepZzz(t, dt, night && !CAT.seq && CAT_EYE.u.uBlink.value > 0.9);   // Zzz while it sleeps
   // its tail: pushed by the body's own moves (and swinging once a stride as it walks, lashing as it stalks)
   const vel = _v.set(G.x, G.y, G.z), prev = CAT.prev || (CAT.prev = { p: vel.clone(), v: new THREE.Vector3(), yaw: G.yaw, w: 0 });
   const nv = vel.clone().sub(prev.p).divideScalar(Math.max(dt, 1e-3)), acc = nv.clone().sub(prev.v).divideScalar(Math.max(dt, 1e-3)).clampLength(0, 12);
@@ -3505,7 +3534,7 @@ function drawPets() {
   let x0 = W_, y0 = H, x1 = 0, y1 = 0, any = false;
   const add = (cx, cy, cz, rx, ry, rz) => { for (let i = 0; i < 8; i++) { const v = SHARP.v.set(cx + (i & 1 ? rx : -rx), cy + (i & 2 ? ry : 0), cz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
     any = true; const px = (v.x + 1) / 2 * W_, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } };
-  const hp = PETS.holder.position; add(hp.x, hp.y - 0.04, hp.z, 0.5, 0.55, 0.5);
+  const hp = PETS.holder.position; add(hp.x, hp.y - 0.04, hp.z, 0.5, ZZZ.grp && ZZZ.grp.visible ? 0.8 : 0.55, 0.5);   // (high enough for the Zzz)
   if (PETS.chicken && PETS.chicken.visible) add(HEN.x, -0.14, HEN.z, 0.3, 0.52, 0.3);
   if (!any) return;
   x0 = Math.max(0, Math.floor(x0) - 4); y0 = Math.max(0, Math.floor(y0) - 4); x1 = Math.min(W_, Math.ceil(x1) + 4); y1 = Math.min(H, Math.ceil(y1) + 4);
@@ -3608,7 +3637,11 @@ function syncActive() {   // which book is "current" in the page's player
    the platter turns and the arm tracks the song. A click on it brings out the page's player in the left corner (or
    puts it away); the player stays hidden otherwise.
    The canvas has no depth buffer of its own, so the deck is drawn into a small multisampled target that just covers
-   it on screen (the camera's projection narrowed to that rectangle), then laid over the picture. */
+   it on screen (the camera's projection narrowed to that rectangle), then laid over the picture. A tenth of it is
+   watercolour (G, 14/10/2026): a copy of it stands in the room, so the paint pass paints it, and the sharp deck is laid
+   over that at 90 %. The copy writes no depth (the sharp deck is tested against the room's), has no ink hull (without
+   depth it would cover the paper) and no label art (the room is not redrawn while the record turns, so a painted label
+   would stand still). */
 const DECK = { ok: false, angle: 0, speed: 0, playing: false, progress: 0, hover: false, scene: new THREE.Scene() };
 const DECKR = { rt: null, cam: new THREE.Camera(), corners: [], u: { uDepth: OVER.u.uDepth, uFull: { value: new THREE.Vector2(1, 1) }, uOff: { value: new THREE.Vector2() } }, quad: null };
 function sharpDepth(mat) {   // fragments behind the room are dropped (the target's pixels map back to the whole picture)
@@ -3682,7 +3715,14 @@ function buildRecordPlayer() {
     const inv = deck.matrixWorld.clone().invert(); for (let i = 0; i < 8; i++) DECKR.corners.push(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(inv)); }
   DECKR.cam.matrixAutoUpdate = false;
   DECKR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) } }, transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false,
-    vertexShader: QUAD_VS, fragmentShader: 'uniform sampler2D t; uniform vec2 uScale; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv * uScale);\n#include <colorspace_fragment>\n}' }));
+    vertexShader: QUAD_VS, fragmentShader: 'uniform sampler2D t; uniform vec2 uScale; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv * uScale);\n#include <colorspace_fragment>\n  gl_FragColor *= 0.9;   // the painted copy under it shows through a tenth\n}' }));
+  // its painted copy in the room (the same parts and paper and ink, untested against the room's depth: the room's own
+  // depth test places it), turned as the sharp one each frame
+  { const ghost = deck.clone(true), b3 = new THREE.ShaderMaterial({ uniforms: body3.uniforms, vertexShader: body3.vertexShader, side: THREE.FrontSide, transparent: true, depthWrite: false,
+      fragmentShader: body3.fragmentShader.replace(/if \(gl_FragCoord\.z > texture2D\(uDepth[^;]*discard;/, '') }), rec = new THREE.MeshBasicMaterial({ color: 0x1c1712, transparent: true, depthWrite: false });
+    const drop = []; ghost.traverse(o => { if (!o.isMesh) return; if (o.material === line) drop.push(o); else { o.material = o.material === recMat ? rec : b3; o.renderOrder = 5; } });
+    drop.forEach(o => o.removeFromParent());   // (no ink hull: drawn without depth it would cover the paper; the sharp deck has it)
+    DECK.ghost = { deck: ghost, platter: ghost.children[1], arm: ghost.children[2] }; room.add(ghost); }
   // its contact shadow on the floor (in the room, so it is painted with it)
   { const c = canvas(128, 128), g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 6, 64, 64, 62);
     gr.addColorStop(0, 'rgba(20,12,6,.8)'); gr.addColorStop(0.5, 'rgba(20,12,6,.5)'); gr.addColorStop(1, 'rgba(20,12,6,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
@@ -3707,6 +3747,7 @@ function stepDeck(dt) {   // follows the sidebar deck: spins while the music pla
   const omega = DECK.playing ? 33.333 / 60 * Math.PI * 2 * 0.25 : 0;
   DECK.speed += (omega - DECK.speed) * Math.min(1, dt * (omega > DECK.speed ? 1.3 : 0.55)); if (Math.abs(omega - DECK.speed) < 0.01) DECK.speed = omega;
   DECK.angle = (DECK.angle - DECK.speed * dt) % (Math.PI * 2); DECK.platter.rotation.y = DECK.angle;
+  if (DECK.ghost) { DECK.ghost.platter.rotation.y = DECK.angle; DECK.ghost.arm.rotation.y = DECK.arm.rotation.y; }
   const armMoving = Math.abs(target - DECK.arm.rotation.y) > 0.001;
   DECK.arm.rotation.y += (target - DECK.arm.rotation.y) * Math.min(1, dt * 1.6);
   // the page's day and night paper and ink (its sidebar deck's theme), dimmed and warmed a little with the room's light
