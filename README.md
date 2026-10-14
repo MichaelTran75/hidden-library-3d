@@ -28,5 +28,5 @@ Architecture, shelves and shelf books, pouf, bolsters, rug, lamps, plants and tr
 
 The cat and the chicken (`pets.glb`: re-posed in code, decimated, re-materialled, compressed):
 
-- "Cat Walk" by LostBoyz2078: https://sketchfab.com/3d-models/cat-walk-915680200c064815bba75e008ba9efb5 (CC BY-NC 4.0, https://creativecommons.org/licenses/by-nc/4.0/: non-commercial use only)
+- "Animated cat" by xman: https://sketchfab.com/3d-models/animated-cat-dfda55ca3d494fcabf96d020b1256447 (CC BY 4.0; coat recoloured, re-posed and animated in code)
 - "Chicken" by pooiloui2: https://sketchfab.com/3d-models/chicken-98830a78e8c54354a7fbe5ca8346fbf9 (CC BY 4.0)

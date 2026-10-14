@@ -1085,7 +1085,7 @@
      'examples/jsm/utils/BufferGeometryUtils.js', 'examples/jsm/postprocessing/Pass.js'].forEach(function (u) {
       var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = 'https://cdn.jsdelivr.net/npm/three@0.170.0/' + u; document.head.appendChild(l);
     });
-    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=6ec9e74bf6'; document.head.appendChild(p);
+    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=46b3cc993f'; document.head.appendChild(p);
   }
   // the room replaces the painted backgrounds: drop them before anything paints, so they are never downloaded
   (function () {
@@ -3121,13 +3121,13 @@
   - "Stylized Tree" by yonimantz - https://sketchfab.com/3d-models/stylized-tree-6d1aeea748f147789004bc03e1930d32
   - "Platano Tree" by gelmi.com.br - https://sketchfab.com/3d-models/platano-tree-ef48485b7c534acc905c0d9964c5fe7c
   The cat and the chicken (pets.glb: re-posed in code, decimated, re-materialled, compressed):
-  - "Cat Walk" by LostBoyz2078 - https://sketchfab.com/3d-models/cat-walk-915680200c064815bba75e008ba9efb5 (CC BY-NC 4.0,
-    https://creativecommons.org/licenses/by-nc/4.0/: non-commercial use only)
+  - "Animated cat" by xman - https://sketchfab.com/3d-models/animated-cat-dfda55ca3d494fcabf96d020b1256447 (CC BY 4.0; coat
+    recoloured, re-posed and animated in code)
   - "Chicken" by pooiloui2 - https://sketchfab.com/3d-models/chicken-98830a78e8c54354a7fbe5ca8346fbf9 (CC BY 4.0)
   Architecture, shelves and shelf books, pouf, bolsters, rug, lamps, plants and trees are built in code.
 -->
 <script id="lib-glb" type="application/octet-stream" data-src="lib.glb"></script>
 <script id="pets-glb" type="application/octet-stream" data-src="pets.glb"></script>
-<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=6ec9e74bf6'; document.body.appendChild(m); }</script>
+<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=46b3cc993f'; document.body.appendChild(m); }</script>
 </body>
 </html>
