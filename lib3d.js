@@ -2340,7 +2340,7 @@ const BOOK_INFO = [
   { page: 'Paths to Wealth Through Common Stocks', en: 'Paths to Wealth Through Common Stocks', pages: 214, cover: 'paths-to-wealth' },
   { page: 'Money Masters of Our Time', en: 'Money Masters of Our Time', pages: 400, cover: 'money-masters' },
   { page: "The Innovator's Dilemma", en: "The Innovator's Dilemma", full: "The Innovator's Dilemma: When New Technologies Cause Great Firms to Fail", pages: 286, cover: 'innovators-dilemma' },
-  { page: 'Phong cách NVIDIA: Chiến lược và Văn hóa dẫn đầu AI', en: 'The Nvidia Way', full: 'The Nvidia Way: Jensen Huang and the Making of a Tech Giant', by: 'Tae Kim · 2024', pages: 272 },   // W. W. Norton
+  { page: 'Phong cách NVIDIA: Chiến lược và Văn hóa dẫn đầu AI', en: 'The Nvidia Way', full: 'The Nvidia Way: Jensen Huang and the Making of a Tech Giant', by: 'Tae Kim · 2024', pages: 272, cover: 'nvidia-way' },   // W. W. Norton
   { page: 'A. Charlie Munger: Poor Charlie’s Almanack Tư Duy Đa Chiều', en: "Poor Charlie's Almanack", full: "Poor Charlie's Almanack: The Wit and Wisdom of Charles T. Munger", by: 'Charles T. Munger, ed. Peter D. Kaufman · 2005', pages: 512, h: 0.31, cover: 'poor-charlies-almanack' },   // a large-format book
   { page: 'Khuyến Học', en: 'An Encouragement of Learning', pages: 192, cover: 'encouragement-of-learning' },   // Fukuzawa's Gakumon no susume, tr. David A. Dilworth
   { page: 'Động lực và Nhân cách', en: 'Motivation and Personality', pages: 400, cover: 'motivation-and-personality' },
@@ -2356,7 +2356,7 @@ const BOOK_INFO = [
   { page: 'Sự giàu có và nghèo đói của các Quốc gia', en: 'The Wealth and Poverty of Nations', full: 'The Wealth and Poverty of Nations: Why Some Are So Rich and Some So Poor', pages: 650, cover: 'wealth-and-poverty-of-nations' },
   { page: 'Những Tù Nhân Của Địa Lý', en: 'Prisoners of Geography', full: 'Prisoners of Geography: Ten Maps That Explain Everything About the World', pages: 291, cover: 'prisoners-of-geography' },
   { page: 'Quốc Gia Thăng Trầm', en: 'The Rise and Fall of Nations', full: 'The Rise and Fall of Nations: Forces of Change in the Post-Crisis World', pages: 466, cover: 'rise-and-fall-of-nations' },
-  { page: 'Trò chơi quyền lực', en: 'The Power Game', full: 'The Power Game: The Past, Present and Future of the World Order', pages: 370 },   // Omega+ 2024 (no English edition)
+  { page: 'Trò chơi quyền lực', en: 'The Power Game', full: 'The Power Game: The Past, Present and Future of the World Order', pages: 370, cover: 'power-game' },   // Omega+ 2024 (no English edition)
   { page: 'Người thợ đồng hồ mù', en: 'The Blind Watchmaker', pages: 368, cover: 'blind-watchmaker' },
   { page: 'Lược Sử Thời Gian', en: 'A Brief History of Time', pages: 241, cover: 'brief-history-of-time' },
   { page: 'Deep Simplicity', en: 'Deep Simplicity', full: 'Deep Simplicity: Bringing Order to Chaos and Complexity', pages: 304, cover: 'deep-simplicity' },
@@ -2369,8 +2369,9 @@ const pageLang = () => document.documentElement.getAttribute('data-lang') === 'v
 const titleIn = (it, lang = pageLang()) => { const b = bookInfo(it); return lang === 'en' && b ? b.en : it.title; };
 // the page's author · year, or the table's where the page has none (or only the year)
 const byOf = it => { const b = bookInfo(it); return b && b.by && (!it.by || /^\d{3,4}$/.test(it.by.trim())) ? b.by : it.by || ''; };
-// a book's cover, where there is one: the original English edition's, from Open Library (tools/covers/make.py; the
-// covers are their publishers'). The page carries where each is (#book-covers: a file next to the page on GitHub Pages,
+// a book's cover, where there is one: the original English edition's, from Open Library (The Nvidia Way's from its
+// publisher, Trò chơi quyền lực's, the Vietnamese edition's, from Goodreads; tools/covers/make.py; the covers are their
+// publishers'). The page carries where each is (#book-covers: a file next to the page on GitHub Pages,
 // the image itself in the one-file build)
 const BOOK_COVERS = (() => { try { return JSON.parse(document.getElementById('book-covers').textContent); } catch (e) { return {}; } })();
 const coverOf = it => { const b = bookInfo(it); return (b && b.cover && BOOK_COVERS[b.cover]) || null; };
@@ -2508,7 +2509,18 @@ function buildSections() {
     UIS.secs.push(sec); UIS.byId.set(sec.id, sec); for (const c of sec.cats) UIS.byCat.set(c.id, sec);
   }
 }
-/* ---- the book that leaves the shelf: a real box with its title printed on the cover and the spine */
+/* ---- the book that leaves the shelf: a real box with its title printed on the cover and the spine (or its own cover).
+   It is drawn sharp over the picture, not watercoloured, so a cover reads as it is printed (G, 15/10/2026): on its own
+   layer (HERO_LAYER), which the room's camera does not see, in a pass of its own (pets.js drawSharpBooks), its
+   fragments dropped where the room is nearer. */
+const HERO_LAYER = 3;
+function heroSharp(mat) {   // (the room's depth, as the deck and the animals are tested against it)
+  mat.onBeforeCompile = sh => {
+    sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
+    sh.fragmentShader = 'uniform sampler2D uDepth; uniform vec2 uFull, uOff;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (gl_FragCoord.z > texture2D(uDepth, (gl_FragCoord.xy + uOff) / uFull).r + 2e-6) discard;');
+  };
+  return mat;
+}
 function wrapText(g, text, maxW) {
   const words = text.split(/\s+/), lines = []; let line = '';
   for (const w of words) { const tryL = line ? line + ' ' + w : w; if (g.measureText(tryL).width > maxW && line) { lines.push(line); line = w; } else line = tryL; }
@@ -2541,15 +2553,16 @@ function heroMesh(bk) {
   if (bk.hero) return bk.hero;
   const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, -0.5);   // like the shelf books: origin at the foot of the spine, spine toward +z
   // lit like the room, but it glows a little from within so it is never too dark to read (in front of the camera, by night)
-  const std = o => new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0, fog: false, emissiveIntensity: 0.32, ...o });
+  const std = o => heroSharp(new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0, fog: false, emissiveIntensity: 0.32, ...o }));
+  if (!heroMesh.lit) { heroMesh.lit = true; scene.traverse(o => { if (o.isLight) o.layers.enable(HERO_LAYER); }); }   // (the room's lights light it there too)
   const cover = coverTexture(bk), spine = spineTexture(bk);
   const pages = std({ color: 0xeee5cf, emissive: 0xeee5cf, roughness: 0.9 }), plain = std({ color: bk.color, emissive: bk.color });
   const m = new THREE.Mesh(geo, [std({ map: cover, emissive: 0xffffff, emissiveMap: cover }), plain, pages, pages, std({ map: spine, emissive: 0xffffff, emissiveMap: spine }), pages]);
-  m.castShadow = true; m.visible = false; m.userData.book = bk; scene.add(m); bk.hero = m; bookWords(bk); return m;
+  m.layers.set(HERO_LAYER); m.visible = false; m.userData.book = bk; scene.add(m); bk.hero = m; bookWords(bk); return m;
 }
 /* ---- the printed words of a book on the move: drawn after the watercolour pass so they stay sharp, and hidden
    wherever the room stands in front of the book (each pixel is tested against the room's depth) */
-const OVER = { scene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) } }, words: [] };
+const OVER = { scene: new THREE.Scene(), heroScene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) } }, words: [] };
 function crispMaterial(map) {
   return new THREE.ShaderMaterial({
     uniforms: { map: { value: map }, uDepth: OVER.u.uDepth, uRes: OVER.u.uRes },
@@ -2635,11 +2648,11 @@ function bookWords(bk) {   // planes 2 mm off the cover and the spine, in the bo
     cover.matrixAutoUpdate = false; cover.matrix.makeRotationY(Math.PI / 2).setPosition(0.5 + 0.002 / bk.t, 0.5, -0.5); grp.add(cover); }
   const spine = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), crispMaterial(spineWords(bk)));
   spine.matrixAutoUpdate = false; spine.matrix.makeTranslation(0, 0.5, 0.002 / bk.d);
-  grp.add(spine); grp.userData = { cover, spine }; OVER.scene.add(grp); OVER.words.push(bk); bk.words = grp; return grp;
+  grp.add(spine); grp.userData = { cover, spine }; OVER.heroScene.add(grp); OVER.words.push(bk); bk.words = grp; return grp;   // (drawn after the book itself: drawWords)
 }
 function drawWords() {   // the sharp layer: titles on the spines, words of the books on the move, and the night sky
-  let any = false;
-  for (const bk of OVER.words) { const on = !!(bk.hero && bk.hero.visible); bk.words.visible = on; if (on) { bk.words.matrix.copy(bk.hero.matrixWorld); any = true; } }
+  let any = false, hero = false;
+  for (const bk of OVER.words) { const on = !!(bk.hero && bk.hero.visible); bk.words.visible = on; if (on) { bk.words.matrix.copy(bk.hero.matrixWorld); hero = true; } }
   for (const sec of UIS.secs) for (const bk of sec.books) {
     const on = !bk.away && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;   // too narrow to read (the whole room in view): none
   }
@@ -2647,8 +2660,11 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   drawDeck(); drawPets();
-  if (!any) return;
-  renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true;
+  // the shelves' titles and the sky, then the book out of the shelf over them (sharp: it is not in the picture, so the
+  // room's depth does not hide the titles behind it), then its own words
+  if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
+  drawSharpBooks();
+  if (hero) { renderer.autoClear = false; renderer.render(OVER.heroScene, camera); renderer.autoClear = true; }
 }
 /* ---- the night sky over the glass: stars and the moon, drawn sharp after the watercolour pass (its filter wipes out
    points this small) and only where the room shows sky: every pixel is tested against the room's depth, which the sky
@@ -2720,7 +2736,7 @@ function placeMoon() {   // in the left glass, between the posts at z −6.6 and
   const el = yUp - 21 - 5 >= top ? upper : 7.4 * Math.PI / 180, dir = new V3(-Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
   OVER.moon.position.copy(REF.eye).addScaledVector(dir, 240); OVER.moon.lookAt(REF.eye);
 }
-/* ---- fireflies: from dusk on, three drift through the room and twelve through the garden outside, and flash, drawn sharp over the picture like the stars
+/* ---- fireflies: from dusk on, three drift through the room and seven through the garden outside, and flash, drawn sharp over the picture like the stars
    (the paint pass would smear points this small) and hidden behind whatever the room puts in front of them. Each one
    wanders slowly around its own spot (three unrelated sways, so no two paths repeat together) and flashes on its own
    beat: a ~0.7 s yellow-green pulse every 3 to 7 s, with a dimmer glow in between. They come out as the sun goes under
@@ -2744,9 +2760,9 @@ function buildFireflies() {
     }
     beat.set([3 + r() * 4, r() * 10, (0.6 + r() * 0.4) * (i < inside ? 1 : 1.35)], i * 3);   // period (s), phase, size (larger outside: seen far off)
   }
-  // 30 % fewer than were placed (G, 14/10/2026): the room's three, seven of the eleven by the glass, five of the eight in the
-  // trees; the ones kept stay where they were
-  const kept = [...Array(n).keys()].filter(i => i < inside || (i < inside + 11 ? i < inside + 7 : i < inside + 11 + 5));
+  // fewer than were placed (G: 30 % fewer on 14/10/2026, 30 % fewer again on 15/10): the room's three, four of the eleven
+  // by the glass, three of the eight in the trees; the ones kept stay where they were
+  const kept = [...Array(n).keys()].filter(i => i < inside || (i < inside + 11 ? i < inside + 4 : i < inside + 11 + 3));
   const pick = (a, k) => Float32Array.from(kept.flatMap(i => Array.from(a.subarray(i * k, i * k + k))));
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pick(home, 3), 3)); g.setAttribute('aSway', new THREE.BufferAttribute(pick(sway, 4), 4)); g.setAttribute('aBeat', new THREE.BufferAttribute(pick(beat, 3), 3));
@@ -3175,9 +3191,27 @@ function contactShadow(w, d) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: _shadowTex, transparent: true, depthWrite: false, fog: false }));
   m.rotation.x = -Math.PI / 2; m.renderOrder = 1; return m;
 }
-/* ---- crisp: drawn over the picture, a fragment is dropped where the room is nearer (the room's depth, as the deck) */
+/* ---- crisp: drawn over the picture, a fragment is dropped where the room is nearer (the room's depth, as the deck).
+   Laid over the picture through the room's own tone (its exposure, the filmic curve; toneK of the paper's lift and
+   warmth and its veil), the chicken's half painted as the picture is (the paint pass's own steps: post.js PAINT_GLSL). */
+function sharpQuad(P) {
+  P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, uToneK: { value: P.toneK }, ...SHARP.u, ...paintUniforms() },
+    transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uToneK; varying vec2 vUv;
+      ${PAINT_GLSL}
+      vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+      vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
+      vec3 tone(vec3 c){ vec3 col = toS(aces(c * uExp * 0.85));
+        col = mix(vec3(dot(col, vec3(0.299,0.587,0.114))), col, mix(1.0, 0.97, uToneK));
+        col = 1.0 - (1.0 - col) * mix(1.0, uLift, 0.75 * uToneK);   // most of the paper's lift: blacks as deep as the painting's
+        return mix(col, col * vec3(1.02,1.0,0.95), 0.6 * uToneK) * (1.0 - uVeil * uToneK); }
+      vec4 shadeAt(vec2 uv){ vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(tone(c.rgb / c.a), c.a); }
+      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
+        if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
+}
 const SHARP = { cam: new THREE.Camera(), v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } },
-  cat: { rt: null, quad: null, paint: 0 }, hen: { rt: null, quad: null, paint: 0.5 } };   // (each its own target; the chicken half painted: G, 14/10/2026)
+  cat: { rt: null, quad: null, paint: 0, layer: 1, toneK: 1 }, hen: { rt: null, quad: null, paint: 0.5, layer: 1, toneK: 1 },   // (each its own target; the chicken half painted: G, 14/10/2026)
+  book: { rt: null, quad: null, paint: 0, layer: 3, toneK: 0.35 } };   // the book out of the shelf: sharp, its colours nearly as printed (G, 15/10/2026)
 PETS.sharp = SHARP;   // (for tests)
 function crispPatch(sh) {
   sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
@@ -3300,21 +3334,7 @@ async function loadPets() {
   // the room's lights light them too (they are on their own layer, which only the crisp pass sees)
   scene.traverse(o => { if (o.isLight) { o.layers.enable(L); o.layers.enable(FUR.layer); } });   // (and the cat's skin lit for its fur)
   SHARP.cam.layers.set(L);
-  // laid over the picture through the room's own tone (its exposure, the filmic curve, the paper's lift and warmth, its
-  // veil), the chicken's half painted as the picture is (the paint pass's own steps: post.js PAINT_GLSL)
-  for (const P of [SHARP.cat, SHARP.hen]) P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, ...SHARP.u, ...paintUniforms() },
-    transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
-    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint; varying vec2 vUv;
-      ${PAINT_GLSL}
-      vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
-      vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
-      vec3 tone(vec3 c){ vec3 col = toS(aces(c * uExp * 0.85));
-        col = mix(vec3(dot(col, vec3(0.299,0.587,0.114))), col, 0.97);
-        col = 1.0 - (1.0 - col) * mix(1.0, uLift, 0.75);   // most of the paper's lift: blacks as deep as the painting's
-        return mix(col, col * vec3(1.02,1.0,0.95), 0.6) * (1.0 - uVeil); }
-      vec4 shadeAt(vec2 uv){ vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(tone(c.rgb / c.a), c.a); }
-      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
-        if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
+  for (const P of [SHARP.cat, SHARP.hen]) sharpQuad(P);
   // their shaders compiled in the background (for a linear target like theirs) before they appear
   scene.add(holder); if (PETS.chicken) scene.add(PETS.chicken);
   if (renderer.compileAsync) { renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(holder, SHARP.cam, scene); if (PETS.chicken) await renderer.compileAsync(PETS.chicken, SHARP.cam, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
@@ -3664,7 +3684,7 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
     P.rt = new THREE.WebGLRenderTarget(Math.ceil(w * 1.25), Math.ceil(h * 1.25), { samples: 4, type: THREE.HalfFloatType });
     P.quad.material.uniforms.t.value = P.rt.texture;
   }
-  const cx = (x0 + x1) / W_ - 1, cy = (y0 + y1) / H - 1, sx = W_ / w, sy = H / h, C = SHARP.cam;
+  const cx = (x0 + x1) / W_ - 1, cy = (y0 + y1) / H - 1, sx = W_ / w, sy = H / h, C = SHARP.cam; C.layers.set(P.layer);
   C.projectionMatrix.set(sx, 0, 0, -sx * cx, 0, sy, 0, -sy * cy, 0, 0, 1, 0, 0, 0, 0, 1).multiply(camera.projectionMatrix);
   C.projectionMatrixInverse.copy(C.projectionMatrix).invert(); camera.matrixWorld.decompose(C.position, C.quaternion, C.scale); C.updateMatrixWorld(true);
   DECKR.u.uFull.value.set(W_, H); DECKR.u.uOff.value.set(x0, y0);
@@ -3677,6 +3697,18 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true;
   return true;
+}
+
+/* ---- the book out of the shelf (hero-books.js), sharp over the picture: one pass for each one showing */
+const _bb = new THREE.Box3();
+function drawSharpBooks() {
+  const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
+  if (!SHARP.book.quad) sharpQuad(SHARP.book);
+  for (const bk of OVER.words) {
+    const h = bk.hero; if (!h || !h.visible) continue;
+    _bb.setFromObject(h); const c = _bb.getCenter(SHARP.v);
+    crispPass(SHARP.book, [c.x, _bb.min.y, c.z, (_bb.max.x - _bb.min.x) / 2, _bb.max.y - _bb.min.y, (_bb.max.z - _bb.min.z) / 2]);
+  }
 }
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
@@ -4052,7 +4084,7 @@ function layoutOverlay() {
   UIEL.svg.innerHTML = lines.join('');
 }
 /* ---- picking in the room */
-const RAY = new THREE.Raycaster(), NDC = new THREE.Vector2();
+const RAY = new THREE.Raycaster(), NDC = new THREE.Vector2(); RAY.layers.enable(3);   // (the book out of the shelf is on its own layer: hero-books.js)
 function pickAt(e) {
   const r = CANVAS.getBoundingClientRect(); NDC.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   RAY.setFromCamera(NDC, camera);
