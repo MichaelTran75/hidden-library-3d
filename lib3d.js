@@ -1,10 +1,10 @@
 // three.js is fetched only where the room is shown (wide screens with WebGL 2): phones never download it. If it cannot
 // be fetched (offline, a blocked CDN) the page gets lib3d-failed and keeps its own card layout.
 const LIB = innerWidth > 768 && window.WebGL2RenderingContext ? await Promise.all([
-  import('three'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/lights/RectAreaLightUniformsLib.js'), import('three/addons/loaders/GLTFLoader.js'), import('three/addons/postprocessing/Pass.js'), import('three/addons/utils/BufferGeometryUtils.js')
+  import('three'), import('three/addons/environments/RoomEnvironment.js'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/lights/RectAreaLightUniformsLib.js'), import('three/addons/loaders/GLTFLoader.js'), import('three/addons/postprocessing/Pass.js'), import('three/addons/utils/BufferGeometryUtils.js')
 ]).catch(e => { console.warn('3D library unavailable', e); document.documentElement.classList.add('lib3d-failed'); return null; }) : null;
 if (LIB) {
-const [THREE, { MeshoptDecoder }, { RectAreaLightUniformsLib }, { GLTFLoader }, { FullScreenQuad }, { mergeGeometries }] = LIB;
+const [THREE, { RoomEnvironment }, { MeshoptDecoder }, { RectAreaLightUniformsLib }, { GLTFLoader }, { FullScreenQuad }, { mergeGeometries }] = LIB;
 /* Hidden Library · 3D library (ver 01)
    On wide screens the reading room is the interface: the categories are shelf sections (labels with leader lines),
    a click opens the section's card, a book being played comes off the shelf. The page's own data, audio engine,
@@ -2643,11 +2643,21 @@ function buildSections() {
     UIS.secs.push(sec); UIS.byId.set(sec.id, sec); for (const c of sec.cats) UIS.byCat.set(c.id, sec);
   }
 }
-/* ---- the book that leaves the shelf: a real box with its title printed on the cover and the spine (or its own cover).
-   It is drawn sharp over the picture, not watercoloured, so a cover reads as it is printed (G, 15/10/2026): on its own
-   layer (HERO_LAYER), which the room's camera does not see, in a pass of its own (pets.js drawSharpBooks), its
-   fragments dropped where the room is nearer. */
+/* ---- the book that leaves the shelf, made as a binder makes a hardcover (G, 15/10/2026: "render cho detail hơn"):
+   two boards (2.4 mm) covered in book cloth, standing 2.5 mm proud of the pages at the head, the foot and the fore-edge
+   (the "squares"), their edges rounded off so they catch the light; a rounded spine, with the groove of the joint along
+   each board; between them the page block, its edges ruled with the leaves' edges (a darker line where a section was
+   sewn), its fore-edge hollowed as a rounded back makes it; a striped headband at the head and the foot of the spine;
+   endpapers inside the boards. The cloth is woven and a little velvety at a glance (sheen). The title, its frame and
+   the spine's lettering are stamped into the cloth: pressed in, glossier than the cloth, a touch of foil. A book with its
+   own cover wears it as a laminated jacket (a clear gloss). Lit as the room lights it, plus a soft studio reflection
+   (three.js RoomEnvironment) for the sheen of the cloth, the stamping and the jacket, and a little light of its own so it
+   is never too dark to read. It is drawn sharp over the picture, not watercoloured, so a cover reads as printed: on its
+   own layer (HERO_LAYER), which the room's camera does not see, in a pass of its own (pets.js drawSharpBooks), its
+   fragments dropped where the room is nearer. The shape is made in metres and brought to the book's unit box (the hero
+   is scaled by its size, as the shelf books are: origin at the foot of the spine, spine toward +z, front cover +x). */
 const HERO_LAYER = 3;
+const HERO = { list: [], keep: 5, env: null };   // the books made so far (past `keep`, the one longest unseen is let go: ~11 MB of pictures each)
 function heroSharp(mat) {   // (the room's depth, as the deck and the animals are tested against it)
   mat.onBeforeCompile = sh => {
     sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
@@ -2661,42 +2671,278 @@ function wrapText(g, text, maxW) {
   if (line) lines.push(line); return lines;
 }
 function inkFor(col) { const hsl = {}; col.getHSL(hsl, THREE.SRGBColorSpace); return hsl.l < 0.55 ? '#f3ead6' : '#2a2118'; }
-function coverTexture(bk) {   // cloth and a printed frame, the words drawn sharp on top (see bookWords); or, where there is one,
-  // the book's own cover (book-data.js coverOf), laid on as it comes: filling the board if its shape is near the board's,
-  // else whole on the cloth
-  const W = 420, H = Math.round(420 * bk.h / bk.d), c = canvas(W, H), g = c.getContext('2d');
-  g.fillStyle = '#' + bk.color.getHexString(THREE.SRGBColorSpace); g.fillRect(0, 0, W, H);
-  const r = rng(bk.idx + 7); for (let k = 0; k < 2600; k++) { g.fillStyle = `rgba(${r() < .5 ? '0,0,0' : '255,255,255'},${r() * .05})`; g.fillRect(r() * W, r() * H, 1 + r() * 2, 1 + r() * 2); }
-  const ink = inkFor(bk.color); g.strokeStyle = ink; g.globalAlpha = 0.55; g.lineWidth = 2; g.strokeRect(22, 22, W - 44, H - 44); g.lineWidth = 1; g.strokeRect(30, 30, W - 60, H - 60); g.globalAlpha = 1;
-  const t = ctex(c, { rep: false }); t.anisotropy = 8;
-  const src = coverOf(bk.it);
-  if (src) { const img = new Image(); img.onload = () => {
-    const a = img.width / img.height, b = W / H; let w, h;
-    if (Math.abs(a / b - 1) < 0.14) { if (a > b) { h = H; w = H * a; } else { w = W; h = W / a; } } else if (a > b) { w = W - 40; h = w / a; } else { h = H - 40; w = h * a; }
-    g.drawImage(img, (W - w) / 2, (H - h) / 2, w, h); t.needsUpdate = true; setNeeds(true);
-  }; img.src = src; }
-  return t;
+// a key light for the book alone (on its layer only), a lamp half a metre off to the viewer's upper left, as a product
+// is lit: its light falls off across the cover, and it brings out the rounded edges, the groove of the joint and the
+// stamping; softer and warmer at night
+function heroKey(camera, at) {
+  if (!HERO.key) { HERO.key = new THREE.PointLight(0xfff3e2, 1, 0, 2); HERO.key.layers.set(HERO_LAYER); scene.add(HERO.key); }
+  const k = HERO.key, n = NIGHT.u.value; k.intensity = (0.85 - 0.35 * n) * 0.3; k.color.setRGB(1, 0.95 - 0.07 * n, 0.88 - 0.16 * n);
+  _hk.copy(camera.position).sub(at).normalize(); k.position.copy(at).addScaledVector(_hk, 0.32).add(_hk.set(-0.3, 0.32, 0).applyQuaternion(camera.quaternion)); k.updateMatrixWorld();
 }
-function spineTexture(bk) {
-  const W = 96, H = Math.round(96 * bk.h / bk.t), c = canvas(W, H), g = c.getContext('2d');
-  g.fillStyle = '#' + bk.color.getHexString(THREE.SRGBColorSpace); g.fillRect(0, 0, W, H);
-  const ink = inkFor(bk.color); g.fillStyle = ink; g.globalAlpha = 0.6; g.fillRect(0, 24, W, 3); g.fillRect(0, H - 27, W, 3); g.globalAlpha = 1;
-  const t = ctex(c, { rep: false }); t.anisotropy = 8; return t;
+const _hk = new THREE.Vector3();
+function heroEnv() {
+  if (!HERO.env) { const pm = new THREE.PMREMGenerator(renderer), room = new RoomEnvironment(); HERO.env = pm.fromScene(room, 0.04).texture; pm.dispose(); if (room.dispose) room.dispose(); }
+  return HERO.env;
+}
+
+/* ---- the shape. Groups: 0 the front's cloth, 1 the spine's, 2 plain cloth (the back, the boards' edges), 3 endpapers
+   (inside the boards, the flyleaves), 4 the page edges, 5 the headbands */
+function heroGeometry(bk) {
+  const t = bk.t, h = bk.h, d = bk.d, T2 = t / 2, PI = Math.PI;
+  const b = Math.min(0.0024, t * 0.13), sq = Math.min(0.0026, h * 0.012), rb = b * 0.42, bz = Math.min(0.006, t * 0.2);
+  const gw = Math.min(0.0045, d * 0.03), gd = Math.min(0.0007, b * 0.35), e = Math.min(0.0007, b * 0.3);
+  const PT = T2 - b - 0.0002, cv = Math.min(0.004, t * 0.12), zc = -bz - 0.0004, rzp = Math.max(0.0005, bz - 0.0018);
+  const G = [[], [], [], [], [], []];   // per group: x, y, z, nx, ny, nz, u, v of each corner of each triangle
+  const vtx = (g, p, n, uv) => G[g].push(p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1]);
+  const tri = (g, A, B, C) => {   // three [p, n, uv]: wound so the face looks the way its normals do
+    const ux = B[0][0] - A[0][0], uy = B[0][1] - A[0][1], uz = B[0][2] - A[0][2], wx = C[0][0] - A[0][0], wy = C[0][1] - A[0][1], wz = C[0][2] - A[0][2];
+    const fx = uy * wz - uz * wy, fy = uz * wx - ux * wz, fz = ux * wy - uy * wx, s = fx * (A[1][0] + B[1][0] + C[1][0]) + fy * (A[1][1] + B[1][1] + C[1][1]) + fz * (A[1][2] + B[1][2] + C[1][2]);
+    for (const V of s >= 0 ? [A, B, C] : [A, C, B]) vtx(g, ...V);
+  };
+  // a closed cross-section (x, z), its points' outward normals and the length along it
+  const section = (pts) => {
+    let area = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; area += p.x * q.z - q.x * p.z; }
+    let s = 0;
+    pts.forEach((p, i) => { const a = pts[(i + pts.length - 1) % pts.length], c = pts[(i + 1) % pts.length], tx = c.x - a.x, tz = c.z - a.z, l = Math.hypot(tx, tz) || 1;
+      p.nx = (area > 0 ? tz : -tz) / l; p.nz = (area > 0 ? -tx : tx) / l; if (i) s += Math.hypot(p.x - pts[i - 1].x, p.z - pts[i - 1].z); p.s = s; });
+    return pts;
+  };
+  const pusher = arr => (x, z, part) => { const q = arr[arr.length - 1]; if (q && Math.hypot(q.x - x, q.z - z) < 1e-7) return; arr.push({ x, z, part }); };
+  // the case: the front board from its joint out to the fore-edge, round its end and back inside, through the spine to
+  // the back board, out round its end, back along it to its joint, and round the spine to the front
+  const P = [], add = pusher(P);
+  const arc = (cx, cz, rx, rz, a0, a1, n, part) => { for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; add(cx + rx * Math.cos(a), cz + rz * Math.sin(a), part); } };
+  add(T2, -bz - gw, 'front'); add(T2, -d + rb, 'front');
+  arc(T2 - rb, -d + rb, rb, rb, 0, -PI / 2, 4, 'edge'); add(T2 - b + rb, -d, 'edge'); arc(T2 - b + rb, -d + rb, rb, rb, -PI / 2, -PI, 4, 'edge');
+  add(T2 - b, -bz, 'inner'); arc(0, -bz, T2 - b, Math.max(0.0004, bz - 0.0012), 0, PI, 16, 'inner'); add(-T2 + b, -d + rb, 'inner');
+  arc(-T2 + b - rb, -d + rb, rb, rb, 0, -PI / 2, 4, 'edge'); add(-T2 + rb, -d, 'edge'); arc(-T2 + rb, -d + rb, rb, rb, -PI / 2, -PI, 4, 'edge');
+  add(-T2, -bz - gw, 'back');
+  for (let i = 1; i <= 6; i++) { const s = i / 6; add(-T2 + gd * Math.sin(PI * s), -bz - gw + gw * s, 'back'); }   // the back joint's groove
+  arc(0, -bz, T2, bz, PI, 0, 20, 'spine');
+  for (let i = 1; i < 6; i++) { const s = i / 6; add(T2 - gd * Math.sin(PI * s), -bz - gw * s, 'front'); }       // the front joint's groove
+  section(P);
+  const sp0 = P.find(p => p.part === 'spine'), spL = P.filter(p => p.part === 'spine').pop().s - sp0.s + Math.hypot(sp0.x + T2, sp0.z + bz);   // (from the back joint)
+  const cm = (d - bz) / 3;   // the cloth's tile, as large as on the front (heroMaterials: 768 px across, 256 px a tile)
+  const caseUV = (p, part, y) => part === 'front' ? [(-p.z - bz) / (d - bz), y / h] : part === 'spine' ? [Math.min(1, Math.max(0, (p.s - sp0.s + Math.hypot(sp0.x + T2, sp0.z + bz)) / spL)), y / h]
+    : [p.s / cm, y / cm];
+  const GROUP = { front: 0, spine: 1, back: 2, edge: 2, inner: 3 };
+  // its walls: rings at the foot, just above it, just below the head and at the head; the end rings' normals tipped
+  // out (the edges look rounded)
+  const rings = [[0, -0.9], [e, 0], [h - e, 0], [h, 0.9]];
+  for (let i = 0; i < P.length; i++) {
+    const p = P[i], q = P[(i + 1) % P.length], part = q.part, g = GROUP[part];
+    for (let r = 0; r < rings.length - 1; r++) {
+      const [y0, k0] = rings[r], [y1, k1] = rings[r + 1];
+      const V = (pt, y, k) => [[pt.x, y, pt.z], [pt.nx, k, pt.nz], caseUV(pt, part, y)];
+      const a = V(p, y0, k0), bb = V(q, y0, k0), c = V(q, y1, k1), dd = V(p, y1, k1);
+      tri(g, a, bb, c); tri(g, a, c, dd);
+    }
+  }
+  // its head and foot: the cross-section, its normals tipped out at the rim
+  const flat = (pts, y, up, g, uv) => {
+    const idx = THREE.ShapeUtils.triangulateShape(pts.map(p => new THREE.Vector2(p.x, p.z)), []);
+    for (const [i, j, k] of idx) tri(g, ...[pts[i], pts[j], pts[k]].map(p => [[p.x, y, p.z], [p.nx * 0.45 * (g === 4 ? 0 : 1), up, p.nz * 0.45 * (g === 4 ? 0 : 1)], uv(p)]));
+  };
+  flat(P, h, 1, 2, p => [p.x / cm, p.z / cm]); flat(P, 0, -1, 2, p => [p.x / cm, p.z / cm]);
+  // the page block: its fore-edge hollowed, its back rounded into the spine
+  const Q = [], addq = pusher(Q), zf = x => -d + sq + cv * (1 - (x / PT) ** 2);
+  addq(PT, zc, 'back'); addq(PT, zf(PT), 'side');
+  for (let i = 1; i <= 18; i++) { const x = PT - 2 * PT * i / 18; addq(x, zf(x), 'fore'); }
+  addq(-PT, zc, 'side');
+  for (let i = 1; i < 16; i++) { const a = PI - PI * i / 16; addq(PT * Math.cos(a), zc + rzp * Math.sin(a), 'back'); }
+  section(Q);
+  for (let i = 0; i < Q.length; i++) {
+    const p = Q[i], q = Q[(i + 1) % Q.length], g = q.part === 'fore' ? 4 : 3;
+    const V = (pt, y) => [[pt.x, y, pt.z], [pt.nx, 0, pt.nz], g === 4 ? [(pt.x + PT) / (2 * PT), (y - sq) / (h - 2 * sq)] : [pt.s / 0.1, y / 0.1]];
+    tri(g, V(p, sq), V(q, sq), V(q, h - sq)); tri(g, V(p, sq), V(q, h - sq), V(p, h - sq));
+  }
+  flat(Q, h - sq, 1, 4, p => [(p.x + PT) / (2 * PT), (p.z + d) / d]); flat(Q, sq, -1, 4, p => [(p.x + PT) / (2 * PT), (p.z + d) / d]);
+  // the headbands, where the page block meets the spine at the head and the foot
+  const rh = Math.min(0.0012, sq * 0.5);
+  for (const y of [h - sq + rh * 0.7, sq - rh * 0.7]) {
+    const pts = []; for (let i = 0; i <= 16; i++) { const a = PI * (0.1 + 0.8 * i / 16); pts.push(new THREE.Vector3((PT - 0.0005) * Math.cos(a), y, zc + rzp * Math.sin(a) - rh * 0.6)); }
+    const tg = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, rh, 6, false), tp = tg.attributes.position, tn = tg.attributes.normal, tu = tg.attributes.uv, ti = tg.index;
+    const TV = j => [[tp.getX(j), tp.getY(j), tp.getZ(j)], [tn.getX(j), tn.getY(j), tn.getZ(j)], [tu.getX(j), tu.getY(j)]];
+    for (let j = 0; j < ti.count; j += 3) tri(5, TV(ti.getX(j)), TV(ti.getX(j + 1)), TV(ti.getX(j + 2)));
+    tg.dispose();
+  }
+  // into the unit box: positions over the size, normals times it
+  const n = G.reduce((s, a) => s + a.length / 8, 0), pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), geo = new THREE.BufferGeometry();
+  let o = 0;
+  G.forEach((a, g) => {
+    const start = o;
+    for (let i = 0; i < a.length; i += 8, o++) {
+      pos[o * 3] = a[i] / t; pos[o * 3 + 1] = a[i + 1] / h; pos[o * 3 + 2] = a[i + 2] / d;
+      const nx = a[i + 3] * t, ny = a[i + 4] * h, nz = a[i + 5] * d, l = Math.hypot(nx, ny, nz) || 1; nor[o * 3] = nx / l; nor[o * 3 + 1] = ny / l; nor[o * 3 + 2] = nz / l;
+      uv[o * 2] = a[i + 6]; uv[o * 2 + 1] = a[i + 7];
+    }
+    geo.addGroup(start, o - start, g);
+  });
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.computeBoundingBox(); geo.computeBoundingSphere();
+  return { geo, frontU0: gw / (d - bz), frontW: d - bz, spineL: spL };
+}
+
+/* ---- the cloth, the stamping, the pages */
+const _hc = new THREE.Color();
+function heroCloth(bk, S = 256) {   // a tile of the book's cloth (a fine weave, flecks), 4 cm square
+  const c = canvas(S, S), g = c.getContext('2d'), r = rng(bk.idx * 31 + 5);
+  g.fillStyle = '#' + bk.color.getHexString(THREE.SRGBColorSpace); g.fillRect(0, 0, S, S);
+  for (let y = 0; y < S; y += 2) { g.fillStyle = `rgba(255,255,255,${0.035 + 0.03 * r()})`; g.fillRect(0, y, S, 1); }
+  for (let x = 0; x < S; x += 2) { g.fillStyle = `rgba(0,0,0,${0.04 + 0.03 * r()})`; g.fillRect(x, 0, 1, S); }
+  for (let k = 0; k < S * S / 90; k++) { g.fillStyle = `rgba(${r() < .5 ? '0,0,0' : '255,255,255'},${r() * .07})`; g.fillRect(r() * S, r() * S, 1 + r() * 2, 1 + r()); }
+  return c;
+}
+function heroCanvasTex(c, color, rep) {
+  const t = new THREE.CanvasTexture(c); if (color) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+}
+// the front: the cover's own picture, or the cloth with a ruled frame, the title as large as fits above the author
+// (italics) and the year, all centred on the board (the groove of the joint takes the strip on the left)
+function heroCoverLayout(g, W, H, bk, x0, frameOnly) {
+  const w = W - x0, k = w / 576, serif = `Georgia, 'Times New Roman', serif`;
+  g.save(); g.translate(x0, 0); g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  g.lineWidth = 3.4 * k; g.strokeRect(36 * k, 36 * k, w - 72 * k, H - 72 * k); g.lineWidth = 1.6 * k; g.strokeRect(50 * k, 50 * k, w - 100 * k, H - 100 * k);
+  if (frameOnly) { g.restore(); return; }
+  const by = byOf(bk.it), parts = by ? by.split(/\s+·\s+/) : [], year = parts.length && /^\d{3,4}$/.test(parts[parts.length - 1]) ? parts.pop() : '', who = parts.join(' · ');
+  const bs = Math.round(w * 0.072), ys = Math.round(w * 0.056);
+  g.font = `italic ${bs}px ${serif}`; const wl = who ? wrapText(g, who, w - 110 * k) : [];
+  const yearY = H - w * 0.15, lastWho = year ? yearY - ys * 1.45 : yearY;
+  const top = wl.length ? lastWho - (wl.length - 1) * bs * 1.2 - bs : year ? yearY - ys : H - w * 0.1;
+  let size = Math.round(w * 0.118), lines = [];
+  const bottom = () => H * 0.2 + size + (lines.length - 1) * size * 1.16 + size * 0.55;
+  for (;; size -= 2) { g.font = `600 ${size}px ${serif}`; lines = wrapText(g, titleIn(bk.it), w - 104 * k); if (size <= 22 || (lines.length <= 5 && bottom() < top - w * 0.05)) break; }
+  const y0 = H * 0.2 + size; lines.forEach((l, i) => g.fillText(l, w / 2, y0 + i * size * 1.16));
+  g.fillRect(w / 2 - 44 * k, bottom(), 88 * k, 3.4 * k);
+  if (year) { g.font = `500 ${ys}px ${serif}`; g.fillText(year, w / 2, yearY); }
+  g.font = `italic ${bs}px ${serif}`; wl.forEach((l, i) => g.fillText(l, w / 2, lastWho - (wl.length - 1 - i) * bs * 1.2));
+  g.restore();
+}
+// the spine: a pair of rules at the head and the foot, the title along it (two lines on a thick spine, narrowed a little
+// rather than cut), as on the shelf
+function heroSpineLayout(g, W, H, bk) {
+  const k = W / 96; g.save();
+  for (const y of [24 * k, H - 27 * k]) { g.fillRect(0, y, W, 2.6 * k); g.fillRect(0, y + 6 * k, W, 1.2 * k); }
+  const font = n => `600 ${n}px Inter, 'Helvetica Neue', Arial, sans-serif`;
+  g.translate(W / 2, H / 2); g.rotate(Math.PI / 2); g.textAlign = 'center'; g.textBaseline = 'middle';
+  const room = H - 80 * k, two = bk.t >= 0.028, S = W * 0.9;   // (the middle of the round: its sides turn away)
+  let size = Math.round(S * (two ? 0.38 : 0.6)), txt = titleIn(bk.it); g.font = font(size);
+  while (g.measureText(txt).width > room * (two ? 2 : 1) && size > Math.round(S * (two ? 0.32 : 0.48))) { size -= 1; g.font = font(size); }
+  const fit = (s, f) => { while (g.measureText(s).width * f > room && s.length > 4) s = s.slice(0, -2).trimEnd() + '…'; return s; };
+  if (two && g.measureText(txt).width > room) {
+    const words = txt.split(/\s+/); let a = '', i = 0; while (i < words.length && g.measureText((a ? a + ' ' : '') + words[i]).width <= room) a += (a ? ' ' : '') + words[i++];
+    if (!a) { a = words[0]; i = 1; }
+    g.fillText(fit(a, 1), 0, -size * 0.58); g.fillText(fit(words.slice(i).join(' '), 1), 0, size * 0.58);
+  } else { const sx = Math.max(0.8, Math.min(1, room / g.measureText(txt).width)); txt = fit(txt, sx); g.scale(sx, 1); g.fillText(txt, 0, 0); }
+  g.restore();
+}
+// one face (front or spine) as two pictures: its colours, and its surface: how high (red: the weave, the stamping
+// pressed in; three.js bumps by red), how rough (green) and how metallic (blue) each part is: the cloth matte, the
+// stamping smoother with a touch of foil
+function heroFace(bk, W, H, cloth, layout, ink) {
+  const col = canvas(W, H), surf = canvas(W, H), gc = col.getContext('2d');
+  let bump, rm, gb, gr;
+  const merge = () => {   // red from the height, green and blue from the roughness and metal
+    const a = gb.getImageData(0, 0, W, H).data, b = gr.getImageData(0, 0, W, H), d = b.data;
+    for (let i = 0; i < d.length; i += 4) d[i] = a[i];
+    surf.getContext('2d').putImageData(b, 0, 0);
+  };
+  const paint = () => {
+    bump = canvas(W, H); rm = canvas(W, H); gb = bump.getContext('2d', { willReadFrequently: true }); gr = rm.getContext('2d', { willReadFrequently: true });   // (read back to merge)
+    gc.fillStyle = gc.createPattern(cloth, 'repeat'); gc.fillRect(0, 0, W, H);
+    const r = rng(bk.idx + 7), wear = gc.createLinearGradient(0, 0, 0, H);   // the cloth rubbed paler toward the head and the foot
+    wear.addColorStop(0, 'rgba(255,250,240,0.10)'); wear.addColorStop(0.06, 'rgba(255,250,240,0)'); wear.addColorStop(0.94, 'rgba(255,250,240,0)'); wear.addColorStop(1, 'rgba(255,250,240,0.12)');
+    gc.fillStyle = wear; gc.fillRect(0, 0, W, H);
+    for (let k = 0; k < 900; k++) { gc.fillStyle = `rgba(255,250,240,${r() * 0.05})`; const ed = r() < 0.5, x = ed ? W - r() * W * 0.03 : r() * W, y = ed ? r() * H : (r() < 0.5 ? r() * H * 0.02 : H - r() * H * 0.02); gc.fillRect(x, y, 1 + r() * 3, 1 + r() * 3); }
+    for (const y of [0, H]) {   // the fore-edge's corners rubbed pale, the cloth worn through to its threads there
+      const cr = W * 0.05, rg = gc.createRadialGradient(W, y, 0, W, y, cr); rg.addColorStop(0, 'rgba(255,248,236,0.28)'); rg.addColorStop(1, 'rgba(255,248,236,0)');
+      gc.fillStyle = rg; gc.fillRect(W - cr, y ? H - cr : 0, cr, cr);
+      for (let k = 0; k < 60; k++) { const a = r() * Math.PI / 2, rr = cr * Math.pow(r(), 1.6); gc.fillStyle = `rgba(255,250,240,${0.1 + 0.15 * r()})`; gc.fillRect(W - Math.cos(a) * rr, y ? H - Math.sin(a) * rr : Math.sin(a) * rr, 1 + r() * 2, 1); }
+    }
+    gb.fillStyle = '#8c8c8c'; gb.fillRect(0, 0, W, H); gb.globalAlpha = 0.5; gb.fillStyle = gb.createPattern(cloth, 'repeat'); gb.fillRect(0, 0, W, H); gb.globalAlpha = 1;   // (the weave)
+    gr.fillStyle = 'rgb(0,214,0)'; gr.fillRect(0, 0, W, H);
+    if (layout) {   // (the cloth pressed round the stamping darkens a little: it also keeps the words clear of the cloth)
+      gc.save(); gc.shadowColor = ink === '#2a2118' ? 'rgba(255,248,232,.55)' : 'rgba(20,14,8,.6)'; gc.shadowBlur = Math.max(3, W * 0.012);
+      gc.fillStyle = gc.strokeStyle = ink; layout(gc); gc.restore();
+      gb.filter = 'blur(1.2px)'; gb.fillStyle = gb.strokeStyle = '#1a1a1a'; layout(gb); gb.filter = 'none';
+      gr.fillStyle = gr.strokeStyle = 'rgb(0,92,96)'; layout(gr);
+    }
+    merge();
+  };
+  paint();
+  const face = { col, paint, tex: heroCanvasTex(col, true), surfTex: heroCanvasTex(surf),
+    flat: (x, y, w, h) => { gb.fillStyle = '#8c8c8c'; gb.fillRect(x, y, w, h); gr.fillStyle = 'rgb(0,150,0)'; gr.fillRect(x, y, w, h); merge(); face.surfTex.needsUpdate = true; } };
+  return face;
+}
+// the page edges: across the block, one line for each leaf (a darker one where a section was sewn), shaded toward the
+// boards; along it, all the same
+function heroPages(bk) {
+  const W = 1024, c = canvas(W, 8), g = c.getContext('2d'), r = rng(bk.idx * 13 + 1), info = bookInfo(bk.it);
+  const leaves = Math.max(40, Math.min(420, Math.round((info && info.pages ? info.pages : (bk.t - 0.004) / 0.00006) / 2)));
+  g.fillStyle = 'rgb(238,229,207)'; g.fillRect(0, 0, W, 8);
+  for (let i = 1; i < leaves; i++) { const x = i * W / leaves; g.fillStyle = `rgba(120,100,70,${i % 16 ? 0.10 + 0.12 * r() : 0.32})`; g.fillRect(x, 0, Math.max(0.6, W / leaves * 0.35), 8); }
+  for (let x = 0; x < W; x += 2) { g.fillStyle = `rgba(255,255,255,${r() * 0.06})`; g.fillRect(x, 0, 2, 8); }
+  const sh = g.createLinearGradient(0, 0, W, 0); sh.addColorStop(0, 'rgba(60,45,30,0.32)'); sh.addColorStop(0.05, 'rgba(60,45,30,0)'); sh.addColorStop(0.95, 'rgba(60,45,30,0)'); sh.addColorStop(1, 'rgba(60,45,30,0.32)');
+  g.fillStyle = sh; g.fillRect(0, 0, W, 8);
+  const t = heroCanvasTex(c, true); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t;
+}
+function heroBand(bk) {   // the headband: silk wound on its core, two colours
+  const c = canvas(64, 16), g = c.getContext('2d'), a = inkFor(bk.color) === '#f3ead6' ? '#e9dcc0' : '#7c2b26';
+  g.fillStyle = '#8f2f29'; g.fillRect(0, 0, 64, 16); g.fillStyle = a;
+  for (let x = -16; x < 80; x += 8) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 4, 0); g.lineTo(x + 8, 16); g.lineTo(x + 4, 16); g.fill(); }
+  const t = heroCanvasTex(c, true, true); t.repeat.set(14, 1); return t;
+}
+function heroMaterials(bk, shape) {
+  const ink = inkFor(bk.color), cloth = heroCloth(bk), img = coverOf(bk.it), H = bk.h;
+  const FW = 768, FH = Math.round(FW * H / shape.frontW), SW = 160, SH = Math.max(160, Math.round(SW * H / shape.spineL));
+  const front = heroFace(bk, FW, FH, cloth, g => heroCoverLayout(g, FW, FH, bk, FW * shape.frontU0, !!img), ink);
+  const spine = heroFace(bk, SW, SH, cloth, g => heroSpineLayout(g, SW, SH, bk), ink);
+  const env = heroEnv(), sheenColor = _hc.copy(bk.color).lerp(new THREE.Color(1, 1, 1), 0.2).clone();
+  const base = { fog: false, envMap: env, envMapIntensity: 0.16, emissive: 0xffffff, emissiveIntensity: 0.09 };
+  const clothMat = (face, o) => heroSharp(new THREE.MeshPhysicalMaterial({ ...base, map: face.tex, emissiveMap: face.tex, bumpMap: face.surfTex, bumpScale: 4.2,
+    roughness: 1, metalness: 1, roughnessMap: face.surfTex, metalnessMap: face.surfTex, sheen: 0.4, sheenRoughness: 0.72, sheenColor, ...o }));
+  const ct = heroCanvasTex(cloth, true, true);
+  const mats = [
+    clothMat(front, img ? { sheen: 0, clearcoat: 0.5, clearcoatRoughness: 0.26 } : {}),
+    clothMat(spine),
+    heroSharp(new THREE.MeshPhysicalMaterial({ ...base, map: ct, emissiveMap: ct, bumpMap: ct, bumpScale: 1.6, roughness: 0.84, metalness: 0, sheen: 0.4, sheenRoughness: 0.72, sheenColor })),
+    heroSharp(new THREE.MeshStandardMaterial({ ...base, color: _hc.set(0xebe1c8).lerp(bk.color, 0.18).clone(), emissive: _hc.clone(), roughness: 0.92, metalness: 0 })),
+    null, null];
+  const pt = heroPages(bk); mats[4] = heroSharp(new THREE.MeshStandardMaterial({ ...base, map: pt, emissiveMap: pt, bumpMap: pt, bumpScale: 0.9, roughness: 0.9, metalness: 0 }));
+  const bt = heroBand(bk); mats[5] = heroSharp(new THREE.MeshStandardMaterial({ ...base, map: bt, emissiveMap: bt, roughness: 0.55, metalness: 0 }));
+  if (img) { const im = new Image(); im.onload = () => {   // the jacket: filling the board (and its joint) if its shape is near the board's, else whole on the cloth
+    const W = FW, Hh = FH, a = im.width / im.height, b2 = W / Hh, g = front.col.getContext('2d'); let w, hh;
+    if (Math.abs(a / b2 - 1) < 0.14) { if (a > b2) { hh = Hh; w = Hh * a; } else { w = W; hh = W / a; } } else if (a > b2) { w = W - 60; hh = w / a; } else { hh = Hh - 60; w = hh * a; }
+    g.drawImage(im, (W - w) / 2, (Hh - hh) / 2, w, hh); front.flat((W - w) / 2, (Hh - hh) / 2, w, hh);   // (printed paper: smoother than the cloth, and flat)
+    front.tex.needsUpdate = true; setNeeds(true);
+  }; im.src = img; }
+  bk.heroFaces = { front: img ? null : front, spine };   // (a jacket's picture is not redrawn for another language)
+  return mats;
 }
 function heroMesh(bk) {
   if (bk.hero) return bk.hero;
-  const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, -0.5);   // like the shelf books: origin at the foot of the spine, spine toward +z
-  // lit like the room, but it glows a little from within so it is never too dark to read (in front of the camera, by night)
-  const std = o => heroSharp(new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0, fog: false, emissiveIntensity: 0.32, ...o }));
   if (!heroMesh.lit) { heroMesh.lit = true; scene.traverse(o => { if (o.isLight) o.layers.enable(HERO_LAYER); }); }   // (the room's lights light it there too)
-  const cover = coverTexture(bk), spine = spineTexture(bk);
-  const pages = std({ color: 0xeee5cf, emissive: 0xeee5cf, roughness: 0.9 }), plain = std({ color: bk.color, emissive: bk.color });
-  const m = new THREE.Mesh(geo, [std({ map: cover, emissive: 0xffffff, emissiveMap: cover }), plain, pages, pages, std({ map: spine, emissive: 0xffffff, emissiveMap: spine }), pages]);
-  m.layers.set(HERO_LAYER); m.visible = false; m.userData.book = bk; scene.add(m); bk.hero = m; bookWords(bk); return m;
+  const shape = heroGeometry(bk), m = new THREE.Mesh(shape.geo, heroMaterials(bk, shape));
+  m.layers.set(HERO_LAYER); m.visible = false; m.userData.book = bk; scene.add(m); bk.hero = m;
+  HERO.list.push(bk); heroForget(); return m;
 }
-/* ---- the printed words of a book on the move: drawn after the watercolour pass so they stay sharp, and hidden
-   wherever the room stands in front of the book (each pixel is tested against the room's depth) */
-const OVER = { scene: new THREE.Scene(), heroScene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) } }, words: [] };
+// past HERO.keep books made, the one longest out of sight (and not on its way anywhere) is let go: its pictures are large
+function heroForget() {
+  const idle = HERO.list.filter(bk => bk.hero && !bk.hero.visible && !UIS.touched.has(bk)).sort((a, b) => (a.heroSeen || 0) - (b.heroSeen || 0));
+  while (HERO.list.length > HERO.keep && idle.length) {
+    const bk = idle.shift(), m = bk.hero; scene.remove(m); m.geometry.dispose();
+    for (const mt of m.material) { for (const k of ['map', 'bumpMap', 'roughnessMap']) if (mt[k]) mt[k].dispose(); mt.dispose(); }
+    bk.hero = null; bk.heroFaces = null; HERO.list.splice(HERO.list.indexOf(bk), 1);
+  }
+}
+// the page's language switched: the title on a book already out drawn again
+function relabelHero(bk) {
+  if (!bk.heroFaces) return;
+  for (const f of [bk.heroFaces.front, bk.heroFaces.spine]) if (f) { f.paint(); f.tex.needsUpdate = f.surfTex.needsUpdate = true; }
+}
+/* ---- the titles on the shelves' spines: drawn after the watercolour pass so they stay sharp, and hidden wherever the
+   room stands in front of the book (each pixel is tested against the room's depth). (A book out of the shelf has its
+   words printed on itself: hero-books.js.) */
+const OVER = { scene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) } } };
 function crispMaterial(map) {
   return new THREE.ShaderMaterial({
     uniforms: { map: { value: map }, uDepth: OVER.u.uDepth, uRes: OVER.u.uRes },
@@ -2711,23 +2957,6 @@ function wordsCanvas(W, H, bk) {   // ink that suits the cover, with a soft halo
   const c = canvas(W, H), g = c.getContext('2d'), ink = inkFor(bk.color);
   g.fillStyle = ink; g.textAlign = 'center'; g.shadowColor = ink === '#2a2118' ? 'rgba(255,248,232,.55)' : 'rgba(20,14,8,.6)'; g.shadowBlur = Math.max(4, W * 0.012);
   return { c, g };
-}
-function coverWords(bk) {   // the title as large as fits above the author (italics) and the year
-  const W = 576, H = Math.round(W * bk.h / bk.d), { c, g } = wordsCanvas(W, H, bk), serif = `Georgia, 'Times New Roman', serif`, halo = g.shadowBlur;
-  g.textBaseline = 'alphabetic';
-  const by = byOf(bk.it), parts = by ? by.split(/\s+·\s+/) : [], year = parts.length && /^\d{3,4}$/.test(parts[parts.length - 1]) ? parts.pop() : '', who = parts.join(' · ');
-  const bs = Math.round(W * 0.072), ys = Math.round(W * 0.056);
-  g.font = `italic ${bs}px ${serif}`; const wl = who ? wrapText(g, who, W - 110) : [];
-  const yearY = H - W * 0.15, lastWho = year ? yearY - ys * 1.45 : yearY;
-  const top = wl.length ? lastWho - (wl.length - 1) * bs * 1.2 - bs : year ? yearY - ys : H - W * 0.1;
-  let size = Math.round(W * 0.118), lines = [];
-  const bottom = () => H * 0.2 + size + (lines.length - 1) * size * 1.16 + size * 0.55;
-  for (;; size -= 2) { g.font = `600 ${size}px ${serif}`; lines = wrapText(g, titleIn(bk.it), W - 104); if (size <= 22 || (lines.length <= 5 && bottom() < top - W * 0.05)) break; }
-  const y0 = H * 0.2 + size; lines.forEach((l, k) => g.fillText(l, W / 2, y0 + k * size * 1.16));
-  g.shadowBlur = 0; g.globalAlpha = 0.65; g.fillRect(W / 2 - 44, bottom(), 88, 3); g.globalAlpha = 1; g.shadowBlur = halo;
-  if (year) { g.font = `500 ${ys}px ${serif}`; g.fillText(year, W / 2, yearY); }
-  g.font = `italic ${bs}px ${serif}`; wl.forEach((l, k) => g.fillText(l, W / 2, lastWho - (wl.length - 1 - k) * bs * 1.2));
-  const t = ctex(c, { srgb: false, rep: false }); t.anisotropy = 8; return t;
 }
 function spineWords(bk) {   // the title along the spine, as large as the spine allows (narrowed a little rather than cut)
   if (bk.spineTex) return bk.spineTex;
@@ -2763,10 +2992,7 @@ function relabelBooks() {
   for (const sec of UIS.secs) for (const bk of sec.books) {
     if (bk.spineTex) { bk.spineTex.dispose(); bk.spineTex = null; }
     if (bk.shelfSpine) bk.shelfSpine.material.uniforms.map.value = spineWords(bk);
-    if (bk.words) {
-      const { cover, spine } = bk.words.userData;
-      if (cover) { cover.material.uniforms.map.value.dispose(); cover.material.uniforms.map.value = coverWords(bk); } spine.material.uniforms.map.value = spineWords(bk);
-    }
+    relabelHero(bk);
   }
 }
 function spinePx(bk) {   // how wide the spine shows on screen, in pixels
@@ -2774,19 +3000,8 @@ function spinePx(bk) {   // how wide the spine shows on screen, in pixels
   if (Math.abs(_sa.z) > 1 || Math.abs(_sb.z) > 1) return 0;
   return Math.hypot((_sa.x - _sb.x) * innerWidth, (_sa.y - _sb.y) * innerHeight) / 2;
 }
-function bookWords(bk) {   // planes 2 mm off the cover and the spine, in the book's own unit-box frame
-  if (bk.words) return bk.words;
-  const grp = new THREE.Group(); grp.matrixAutoUpdate = false; grp.visible = false;
-  let cover = null;   // (a book with its own cover image keeps the title printed on it: no words over it)
-  if (!coverOf(bk.it)) { cover = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), crispMaterial(coverWords(bk)));
-    cover.matrixAutoUpdate = false; cover.matrix.makeRotationY(Math.PI / 2).setPosition(0.5 + 0.002 / bk.t, 0.5, -0.5); grp.add(cover); }
-  const spine = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), crispMaterial(spineWords(bk)));
-  spine.matrixAutoUpdate = false; spine.matrix.makeTranslation(0, 0.5, 0.002 / bk.d);
-  grp.add(spine); grp.userData = { cover, spine }; OVER.heroScene.add(grp); OVER.words.push(bk); bk.words = grp; return grp;   // (drawn after the book itself: drawWords)
-}
 function drawWords() {   // the sharp layer: titles on the spines, words of the books on the move, and the night sky
-  let any = false, hero = false;
-  for (const bk of OVER.words) { const on = !!(bk.hero && bk.hero.visible); bk.words.visible = on; if (on) { bk.words.matrix.copy(bk.hero.matrixWorld); hero = true; } }
+  let any = false;
   for (const sec of UIS.secs) for (const bk of sec.books) {
     const on = !bk.away && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;   // too narrow to read (the whole room in view): none
   }
@@ -2795,10 +3010,9 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   drawDeck(); drawPets();
   // the shelves' titles and the sky, then the book out of the shelf over them (sharp: it is not in the picture, so the
-  // room's depth does not hide the titles behind it), then its own words
+  // room's depth does not hide the titles behind it)
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
   drawSharpBooks();
-  if (hero) { renderer.autoClear = false; renderer.render(OVER.heroScene, camera); renderer.autoClear = true; }
 }
 /* ---- the night sky over the glass: stars and the moon, drawn sharp after the watercolour pass (its filter wipes out
    points this small) and only where the room shows sky: every pixel is tested against the room's depth, which the sky
@@ -3933,9 +4147,9 @@ const _bb = new THREE.Box3();
 function drawSharpBooks() {
   const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
   if (!SHARP.book.quad) sharpQuad(SHARP.book);
-  for (const bk of OVER.words) {
+  for (const bk of HERO.list) {
     const h = bk.hero; if (!h || !h.visible) continue;
-    _bb.setFromObject(h); const c = _bb.getCenter(SHARP.v);
+    bk.heroSeen = performance.now(); _bb.setFromObject(h); const c = _bb.getCenter(SHARP.v); heroKey(camera, c);
     crispPass(SHARP.book, [c.x, _bb.min.y, c.z, (_bb.max.x - _bb.min.x) / 2, _bb.max.y - _bb.min.y, (_bb.max.z - _bb.min.z) / 2]);
   }
 }
@@ -3953,8 +4167,9 @@ const pulledPose = bk => slidePose(bk, PULL);
 function presentPose(bk) {
   const v = focusView(bk.sec), fwd = v.tgt.clone().sub(v.pos).normalize(), up = new V3(0, 1, 0), right = fwd.clone().cross(up).normalize();
   const p = v.pos.clone().addScaledVector(fwd, 1.3).addScaledVector(right, -0.1).addScaledVector(up, -0.03 - bk.h / 2);
-  const x = fwd.clone().negate().applyAxisAngle(up, -0.42), z = x.clone().cross(up).normalize();   // front cover to the camera, spine showing a little
-  const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, up, z));
+  const x = fwd.clone().negate().applyAxisAngle(up, -0.52), z = x.clone().cross(up).normalize();   // front cover to the camera, fore-edge showing a little
+  const th = 0.07, x2 = x.clone().multiplyScalar(Math.cos(th)).addScaledVector(up, Math.sin(th)), y2 = up.clone().multiplyScalar(Math.cos(th)).addScaledVector(x, -Math.sin(th));   // leaning back 4°, as on a stand
+  const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x2, y2, z));
   return { p: p.addScaledVector(z, bk.d / 2), q };
 }
 let SEAT = null;
@@ -4494,7 +4709,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, METEOR, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, coverWords, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
+window.__lib3d = { PETS, METEOR, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
 (window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => start().catch(e => {
   console.warn('3D library unavailable', e); setReady(false); updateOn(); document.documentElement.classList.add('lib3d-failed');
 }), { timeout: 800 });
