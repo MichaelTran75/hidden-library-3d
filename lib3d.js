@@ -2671,13 +2671,17 @@ function wrapText(g, text, maxW) {
   if (line) lines.push(line); return lines;
 }
 function inkFor(col) { const hsl = {}; col.getHSL(hsl, THREE.SRGBColorSpace); return hsl.l < 0.55 ? '#f3ead6' : '#2a2118'; }
-// a key light for the book alone (on its layer only), a lamp half a metre off to the viewer's upper left, as a product
-// is lit: its light falls off across the cover, and it brings out the rounded edges, the groove of the joint and the
-// stamping; softer and warmer at night
+// the book's own lights (on its layer only), as a product is lit: a key lamp a third of a metre off to the viewer's upper
+// left, its light falling off across the cover, bringing out the rounded edges, the groove of the joint and the stamping;
+// and a weak fill from the right, low, so the fore-edge (turned away from the key) shows its pages; softer and warmer at
+// night
 function heroKey(camera, at) {
-  if (!HERO.key) { HERO.key = new THREE.PointLight(0xfff3e2, 1, 0, 2); HERO.key.layers.set(HERO_LAYER); scene.add(HERO.key); }
-  const k = HERO.key, n = NIGHT.u.value; k.intensity = (0.85 - 0.35 * n) * 0.3; k.color.setRGB(1, 0.95 - 0.07 * n, 0.88 - 0.16 * n);
-  _hk.copy(camera.position).sub(at).normalize(); k.position.copy(at).addScaledVector(_hk, 0.32).add(_hk.set(-0.3, 0.32, 0).applyQuaternion(camera.quaternion)); k.updateMatrixWorld();
+  if (!HERO.key) { for (const k of ['key', 'fill']) { HERO[k] = new THREE.PointLight(0xfff3e2, 1, 0, 2); HERO[k].layers.set(HERO_LAYER); scene.add(HERO[k]); } }
+  const n = NIGHT.u.value, i = (0.85 - 0.35 * n) * 0.3;
+  for (const [k, f, x, y] of [[HERO.key, 1, -0.3, 0.32], [HERO.fill, 0.6, 0.34, -0.04]]) {
+    k.intensity = i * f; k.color.setRGB(1, 0.95 - 0.07 * n, 0.88 - 0.16 * n);
+    _hk.copy(camera.position).sub(at).normalize(); k.position.copy(at).addScaledVector(_hk, 0.3).add(_hk.set(x, y, 0).applyQuaternion(camera.quaternion)); k.updateMatrixWorld();
+  }
 }
 const _hk = new THREE.Vector3();
 function heroEnv() {
@@ -2785,11 +2789,16 @@ function heroGeometry(bk) {
 
 /* ---- the cloth, the stamping, the pages */
 const _hc = new THREE.Color();
-function heroCloth(bk, S = 256) {   // a tile of the book's cloth (a fine weave, flecks), 4 cm square
+function heroCloth(bk, S = 256) {   // a tile of the book's cloth, ~5 cm square: a fine weave whose threads are not all
+  // alike (each a little lighter or darker, here and there a slub, a thicker stretch of thread), and flecks
   const c = canvas(S, S), g = c.getContext('2d'), r = rng(bk.idx * 31 + 5);
   g.fillStyle = '#' + bk.color.getHexString(THREE.SRGBColorSpace); g.fillRect(0, 0, S, S);
-  for (let y = 0; y < S; y += 2) { g.fillStyle = `rgba(255,255,255,${0.035 + 0.03 * r()})`; g.fillRect(0, y, S, 1); }
-  for (let x = 0; x < S; x += 2) { g.fillStyle = `rgba(0,0,0,${0.04 + 0.03 * r()})`; g.fillRect(x, 0, 1, S); }
+  for (let y = 0; y < S; y += 2) { g.fillStyle = `rgba(255,255,255,${0.03 + 0.04 * r()})`; g.fillRect(0, y, S, 1); }
+  for (let x = 0; x < S; x += 2) { g.fillStyle = `rgba(0,0,0,${0.035 + 0.04 * r()})`; g.fillRect(x, 0, 1, S); }
+  for (let k = 0; k < 40; k++) {   // slubs, along the weft and the warp: they catch the light a little
+    const along = r() < 0.6, l = 5 + r() * 14, x = r() * S, y = Math.floor(r() * S / 2) * 2; g.fillStyle = `rgba(255,252,244,${0.025 + 0.03 * r()})`;
+    for (const ox of [-S, 0]) for (const oy of [-S, 0]) along ? g.fillRect(x + ox + S, y + oy + S, l, 1.6) : g.fillRect(y + ox + S, x + oy + S, 1.6, l);   // (wrapped: the tile repeats)
+  }
   for (let k = 0; k < S * S / 90; k++) { g.fillStyle = `rgba(${r() < .5 ? '0,0,0' : '255,255,255'},${r() * .07})`; g.fillRect(r() * S, r() * S, 1 + r() * 2, 1 + r()); }
   return c;
 }
@@ -2849,7 +2858,12 @@ function heroFace(bk, W, H, cloth, layout, ink) {
   const paint = () => {
     bump = canvas(W, H); rm = canvas(W, H); gb = bump.getContext('2d', { willReadFrequently: true }); gr = rm.getContext('2d', { willReadFrequently: true });   // (read back to merge)
     gc.fillStyle = gc.createPattern(cloth, 'repeat'); gc.fillRect(0, 0, W, H);
-    const r = rng(bk.idx + 7), wear = gc.createLinearGradient(0, 0, 0, H);   // the cloth rubbed paler toward the head and the foot
+    const r = rng(bk.idx + 7);
+    for (let k = 0; k < 36; k++) {   // the dye a little uneven: soft, wide patches, lighter and darker (across the face, so the tile's repeat does not show)
+      const x = r() * W, y = r() * H, rr = W * (0.08 + 0.2 * r()), lt = r() < 0.5, m = gc.createRadialGradient(x, y, 0, x, y, rr);
+      m.addColorStop(0, lt ? 'rgba(255,250,240,0.045)' : 'rgba(0,0,0,0.05)'); m.addColorStop(1, 'rgba(0,0,0,0)'); gc.fillStyle = m; gc.fillRect(x - rr, y - rr, 2 * rr, 2 * rr);
+    }
+    const wear = gc.createLinearGradient(0, 0, 0, H);   // the cloth rubbed paler toward the head and the foot
     wear.addColorStop(0, 'rgba(255,250,240,0.10)'); wear.addColorStop(0.06, 'rgba(255,250,240,0)'); wear.addColorStop(0.94, 'rgba(255,250,240,0)'); wear.addColorStop(1, 'rgba(255,250,240,0.12)');
     gc.fillStyle = wear; gc.fillRect(0, 0, W, H);
     for (let k = 0; k < 900; k++) { gc.fillStyle = `rgba(255,250,240,${r() * 0.05})`; const ed = r() < 0.5, x = ed ? W - r() * W * 0.03 : r() * W, y = ed ? r() * H : (r() < 0.5 ? r() * H * 0.02 : H - r() * H * 0.02); gc.fillRect(x, y, 1 + r() * 3, 1 + r() * 3); }
@@ -2873,17 +2887,44 @@ function heroFace(bk, W, H, cloth, layout, ink) {
     flat: (x, y, w, h) => { gb.fillStyle = '#8c8c8c'; gb.fillRect(x, y, w, h); gr.fillStyle = 'rgb(0,150,0)'; gr.fillRect(x, y, w, h); merge(); face.surfTex.needsUpdate = true; } };
   return face;
 }
-// the page edges: across the block, one line for each leaf (a darker one where a section was sewn), shaded toward the
-// boards; along it, all the same
-function heroPages(bk) {
-  const W = 1024, c = canvas(W, 8), g = c.getContext('2d'), r = rng(bk.idx * 13 + 1), info = bookInfo(bk.it);
-  const leaves = Math.max(40, Math.min(420, Math.round((info && info.pages ? info.pages : (bk.t - 0.004) / 0.00006) / 2)));
-  g.fillStyle = 'rgb(238,229,207)'; g.fillRect(0, 0, W, 8);
-  for (let i = 1; i < leaves; i++) { const x = i * W / leaves; g.fillStyle = `rgba(120,100,70,${i % 16 ? 0.10 + 0.12 * r() : 0.32})`; g.fillRect(x, 0, Math.max(0.6, W / leaves * 0.35), 8); }
-  for (let x = 0; x < W; x += 2) { g.fillStyle = `rgba(255,255,255,${r() * 0.06})`; g.fillRect(x, 0, 2, 8); }
-  const sh = g.createLinearGradient(0, 0, W, 0); sh.addColorStop(0, 'rgba(60,45,30,0.32)'); sh.addColorStop(0.05, 'rgba(60,45,30,0)'); sh.addColorStop(0.95, 'rgba(60,45,30,0)'); sh.addColorStop(1, 'rgba(60,45,30,0.32)');
-  g.fillStyle = sh; g.fillRect(0, 0, W, 8);
-  const t = heroCanvasTex(c, true); t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t;
+/* ---- the page edges, drawn in the shader so their lines hold at any size (a texture's lines either blurred into one
+   cream tone or shimmered). Across the block (u), one seam between each leaf and the next, and every 10 leaves (20
+   pages) the fold of a sewn section, darker; each section's edge a little rounded, so the block reads as bundles of
+   leaves; a leaf or a section standing a little proud, lighter; the leaves' edges wandering a little along the block
+   (u nudged by a slow wave, each section its own); in the boards' shadow where they overhang; dustier at the head and
+   the foot. Every pattern is box-filtered over the pixel it falls in (its integral differenced over the pixel's width,
+   as in Apodaca & Gritz, "Advanced RenderMan", ch. 11, and Inigo Quilez's "filtering procedurals"): a line finer than a
+   pixel fades into its average instead of breaking into moiré, and the folds, a few pixels apart on the screen, stay
+   crisp. */
+const HERO_PAGE_GLSL = `
+  float hpg(float n) { return fract(sin(n * 127.1 + uSeed * 311.7) * 43758.5453); }
+  float pulseI(float t, float a) { float s = t + 0.5 * a; return floor(s) * a + min(fract(s), a); }
+  float pulseF(float x, float w, float a) { return (pulseI(x + 0.5 * w, a) - pulseI(x - 0.5 * w, a)) / w; }   // how much of [x - w/2, x + w/2] lies within a/2 of a whole number
+  float cosF(float x, float w) { return w < 1e-3 ? cos(6.2831853 * x) : (sin(6.2831853 * (x + 0.5 * w)) - sin(6.2831853 * (x - 0.5 * w))) / (6.2831853 * w); }
+`;
+const HERO_PAGE_MAIN = `
+  {
+    vec2 pu = vUv;   // u across the block (back board to front), v along it
+    float L = uLeaves, S = 10.0, sec = floor(pu.x * L / S);   // (S leaves to a section: 20 pages)
+    float wob = 0.12 * (0.6 * sin(pu.y * 9.0 + hpg(sec) * 6.283) + 0.4 * sin(pu.y * 23.0 + hpg(sec + 31.0) * 6.283));   // (in leaves)
+    float x = pu.x * L + wob, w = max(fwidth(x), 1e-4), xs = x / S, ws = w / S;
+    float seam = pulseF(x, w, 0.22), fold = pulseF(xs, ws, 0.12), bulge = 0.5 - 0.5 * cosF(xs, ws);
+    float lf = (hpg(floor(x) + 17.0) - 0.5) * (1.0 - smoothstep(0.35, 1.0, w)), sf = (hpg(floor(xs) + 59.0) - 0.5) * (1.0 - smoothstep(0.5, 1.2, ws));
+    float ao = smoothstep(0.0, 0.07, pu.x) * smoothstep(0.0, 0.07, 1.0 - pu.x);
+    float k = (1.0 - 0.3 * seam) * (1.0 - 0.75 * fold * (0.55 + 0.9 * hpg(floor(xs + 0.5) + 3.0))) * mix(0.76, 1.0, bulge) * (1.0 + 0.1 * lf + 0.2 * sf);
+    diffuseColor.rgb = vec3(0.86, 0.77, 0.58) * k * mix(0.5, 1.0, ao) * (1.0 - 0.07 * smoothstep(0.86, 1.0, abs(pu.y * 2.0 - 1.0)));
+  }
+`;
+function heroPagesMat(bk, base) {
+  const info = bookInfo(bk.it), leaves = Math.max(40, Math.round((info && info.pages ? info.pages : (bk.t - 0.004) / 0.00006) / 2));
+  const m = heroSharp(new THREE.MeshStandardMaterial({ ...base, emissiveIntensity: 0.16, roughness: 0.9, metalness: 0 })), patch = m.onBeforeCompile;   // (paper lit through: a little more light of its own)
+  m.defines = { USE_UV: '' }; m.customProgramCacheKey = () => 'hero-pages';
+  m.onBeforeCompile = sh => {
+    patch(sh); sh.uniforms.uLeaves = { value: leaves }; sh.uniforms.uSeed = { value: (bk.idx * 0.137) % 1 };
+    sh.fragmentShader = 'uniform float uLeaves, uSeed;\n' + HERO_PAGE_GLSL + sh.fragmentShader.replace('#include <map_fragment>', HERO_PAGE_MAIN)
+      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance *= diffuseColor.rgb;');
+  };
+  return m;
 }
 function heroBand(bk) {   // the headband: silk wound on its core, two colours
   const c = canvas(64, 16), g = c.getContext('2d'), a = inkFor(bk.color) === '#f3ead6' ? '#e9dcc0' : '#7c2b26';
@@ -2907,7 +2948,7 @@ function heroMaterials(bk, shape) {
     heroSharp(new THREE.MeshPhysicalMaterial({ ...base, map: ct, emissiveMap: ct, bumpMap: ct, bumpScale: 1.6, roughness: 0.84, metalness: 0, sheen: 0.4, sheenRoughness: 0.72, sheenColor })),
     heroSharp(new THREE.MeshStandardMaterial({ ...base, color: _hc.set(0xebe1c8).lerp(bk.color, 0.18).clone(), emissive: _hc.clone(), roughness: 0.92, metalness: 0 })),
     null, null];
-  const pt = heroPages(bk); mats[4] = heroSharp(new THREE.MeshStandardMaterial({ ...base, map: pt, emissiveMap: pt, bumpMap: pt, bumpScale: 0.9, roughness: 0.9, metalness: 0 }));
+  mats[4] = heroPagesMat(bk, base);
   const bt = heroBand(bk); mats[5] = heroSharp(new THREE.MeshStandardMaterial({ ...base, map: bt, emissiveMap: bt, roughness: 0.55, metalness: 0 }));
   if (img) { const im = new Image(); im.onload = () => {   // the jacket: filling the board (and its joint) if its shape is near the board's, else whole on the cloth
     const W = FW, Hh = FH, a = im.width / im.height, b2 = W / Hh, g = front.col.getContext('2d'); let w, hh;
