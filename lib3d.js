@@ -2497,10 +2497,12 @@ function stepGlass(force) {
    sofa otherwise). The record player stays the page's own, in the sidebar.                                     */
 const UIS = { secs: [], byId: new Map(), byCat: new Map(), hover: null, open: null, mode: 'home', peek: null, active: null, touched: new Set(), bySrc: new Map() };
 /* The room is organised in two parts. Books: every category is one whole row of the tall shelf on the right wall,
-   top to bottom from the row under the 3.5 m board (rows 8, 7, 6, 5 for four categories). Research: every topic
+   top to bottom from the row under the 2.8 m board (rows 6, 5, 4, 3 for four categories: around eye level, where the
+   rows run nearly level across the screen and each label sits in its own row: G, 15/10/2026; more categories go
+   above them, then below). Research: every topic
    (a sub-page of the Research group) is one bay of the low bookcase under the back glass, left to right; with more
    than three topics the bays are split into an upper and a lower half.                                          */
-function bookSlot(k) { const row = 8 - k; return row < 2 ? null : { shelf: 'R', cols: [0, 6], rows: [row, row], pick: [3, 3], mid: 3, anchor: 2 }; }
+function bookSlot(k) { const row = [6, 5, 4, 3, 7, 8, 2][k]; return row === undefined ? null : { shelf: 'R', cols: [0, 6], rows: [row, row], pick: [3, 3], mid: 3, anchor: 2 }; }
 // the books of a bay: the right two thirds of its two upper rows (the left end can sit behind the card), clear of the
 // sofa and the plant; its view frames just them
 function researchSlot(k, n) {
@@ -4656,7 +4658,7 @@ function layoutOverlay() {
   const show = !offMode(), home = UIS.mode === 'home';
   const boxes = [], lines = [];
   // a label hangs at `tag` (+dx, dy px; 'left' starts there, 'center' centres on it); its leader line ends on `anchor`
-  const place = (el, anchor, tag, dx, dy, align, visible) => {
+  const place = (el, anchor, tag, dx, dy, align, visible, sec) => {
     if (!visible) { el.classList.add('is-off'); return; }
     const a = project(anchor), t = tag === anchor ? a : project(tag);
     const inView = a.ok && a.x > side + 6 && a.x < innerWidth - 6 && a.y > 6 && a.y < innerHeight - 6;
@@ -4664,13 +4666,31 @@ function layoutOverlay() {
     el.classList.remove('is-off'); const w = el.offsetWidth, h = el.offsetHeight;
     let x = t.x + dx - (align === 'right' ? w : align === 'left' ? 0 : w / 2), y = t.y + dy - h / 2;
     x = THREE.MathUtils.clamp(x, side + 10, innerWidth - w - 10); y = THREE.MathUtils.clamp(y, 10, innerHeight - h - 10);
-    boxes.push({ el, a, x, y, w, h });
+    boxes.push({ el, a, x, y, w, h, sec });
   };
   for (const s of UIS.secs) {
     const vis = show && (home || (UIS.mode === 'research' && s.group === 'research'));
     const lh = s.label.offsetHeight || 26;   // (the labels' size follows the window: build.py's CSS)
-    if (s.group === 'books') place(s.label, s.box.plate, s.box.tag, 30 + lh * 0.4, 0, 'left', vis);   // on its row, just past the plate
-    else place(s.label, s.box.plate, s.box.tag, 0, -31 - lh / 2, 'center', vis);                       // above its bay
+    if (s.group === 'books') place(s.label, s.box.plate, s.box.tag, 30 + lh * 0.4, 0, 'left', vis, s);   // on its row, just past the plate
+    else place(s.label, s.box.plate, s.box.tag, 0, -31 - lh / 2, 'center', vis, s);                       // above its bay
+  }
+  // the shelf's labels in one column at the left edge of their rows (the frame of the four shelves: G, 15/10/2026), each
+  // in its own row (centred on the row's middle line where the label is), all starting at the frame's edge. They keep the
+  // size G asked for (twice the first) where the frame has room for the widest; on a narrower window they are made just
+  // small enough to fit in it (--l3-k, not below 62 %), and only then would the column move left of the edge
+  const shelfCol = boxes.filter(b => b.el.classList.contains('l3-books'));
+  if (shelfCol.length) {
+    const rowsAt = shelfCol.map(b => { const c = b.sec.box.corners, L0 = project(c[0]), L1 = project(c[3]), R0 = project(c[1]), R1 = project(c[2]);
+      return { b, ok: L0.ok && L1.ok && R0.ok && R1.ok, xl: (L0.x + L1.x) / 2, yl: (L0.y + L1.y) / 2, xr: (R0.x + R1.x) / 2, yr: (R0.y + R1.y) / 2 }; });
+    if (rowsAt.every(r => r.ok)) {
+      const edge = Math.max(...rowsAt.map(r => r.xl)) + 14, room = innerWidth - 10 - edge, k0 = UIEL.booksK || 1, wNow = Math.max(...shelfCol.map(b => b.w)), w1 = wNow / k0;
+      if (wNow > room + 1 || (k0 < 1 && room / w1 > k0 + 0.03)) {   // (a step at a time, with some slack: no flicker between two sizes)
+        const k = THREE.MathUtils.clamp(Math.floor(room / w1 * 100) / 100, 0.62, 1);
+        if (k !== k0) { UIEL.booksK = k; UIEL.labels.style.setProperty('--l3-k', k); for (const b of shelfCol) { b.w = b.el.offsetWidth; b.h = b.el.offsetHeight; } }
+      }
+      const wMax = Math.max(...shelfCol.map(b => b.w)), x = Math.max(side + 10, Math.min(edge, innerWidth - 10 - wMax));
+      for (const r of rowsAt) { const cx = x + r.b.w / 2, k = (cx - r.xl) / Math.max(1, r.xr - r.xl); r.b.x = x; r.b.y = THREE.MathUtils.clamp(r.yl + (r.yr - r.yl) * k - r.b.h / 2, 10, innerHeight - r.b.h - 10); }
+    }
   }
   // the bays' labels in a row over them, left to right, each as near over its bay as the one before allows; kept clear of
   // the shelf's labels on the right (the row moves left, toward the panel, as far as it can), and a label that still
