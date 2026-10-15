@@ -3198,8 +3198,8 @@ function buildNightSky() {
   buildMeteors(sky);
 }
 /* ---- shooting stars, now and then, as the garden's night sky draws them (3d-garden: app/core/night-sky.js): about one
-   in 16 s at full night, at most three at once, each a streak across the sky in a fraction of a second (the faster
-   the shorter), its tail thinning out behind a bright round head, now and then a brighter, slower fireball; and only
+   in 16 s at full night, at most three at once, each a streak across the sky in about a second (the faster the
+   shorter; half the speed they first had, G 15/10/2026), its tail thinning out behind a bright round head, now and then a brighter, slower fireball; and only
    where the room shows sky (they pass 230 m off, inside the stars' sphere, under the same depth test). Each is a strip
    on the screen, rebuilt every frame from its two ends on the sky. Where one flies is chosen so that it is seen: when
    one is due, 32 paths are tried against the room's depth on the GPU (two points of each, a third and two thirds of
@@ -3232,7 +3232,7 @@ function meteorPath(camera) {   // a start somewhere in the upper part of the vi
   const tn = side.multiplyScalar(Math.cos(th)).addScaledVector(down, Math.sin(th) - 0.35); tn.addScaledVector(_m0, -tn.dot(_m0)).normalize();   // (leaning a little downward)
   const fire = Math.random() < 0.05, v = fire ? 18 + Math.random() * 14 : 20 + Math.random() * 50, ang = (fire ? 14 + Math.random() * 12 : 5 + Math.random() * 15) * Math.PI / 180;
   return { d0: _m0.clone(), d1: _m0.clone().multiplyScalar(Math.cos(ang)).addScaledVector(tn, Math.sin(ang)).normalize(), t: 0,
-    dur: Math.min(fire ? 2.2 : 1.4, Math.max(0.3, ang * 180 / Math.PI / (v * 0.45 * (0.8 + 0.4 * Math.random())))), b: fire ? 2.2 : 0.9 + Math.random() * 0.8,
+    dur: 2 * Math.min(fire ? 2.2 : 1.4, Math.max(0.3, ang * 180 / Math.PI / (v * 0.45 * (0.8 + 0.4 * Math.random())))), b: fire ? 2.2 : 0.9 + Math.random() * 0.8,   // (half the speed: G 15/10/2026)
     w: fire ? 1.7 : 1, fast: Math.min(1, Math.max(0, (v - 35) / 30)) };
 }
 const PROBE = { n: 32, rt: null, quad: null, cand: [], busy: false, buf: new Uint8Array(256), left: 0, at: 0, tries: 0, sent: 0 };   // (tries, sent: for tests)
@@ -3306,8 +3306,9 @@ function stepMeteors(t, camera) {
    then every three or four minutes, one drifts across the sky in about forty seconds, fading in and out. Drawn as a
    comet looks: a soft greenish coma round a bright point (its gas glows green: diatomic carbon), a dust tail behind it,
    widening and fading, curving a little away from its path and finely streaked, and a narrower, straight blue ion tail
-   leaning up and away (the two tails of a comet like Hale-Bopp). Sizes are angles on the sky (a tail of 4.5 to 6.5°:
-   half the first size, G 15/10/2026), so it looks the same however far the view is zoomed. The tails move as they do in
+   leaning up and away (the two tails of a comet like Hale-Bopp). Sizes are angles on the sky (a tail of 2.3 to 3.3°:
+   a quarter of the first size, G 15/10/2026, halved twice), so it looks the same however far the view is zoomed; its
+   thinnest parts are kept about a pixel wide. The tails move as they do in
    a comet's time-lapse, slowed down to a few seconds: matter streams away from the head (the striae of the dust tail
    and the knots of the ion tail drift outward along them), the ion tail's rays brighten and fade and it waves like a
    flag in the solar wind (a kink running down it), and the dust tail's bend breathes a little. Its path is chosen as a shooting star's is (probeSky: its middle
@@ -3369,25 +3370,25 @@ function stepComet(t, dt, camera) {
   const ion = _ci.copy(m).multiplyScalar(-0.85).addScaledVector(up, 0.53).normalize(), side = _cu.crossVectors(H, ion).normalize();   // (up is done with)
   const g = mesh.geometry, P = g.attributes.position.array, T = g.attributes.aT.array, A = g.attributes.aC.array;
   const W = OVER.u.uRes.value.x / 2, Hh = OVER.u.uRes.value.y / 2, ppr = Hh / Math.tan(camera.fov * Math.PI / 360);   // pixels a radian, near the middle
-  const at = d => d.multiplyScalar(230).add(camera.position).project(camera);
+  const at = d => d.multiplyScalar(230).add(camera.position).project(camera), minPx = 1.1 * (OVER.u.uPR ? OVER.u.uPR.value : 1);
   let o = 0;
   const tail = (N, pt, w0, w1, kind, col, alpha) => {   // a strip along points pt(s), s from the head (0) to the end (1)
     for (let i = 0; i <= N; i++) { _cp[i].copy(pt(i / N)); if (at(_cp[i]).z > 1) return false; }
     for (let i = 0; i <= N; i++) {
       const a = _cp[Math.max(0, i - 1)], b = _cp[Math.min(N, i + 1)]; let tx = (b.x - a.x) * W, ty = (b.y - a.y) * Hh; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
-      const s = i / N, wpx = (w0 + (w1 - w0) * s) * ppr, nx = -ty * wpx / W, ny = tx * wpx / Hh;
+      const s = i / N, wpx = Math.max(minPx, (w0 + (w1 - w0) * s) * ppr), nx = -ty * wpx / W, ny = tx * wpx / Hh;
       for (let j = 0; j < 2; j++) { const sg = j ? -1 : 1, v = o + 2 * i + j;
         P[v * 3] = _cp[i].x + nx * sg; P[v * 3 + 1] = _cp[i].y + ny * sg; P[v * 3 + 2] = _cp[i].z;
         T[v * 3] = s; T[v * 3 + 1] = sg; T[v * 3 + 2] = kind; A[v * 4] = col[0]; A[v * 4 + 1] = col[1]; A[v * 4 + 2] = col[2]; A[v * 4 + 3] = alpha; }
     }
     o += 2 * (N + 1); return true;
   };
-  const D = Math.PI / 180, L = e.L * 0.5, Li = L * 0.85, curl = e.curl * (1 + 0.18 * Math.sin(t * 0.27 + e.b * 9));   // (half the first size; the bend breathing)
+  const D = Math.PI / 180, L = e.L * 0.25, Li = L * 0.85, curl = e.curl * (1 + 0.18 * Math.sin(t * 0.27 + e.b * 9));   // (half the first size; the bend breathing)
   const wave = s => Li * s * Math.pow(s, 0.3) * (0.05 * Math.sin(Math.PI * 2 * (1.1 * s - 0.2 * t)) + 0.02 * Math.sin(Math.PI * 2 * (2.3 * s - 0.37 * t) + 1.3));   // (a kink running down the ion tail)
-  const ok = tail(NS, s => _cs.copy(H).addScaledVector(m, -s * L).addScaledVector(n, curl * L * s * s).normalize(), 0.15 * D, 1.1 * D, 0, [1.0, 0.95, 0.82], 0.5 * fade)   // (bending away from its path)
-    && tail(NI, s => _cs.copy(H).addScaledVector(ion, s * Li).addScaledVector(side, wave(s)).normalize(), 0.13 * D, 0.55 * D, 1, [0.55, 0.75, 1.0], 0.2 * fade);
+  const ok = tail(NS, s => _cs.copy(H).addScaledVector(m, -s * L).addScaledVector(n, curl * L * s * s).normalize(), 0.075 * D, 0.55 * D, 0, [1.0, 0.95, 0.82], 0.5 * fade)   // (bending away from its path)
+    && tail(NI, s => _cs.copy(H).addScaledVector(ion, s * Li).addScaledVector(side, wave(s)).normalize(), 0.065 * D, 0.28 * D, 1, [0.55, 0.75, 1.0], 0.2 * fade);
   if (!ok) { mesh.visible = false; C.on = true; return; }
-  const h = at(_cs.copy(H)), r = 0.5 * D * ppr;   // the coma: a square round the head
+  const h = at(_cs.copy(H)), r = Math.max(4 * minPx, 0.25 * D * ppr);   // the coma: a square round the head (a soft dot at least)
   for (let j = 0; j < 4; j++) { const sx = j & 1 ? 1 : -1, sy = j & 2 ? 1 : -1, v = o + j;
     P[v * 3] = h.x + sx * r / W; P[v * 3 + 1] = h.y + sy * r / Hh; P[v * 3 + 2] = h.z; T[v * 3] = sx; T[v * 3 + 1] = sy; T[v * 3 + 2] = 2;
     A[v * 4] = 0.75; A[v * 4 + 1] = 1.0; A[v * 4 + 2] = 0.82; A[v * 4 + 3] = 0.95 * fade; }
