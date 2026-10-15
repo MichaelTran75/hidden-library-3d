@@ -1322,7 +1322,7 @@ function buildOutside(assets) {
         twi = mix(twi, mix(vec3(0.1, 0.1, 0.17), vec3(0.95, 0.45, 0.32), pow(toward, 2.0) * 0.8), cl * 0.8);
         vec3 band = mix(vec3(1.0, 0.36, 0.12), vec3(1.0, 0.7, 0.35), smoothstep(0.0, 0.25, h)) * exp(-h * 5.0) * pow(toward, 2.5);
         vec3 col = mix(twi, day, uDay) + band * uGlow * 1.15;
-        vec3 night = mix(vec3(0.045,0.07,0.13), vec3(0.01,0.02,0.055), pow(h,0.5));
+        vec3 night = mix(vec3(0.04, 0.06, 0.11), vec3(0.005, 0.011, 0.032), pow(h, 0.45));   // (a dark country sky overhead, the glow of the air low down)
         gl_FragColor = vec4(mix(col, night, uNight), 1.0); }` }));
   outside.add(sky); LIGHTS.sky = sky;
   if (!assets) return;
@@ -2434,7 +2434,7 @@ function stepHour(dt) {   // the light toward the hour: at once when it creeps, 
      Cubemaps", SIGGRAPH 2012), so a lamp or the shelves show in the glass about where they would, slightly softened;
    - how much by Fresnel (Schlick): 4 % looking straight through, nearly all at a glancing angle. By day the bright
      garden outshines the 4 %; by night, the garden dark, the glass turns into a dim mirror of the lit room, as windows
-     do;
+     do (kept at 40 % of that, so the night sky shows through: G, 15/10/2026);
    - it takes from the view behind it what it reflects (blended premultiplied: the view keeps 1 − a), and a faint green
      of the glass's own;
    - its surface is not perfectly clean: dust and smudges, more toward the bottom, haze it a little and catch light;
@@ -2465,7 +2465,7 @@ function glassMaterial() {
         float band = smoothstep(0.0, 0.04, s) * smoothstep(0.16, 0.08, s) + 0.6 * smoothstep(0.2, 0.22, s) * smoothstep(0.27, 0.25, s);
         band *= 0.6 + 0.4 * gn(q * 0.9 + 3.0);   // (not even along their length)
         float lit = 0.3 + 0.7 * uDay, haze = 0.012 + 0.05 * sm, sheen = band * (0.05 + 0.07 * uDay);
-        vec3 col = refl * F * (1.0 + 0.3 * sm) + vec3(0.93, 0.96, 0.94) * (haze + sheen) * lit + vec3(0.003, 0.007, 0.005);   // (a smudge scatters a little more of what it reflects)
+        vec3 col = refl * F * (1.0 + 0.3 * sm) * mix(0.4, 1.0, uDay) + vec3(0.93, 0.96, 0.94) * (haze + sheen) * lit + vec3(0.003, 0.007, 0.005);   // (a smudge scatters a little more of what it reflects; by night the room's mirror image kept faint, so the stars and the Milky Way show through)
         gl_FragColor = vec4(col, clamp(F + (haze + sheen) * 0.8 + 0.015, 0.0, 0.7));   // (premultiplied: the view behind keeps 1 − alpha of itself)
       }`,
     transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide });
@@ -3337,17 +3337,24 @@ const STAR_BSC5 =
    - the stars of the Yale Bright Star Catalogue (2887, to magnitude 5.5) where they stand at this minute: their J2000
      places turned by the local sidereal time at Pleiku (13.98° N, 108° E) and set in the room by its compass (the same
      one the sun is placed by, fx/hour.js: the left glass looks west, the back glass north), so they rise in the east,
-     wheel round the pole star 14° up in the north and set in the west as the night goes on; the fainter stars under the
-     catalogue's limit (5.5 to 7) made up, thicker toward the Milky Way's plane;
+     wheel round the pole star 14° up in the north and set in the west as the night goes on; and the fainter ones under
+     the catalogue's limit, 5.5 to 7.5, made up as many as the sky has (about 21,000: some 2.5 times as many each
+     magnitude fainter), crowding toward the Milky Way's plane and its centre, so the band is grainy with stars as it is;
    - each as bright as its magnitude (light ∝ 10^(−0.4 m), sized by its logarithm), the brightest with a halo; the
      colour of its temperature (B−V), seen only in the bright ones (night vision barely sees colour); dimmed and reddened
      low down by the air (0.2 magnitude per airmass, Kasten & Young 1989) and twinkling more and more slowly toward the
      horizon, the bright ones there flashing colours;
-   - the faintest seen as dark a sky allows: up to magnitude 6.3 at full night (a country sky, the garden's Pleiku),
-     less in twilight and under the moon (up to 1.8 magnitudes lost at full moon, more close to it);
-   - the Milky Way, in galactic coordinates: brightest toward its centre in Sagittarius, star clouds and dark lanes, the
-     Great Rift from Cygnus to Sagittarius; washed out by moonlight, fading into the haze low down; and the moon's light
-     scattered round it.
+   - the faintest seen as dark a sky allows: magnitude 6.5 once the twilight is over (a country sky, Bortle 3, the
+     garden's Pleiku), as the sun goes down: ~1.5 at the end of civil twilight (−6°), ~4.5 at −12°, all of them past
+     astronomical twilight (−18°); less under the moon (up to 1.8 magnitudes lost at full moon, more close to it);
+   - the Milky Way (G, 15/10/2026: "realistic night sky phải có cả dải ngân hà, và nhiều sao"), in galactic
+     coordinates: a thin disk of light (±4° far out, ±7° toward the centre) in a faint wide glow, brightest toward the
+     centre in Sagittarius (its bulge, warm in colour), with the Scutum and Cygnus star clouds and the Carina arm,
+     faintest toward the anticentre in Auriga; mottled with star clouds and cut by dark nebulae, the Great Rift splitting
+     it from Cygnus down to Ophiuchus; dimmed and lost low down by the air (airmass), coming out only as the twilight
+     ends and washed out by moonlight; as bright, where it is brightest, as two to three times the dark sky round it
+     (its surface brightness ~20.5 against ~21.8 magnitudes per square arcsecond); and the moon's light scattered round
+     the moon.
    Drawn back to front: the Milky Way, the stars, the comet, then the moon over them (it hides what is behind it), and
    the shooting stars last (they burn in our own air, in front of the moon). The moon has the phase of the page's sky
    clock and hangs in the left glass. */
@@ -3377,11 +3384,11 @@ function buildStars(sky) {
       kelvinRGB(Math.exp(L0 + (y >>> 21 & 31) / 31 * (L1 - L0)), col); seed.push(r());
     }
   }
-  { const v = new THREE.Vector3(), a = 0.44, A0 = Math.pow(10, a * 5.5), A1 = Math.pow(10, a * 7.0);   // fainter ones made up: ~2.75 times as many each magnitude, thicker toward the galactic plane
-    for (let n = 0; n < 6500;) {
+  { const v = new THREE.Vector3(), gv = new THREE.Vector3(), a = 0.4, A0 = Math.pow(10, a * 5.5), A1 = Math.pow(10, a * 7.5);   // fainter ones made up: ~2.5 times as many each magnitude, crowding to the galactic plane and its centre
+    for (let n = 0; n < 21000;) {
       const z = r() * 2 - 1, f = r() * 2 * Math.PI, sq = Math.sqrt(1 - z * z); v.set(sq * Math.cos(f), sq * Math.sin(f), z);
-      const gb = Math.abs(v.clone().applyMatrix3(GAL).z);
-      if (r() > 0.3 + 0.7 * Math.exp(-gb / 0.22)) continue;
+      gv.copy(v).applyMatrix3(GAL); const gb = Math.abs(gv.z), gc = 0.5 + 0.5 * gv.x / Math.max(1e-6, Math.hypot(gv.x, gv.y));
+      if (r() > 0.22 + 0.78 * Math.exp(-gb / 0.16) * (0.55 + 0.45 * gc * gc)) continue;
       dir.push(v.x, v.y, v.z); mag.push(Math.log10(A0 + r() * (A1 - A0)) / a);
       const u = r(); kelvinRGB(u < 0.55 ? 4200 + r() * 1800 : u < 0.88 ? 6000 + r() * 3500 : 9500 + r() * 12000, col); seed.push(r()); n++;
     }
@@ -3399,21 +3406,21 @@ function buildStars(sky) {
         float X = airmass(el), lo = smoothstep(1.3, 7.0, X), fq = mix(4.5, 1.8, lo), ph = aSeed * 50.0;
         float near = dot(d, uMoon), lost = uMoonK * (0.5 * smoothstep(0.7, 0.98, near) + 1.2 * smoothstep(0.985, 0.9995, near));   // (the moon's glare round it)
         float m = aMag + 0.2 * (X - 1.0) + (0.05 + 0.4 * lo) * (0.6 * sin(uTime * fq + ph) + 0.4 * sin(uTime * fq * 1.71 + ph * 1.3));   // the air: dimmer, twinkling
-        float b = exp2(-1.329 * (m - (uLim - lost)));   // = 10^(−0.4 (m − the faintest seen))
-        if (b < 0.7) return;
+        float dm = uLim - lost - m;   // how many magnitudes above the faintest seen (a little under it still glimpsed)
+        if (dm < -1.1) return;
         gl_Position = projectionMatrix * viewMatrix * vec4(uEye + d * 240.0, 1.0);
-        float lb = log(b);
-        gl_PointSize = uPR * (2.4 + 0.9 * lb + 3.0 * smoothstep(5.0, 9.0, lb));
-        vHalo = smoothstep(4.0, 8.0, lb);
-        vec3 c = mix(vec3(1.0), aCol, 0.25 + 0.5 * smoothstep(2.0, 6.0, lb));
+        float I = min(1.0, 0.15 * exp2(0.6645 * dm));   // its peak: the square root of its light (the eye's compressed response), 1 some 5.5 magnitudes up
+        gl_PointSize = uPR * (2.2 + 0.5 * max(dm, 0.0) + 2.6 * smoothstep(4.5, 7.5, dm));
+        vHalo = smoothstep(4.5, 7.5, dm);
+        vec3 c = mix(vec3(1.0), aCol, 0.2 + 0.55 * smoothstep(1.5, 5.0, dm));   // (the eye sees colour only in the bright ones)
         c *= vec3(1.0, pow(0.94, X - 1.0), pow(0.85, X - 1.0));   // reddened low down
-        c *= 1.0 + lo * smoothstep(3.0, 6.0, lb) * 0.3 * vec3(sin(uTime * 6.0 + ph), sin(uTime * 7.3 + ph * 2.0), sin(uTime * 8.9 + ph * 3.0));   // the bright ones low down flash colours
-        vCol = c * clamp((b - 0.7) * 0.5, 0.0, 1.0) * (1.0 + 0.5 * smoothstep(3.0, 7.0, lb));
+        c *= 1.0 + lo * smoothstep(3.0, 6.0, dm) * 0.3 * vec3(sin(uTime * 6.0 + ph), sin(uTime * 7.3 + ph * 2.0), sin(uTime * 8.9 + ph * 3.0));   // the bright ones low down flash colours
+        vCol = c * I * smoothstep(-1.1, -0.5, dm);
       }`,
     fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec3 vCol; varying float vHalo;
       void main() { ${SKY_DEPTH}
         vec2 q = gl_PointCoord * 2.0 - 1.0; float r2 = dot(q, q); if (r2 > 1.0) discard;
-        vec3 o = vCol * (exp(-r2 * 4.0 * mix(1.0, 4.0, vHalo)) + vHalo * 0.22 * exp(-r2 * 3.0) * (1.0 - r2)) * uNight;
+        vec3 o = vCol * (exp(-r2 * 4.5 * mix(1.0, 3.5, vHalo)) + vHalo * 0.25 * exp(-r2 * 2.5) * (1.0 - r2)) * uNight;
         if (max(o.r, max(o.g, o.b)) < 0.003) discard; gl_FragColor = vec4(o, 0.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
   stars.frustumCulled = false; stars.renderOrder = 1; sky.add(stars);
@@ -3422,21 +3429,27 @@ function buildStars(sky) {
     uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u, ...STARU },
     vertexShader: 'uniform vec3 uEye; varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * viewMatrix * vec4(uEye + position, 1.0); }',
     fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uMW, uMoonK; uniform mat3 uGal; uniform vec3 uMoon; varying vec3 vD;
-      ${SKY_NOISE}
+      ${SKY_NOISE} ${AIRMASS}
       void main() { ${SKY_DEPTH}
         vec3 d = normalize(vD); float el = d.y; if (el < -0.02) discard;
         vec3 c = vec3(0.0);
-        if (uMW > 0.003) {   // in galactic coordinates: the bulge in Sagittarius, star clouds, dark lanes, the Great Rift (Cygnus to Sagittarius)
-          vec3 g = uGal * d; float b = asin(clamp(g.z, -1.0, 1.0)), l = atan(g.y, g.x);
-          float bul = exp(-l * l / 0.2), sg = 0.11 + 0.12 * bul, band = exp(-b * b / (sg * sg));
-          if (band > 0.01) {
-            float cl = sfbm(g * 5.0), cl2 = sfbm(g * 13.0 + 3.0), dk = smoothstep(0.42, 0.62, sfbm(g * 9.0 + 7.0));
-            float lon = 0.3 + 0.7 * pow(0.5 + 0.5 * cos(l), 1.5) + 0.45 * bul * exp(-b * b / 0.012);
-            float rb = b - 0.03 + 0.04 * (cl - 0.5), rift = exp(-rb * rb / 0.0012) * smoothstep(-0.55, -0.25, l) * smoothstep(1.55, 1.15, l);
-            c += uMW * band * lon * pow(0.25 + 0.95 * cl, 1.6) * (0.7 + 0.6 * cl2) * (1.0 - 0.8 * rift) * (1.0 - 0.45 * dk * band) * mix(vec3(0.5, 0.58, 0.78), vec3(0.95, 0.8, 0.58), bul) * 0.64;   // (faint, as from a country garden under a young moon)
-          }
+        if (uMW > 0.003) {   // in galactic coordinates (x toward the centre, z toward the north galactic pole)
+          vec3 g = uGal * d; float b = asin(clamp(g.z, -1.0, 1.0)), l = atan(g.y, g.x), cl = cos(l);
+          float sg = 0.07 + 0.05 * exp(-l * l / 0.5), disk = exp(-b * b / (2.0 * sg * sg));   // the thin disk: ±4° far out, ±7° toward the centre
+          float glow = exp(-b * b / 0.16) * 0.12;                                              // the faint wide glow round it
+          float bul = exp(-l * l / 0.12 - b * b / 0.035);                                      // the bulge in Sagittarius
+          float lon = 0.18 + 0.82 * pow(0.5 + 0.5 * cl, 1.6)                                   // brightest toward the centre, faintest toward Auriga
+            + 0.35 * exp(-pow((l - 0.47) / 0.1, 2.0)) + 0.3 * exp(-pow((l - 1.33) / 0.17, 2.0)) + 0.22 * exp(-pow((l + 1.38) / 0.22, 2.0));   // Scutum, Cygnus, Carina
+          float n1 = sfbm(g * 6.0), n2 = sfbm(g * 19.0 + 3.0), n3 = sfbm(g * 10.0 + 7.0), n4 = sfbm(g * 40.0 + 11.0);
+          float clouds = pow(0.25 + 0.95 * n1, 2.2) * (0.65 + 0.7 * n2) * (0.82 + 0.36 * n4);   // star clouds, mottled finer and finer
+          float dark = smoothstep(0.52, 0.7, n3);                                                // dark nebulae
+          float rb = b - 0.03 + 0.05 * (n1 - 0.5), rift = exp(-rb * rb / 0.0011) * smoothstep(-0.25, 0.0, l) * smoothstep(1.5, 1.2, l);   // the Great Rift, Cygnus to Ophiuchus
+          float I = disk * lon * clouds * (1.0 - 0.85 * rift) * (1.0 - 0.6 * dark) + glow * lon + 1.1 * bul * clouds * (1.0 - 0.5 * rift);
+          vec3 tint = mix(vec3(0.62, 0.68, 0.86), vec3(1.0, 0.85, 0.64), clamp(1.4 * bul + 0.35 * smoothstep(0.4, 1.0, 0.5 + 0.5 * cl), 0.0, 1.0));
+          c += uMW * I * tint * 0.38;
         }
-        c *= smoothstep(-0.02, 0.3, el);   // lost in the haze low down
+        c *= exp(-0.32 * (airmass(el) - 1.0)) * smoothstep(-0.01, 0.12, el);   // dimmed by the air and lost in the haze low down
+        c += uMW * vec3(0.012, 0.022, 0.013) * smoothstep(0.0, 0.06, el) * exp(-el / 0.3);   // the airglow: the upper air's own faint green light, low in a dark sky
         float mn = max(dot(d, uMoon), 0.0);
         c += uMoonK * vec3(0.05, 0.065, 0.09) * (0.35 * pow(mn, 6.0) + 0.65 * pow(mn, 60.0));   // the moon's light in the air round it
         c *= uNight; if (max(c.r, max(c.g, c.b)) < 0.002) discard;
@@ -3455,10 +3468,10 @@ function stepStars() {
   STARU.uEq.value.set(X.x, X.y, X.z, _Z.x, _Z.y, _Z.z, Z.x, Z.y, Z.z);
   STARU.uGal.value.copy(GAL).multiply(_gt.copy(STARU.uEq.value).transpose());   // the room → galactic
   // how faint a star is still seen, and how bright the Milky Way: the dark of the night, the moon's light
-  const n = NIGHT.u.value, lit = 0.5 - 0.5 * Math.cos(moonAge() * 2 * Math.PI), up = OVER.moon && OVER.moon.visible ? 1 : 0;
+  const e = HOUR.e === null ? -20 : HOUR.e, lit = 0.5 - 0.5 * Math.cos(moonAge() * 2 * Math.PI), up = OVER.moon && OVER.moon.visible ? 1 : 0;
   STARU.uMoonK.value = up * Math.pow(lit, 0.8);
-  STARU.uLim.value = 2.4 + 3.9 * Math.pow(n, 1.5) - 1.8 * STARU.uMoonK.value;
-  STARU.uMW.value = Math.pow(n, 3) * (1 - 0.88 * STARU.uMoonK.value) * (STARU.boost || 1);   // (boost: for tests)
+  STARU.uLim.value = 6.5 - 5.0 * THREE.MathUtils.smoothstep(e, -18, -4) - 1.8 * STARU.uMoonK.value;   // (the twilight's glow, then the moon's)
+  STARU.uMW.value = (1 - THREE.MathUtils.smoothstep(e, -17, -10)) * (1 - 0.88 * STARU.uMoonK.value) * (STARU.boost || 1);   // (out as the twilight ends; boost: for tests)
   if (OVER.moon) STARU.uMoon.value.copy(OVER.moon.position).sub(REF.eye).normalize();
   STARU.uEye.value.copy(REF.eye);
 }
