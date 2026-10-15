@@ -3223,6 +3223,7 @@ function buildMeteors(sky) {
     transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));   // (added as it is: ONE, ONE)
   METEOR.mesh.frustumCulled = false; METEOR.mesh.visible = false; sky.add(METEOR.mesh);
   METEOR.spawn = spawnMeteor; METEOR.probe = PROBE;   // (for tests)
+  buildComet(sky);
 }
 function meteorPath(camera) {   // a start somewhere in the upper part of the view, 6° or more up; a path down and across
   _m0.set(Math.random() * 1.9 - 0.95, 0.15 + Math.random() * 0.8, 0.5).unproject(camera).sub(camera.position).normalize();
@@ -3235,37 +3236,46 @@ function meteorPath(camera) {   // a start somewhere in the upper part of the vi
     w: fire ? 1.7 : 1, fast: Math.min(1, Math.max(0, (v - 35) / 30)) };
 }
 const PROBE = { n: 32, rt: null, quad: null, cand: [], busy: false, buf: new Uint8Array(256), left: 0, at: 0, tries: 0, sent: 0 };   // (tries, sent: for tests)
-function spawnMeteor(camera) {   // 32 paths tried against the room's depth: the first whose bright middle shows sky is sent
-  if (PROBE.busy || !OVER.u.uDepth.value || METEOR.list.length >= 3) return;
+// n paths from make() tried against the room's depth on the GPU: the first whose two points (f0 and f1 of the way along
+// it) show sky, with none of the page's panels over them, goes to hit(); miss() if none does. false if a probe is
+// already out (it is read back without stalling the frame)
+function probeSky(camera, make, f0, f1, hit, miss) {
+  if (PROBE.busy || !OVER.u.uDepth.value) return false;
   if (!PROBE.rt) {
     PROBE.rt = new THREE.WebGLRenderTarget(2 * PROBE.n, 1, { depthBuffer: false });
     PROBE.quad = new FullScreenQuad(new THREE.ShaderMaterial({ depthTest: false, depthWrite: false,
       uniforms: { uDepth: OVER.u.uDepth, uP: { value: Array.from({ length: 2 * PROBE.n }, () => new THREE.Vector3()) } },
       vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
       fragmentShader: `uniform sampler2D uDepth; uniform vec3 uP[${2 * PROBE.n}];
-        void main() { vec3 p = uP[int(gl_FragCoord.x)]; vec2 uv = p.xy * 0.5 + 0.5;   // one pixel per end: 1 where it shows sky
+        void main() { vec3 p = uP[int(gl_FragCoord.x)]; vec2 uv = p.xy * 0.5 + 0.5;   // one pixel per point: 1 where it shows sky
           bool on = uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0 && p.z < 1.0 && p.z * 0.5 + 0.5 <= texture2D(uDepth, uv).r + 1e-7;
           gl_FragColor = vec4(on ? 1.0 : 0.0, 0.0, 0.0, 1.0); }` }));
   }
   const C = PROBE.cand, U = PROBE.quad.material.uniforms.uP.value; C.length = 0; PROBE.tries++;
   for (let i = 0; i < PROBE.n; i++) {
-    const e = meteorPath(camera); C.push(e);
+    const e = make(); C.push(e);
     if (!e) { U[2 * i].set(9, 9, 9); U[2 * i + 1].set(9, 9, 9); continue; }
-    for (let j = 0; j < 2; j++) U[2 * i + j].copy(e.d0).lerp(e.d1, j ? 0.7 : 0.3).normalize().multiplyScalar(230).add(camera.position).project(camera);
+    for (let j = 0; j < 2; j++) U[2 * i + j].copy(e.d0).lerp(e.d1, j ? f1 : f0).normalize().multiplyScalar(230).add(camera.position).project(camera);
   }
   const prev = renderer.getRenderTarget(); renderer.setRenderTarget(PROBE.rt); PROBE.quad.render(renderer);
   const done = () => {
-    PROBE.busy = false; PROBE.left = Math.max(0, PROBE.left - 1);
+    PROBE.busy = false;
     const r = CANVAS.getBoundingClientRect(), bare = q => document.elementFromPoint(r.left + (q.x + 1) / 2 * r.width, r.top + (1 - q.y) / 2 * r.height) === CANVAS;
-    for (let i = 0; i < PROBE.n; i++) if (C[i] && PROBE.buf[8 * i] > 127 && PROBE.buf[8 * i + 4] > 127 && bare(U[2 * i]) && bare(U[2 * i + 1])) {
-      if (METEOR.list.length < 3) { METEOR.list.push(C[i]); PROBE.sent++; } PROBE.left = 0; setNeeds(true); break;
-    }
-    C.length = 0;
+    let found = null;
+    for (let i = 0; i < PROBE.n && !found; i++) if (C[i] && PROBE.buf[8 * i] > 127 && PROBE.buf[8 * i + 4] > 127 && bare(U[2 * i]) && bare(U[2 * i + 1])) found = C[i];
+    C.length = 0; if (found) { hit(found); setNeeds(true); } else if (miss) miss();
   };
   if (renderer.readRenderTargetPixelsAsync) {   // (it leaves its target bound until it resolves: the frame's own put back at once)
     PROBE.busy = true; renderer.readRenderTargetPixelsAsync(PROBE.rt, 0, 0, 2 * PROBE.n, 1, PROBE.buf).then(done, () => { PROBE.busy = false; });
   } else { renderer.readRenderTargetPixels(PROBE.rt, 0, 0, 2 * PROBE.n, 1, PROBE.buf); done(); }
   renderer.setRenderTarget(prev);
+  return true;
+}
+function spawnMeteor(camera) {   // 32 paths tried: the first whose bright middle (a third and two thirds of the way) shows sky is sent
+  if (METEOR.list.length >= 3) return;
+  probeSky(camera, () => meteorPath(camera), 0.3, 0.7,
+    e => { if (METEOR.list.length < 3) { METEOR.list.push(e); PROBE.sent++; } PROBE.left = 0; },
+    () => { PROBE.left = Math.max(0, PROBE.left - 1); });
 }
 function stepMeteors(t, camera) {
   const dt = Math.min(0.1, Math.max(0, t - METEOR.last)); METEOR.last = t;
@@ -3290,6 +3300,86 @@ function stepMeteors(t, camera) {
   }
   g.setDrawRange(0, nq * 6); mesh.visible = nq > 0; METEOR.on = M.length > 0;
   if (nq) { g.attributes.position.needsUpdate = g.attributes.aC.needsUpdate = g.attributes.aT.needsUpdate = true; }
+  stepComet(t, dt, camera);
+}
+/* ---- a comet gliding by now and then (G, 15/10/2026: "sao chổi lướt qua nhẹ nhàng"): a little while after night falls,
+   then every three or four minutes, one drifts across the sky in about forty seconds, fading in and out. Drawn as a
+   comet looks: a soft greenish coma round a bright point (its gas glows green: diatomic carbon), a dust tail behind it,
+   widening and fading, curving a little away from its path and finely streaked, and a narrower, straight blue ion tail
+   leaning up and away (the two tails of a comet like Hale-Bopp). Sizes are angles on the sky (a tail of 9 to 13°), so
+   it looks the same however far the view is zoomed. Its path is chosen as a shooting star's is (probeSky: its middle
+   half where the room shows sky), and it is drawn under the same depth test, added to the sky. */
+const COMET = { mesh: null, e: null, next: 0, on: false, spawn: null };
+METEOR.comet = COMET;
+const NS = 24, NI = 16, _cv = new THREE.Vector3(), _cm = new THREE.Vector3(), _cn = new THREE.Vector3(), _cu = new THREE.Vector3(), _ci = new THREE.Vector3(), _cs = new THREE.Vector3(), _cp = [];
+function buildComet(sky) {
+  const nv = (NS + 1) * 2 + (NI + 1) * 2 + 4, idx = [], strip = (o, n) => { for (let i = 0; i < n; i++) { const a = o + 2 * i; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); } };
+  strip(0, NS); strip((NS + 1) * 2, NI); const c0 = (NS + 1) * 2 + (NI + 1) * 2; idx.push(c0, c0 + 1, c0 + 2, c0 + 2, c0 + 1, c0 + 3);
+  const g = new THREE.BufferGeometry(); g.setIndex(idx);
+  for (const [k, n] of [['position', 3], ['aT', 3], ['aC', 4]]) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(nv * n), n));
+  COMET.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u },
+    vertexShader: 'attribute vec4 aC; attribute vec3 aT; varying vec4 vC; varying vec3 vT; void main(){ vC = aC; vT = aT; gl_Position = vec4(position, 1.0); }',
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec4 vC; varying vec3 vT;
+      void main(){ ${SKY_DEPTH}
+        float u = clamp(vT.x, 0.0, 1.0), v = vT.y, k; vec3 col = vC.rgb;
+        if (vT.z < 0.5) k = exp(-v * v * 2.6) * pow(1.0 - u, 1.7) * (0.84 + 0.16 * sin(v * 7.0 + u * 5.0) * sin(v * 13.0 - u * 3.0));   // the dust tail, finely streaked
+        else if (vT.z < 1.5) k = exp(-v * v * 7.0) * pow(1.0 - u, 1.3) * (0.82 + 0.18 * sin(u * 37.0));                                // the ion tail
+        else { float r2 = dot(vT.xy, vT.xy); k = 0.42 * exp(-r2 * 3.0) + 0.6 * exp(-r2 * 30.0); col = mix(col, vec3(1.0, 1.0, 0.97), exp(-r2 * 22.0)); }   // the coma, a white point at its heart
+        float a = vC.a * k * uNight; if (a < 0.002) discard;
+        gl_FragColor = vec4(col * a, 0.0); }`,
+    transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
+  COMET.mesh.frustumCulled = false; COMET.mesh.visible = false; sky.add(COMET.mesh);
+  for (let i = 0; i <= Math.max(NS, NI); i++) _cp.push(new THREE.Vector3());
+  COMET.spawn = camera => probeSky(camera, () => cometPath(camera), 0.25, 0.75, e => { COMET.e = e; });   // (for tests)
+}
+function cometPath(camera) {   // somewhere in the upper part of the view, 12° or more up; across the sky, drifting a little down
+  _m0.set(Math.random() * 1.6 - 0.8, 0.2 + Math.random() * 0.7, 0.5).unproject(camera).sub(camera.position).normalize();
+  if (_m0.y < 0.2) return null;
+  const side = _mh.set(0, 1, 0).cross(_m0).normalize(), up = _mt.crossVectors(_m0, side), dir = Math.random() < 0.5 ? 1 : -1;
+  const tn = side.multiplyScalar(dir).addScaledVector(up, -0.12 + (Math.random() - 0.5) * 0.3); tn.addScaledVector(_m0, -tn.dot(_m0)).normalize();
+  const ang = (12 + Math.random() * 8) * Math.PI / 180;
+  return { d0: _m0.clone(), d1: _m0.clone().multiplyScalar(Math.cos(ang)).addScaledVector(tn, Math.sin(ang)).normalize(), t: 0, dur: 36 + Math.random() * 10,
+    L: (9 + Math.random() * 4) * Math.PI / 180, curl: (Math.random() < 0.5 ? -1 : 1) * (0.1 + Math.random() * 0.12), b: 0.85 + Math.random() * 0.25 };
+}
+function stepComet(t, dt, camera) {
+  const C = COMET, mesh = C.mesh; if (!mesh) return;
+  if (!C.e) {
+    C.on = false; mesh.visible = false;
+    if (NIGHT.u.value <= 0.6) { C.next = Math.max(C.next, t + 15 + Math.random() * 20); return; }   // (the first a little after night falls)
+    if (t > C.next && probeSky(camera, () => cometPath(camera), 0.25, 0.75, e => { C.e = e; })) C.next = t + 4;   // (no sky in view: tried again in a while)
+    return;
+  }
+  const e = C.e; e.t += dt; const k = e.t / e.dur;
+  if (k >= 1) { C.e = null; C.next = t + 150 + Math.random() * 120; C.on = false; mesh.visible = false; return; }
+  const fade = THREE.MathUtils.smoothstep(k, 0, 0.13) * (1 - THREE.MathUtils.smoothstep(k, 0.8, 1)) * e.b;
+  const H = _cv.copy(e.d0).lerp(e.d1, k).normalize(), m = _cm.copy(e.d1).sub(e.d0); m.addScaledVector(H, -m.dot(H)).normalize();   // where it is, and which way it goes
+  const n = _cn.crossVectors(H, m).normalize(), up = _cu.set(0, 1, 0); up.addScaledVector(H, -up.dot(H)).normalize();
+  const ion = _ci.copy(m).multiplyScalar(-0.85).addScaledVector(up, 0.53).normalize();
+  const g = mesh.geometry, P = g.attributes.position.array, T = g.attributes.aT.array, A = g.attributes.aC.array;
+  const W = OVER.u.uRes.value.x / 2, Hh = OVER.u.uRes.value.y / 2, ppr = Hh / Math.tan(camera.fov * Math.PI / 360);   // pixels a radian, near the middle
+  const at = d => d.multiplyScalar(230).add(camera.position).project(camera);
+  let o = 0;
+  const tail = (N, pt, w0, w1, kind, col, alpha) => {   // a strip along points pt(s), s from the head (0) to the end (1)
+    for (let i = 0; i <= N; i++) { _cp[i].copy(pt(i / N)); if (at(_cp[i]).z > 1) return false; }
+    for (let i = 0; i <= N; i++) {
+      const a = _cp[Math.max(0, i - 1)], b = _cp[Math.min(N, i + 1)]; let tx = (b.x - a.x) * W, ty = (b.y - a.y) * Hh; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l;
+      const s = i / N, wpx = (w0 + (w1 - w0) * s) * ppr, nx = -ty * wpx / W, ny = tx * wpx / Hh;
+      for (let j = 0; j < 2; j++) { const sg = j ? -1 : 1, v = o + 2 * i + j;
+        P[v * 3] = _cp[i].x + nx * sg; P[v * 3 + 1] = _cp[i].y + ny * sg; P[v * 3 + 2] = _cp[i].z;
+        T[v * 3] = s; T[v * 3 + 1] = sg; T[v * 3 + 2] = kind; A[v * 4] = col[0]; A[v * 4 + 1] = col[1]; A[v * 4 + 2] = col[2]; A[v * 4 + 3] = alpha; }
+    }
+    o += 2 * (N + 1); return true;
+  };
+  const D = Math.PI / 180;
+  const ok = tail(NS, s => _cs.copy(H).addScaledVector(m, -s * e.L).addScaledVector(n, e.curl * e.L * s * s).normalize(), 0.3 * D, 2.2 * D, 0, [1.0, 0.95, 0.82], 0.5 * fade)   // (bending away from its path)
+    && tail(NI, s => _cs.copy(H).addScaledVector(ion, s * e.L * 0.85).normalize(), 0.22 * D, 0.85 * D, 1, [0.55, 0.75, 1.0], 0.18 * fade);
+  if (!ok) { mesh.visible = false; C.on = true; return; }
+  const h = at(_cs.copy(H)), r = 1.0 * D * ppr;   // the coma: a square round the head
+  for (let j = 0; j < 4; j++) { const sx = j & 1 ? 1 : -1, sy = j & 2 ? 1 : -1, v = o + j;
+    P[v * 3] = h.x + sx * r / W; P[v * 3 + 1] = h.y + sy * r / Hh; P[v * 3 + 2] = h.z; T[v * 3] = sx; T[v * 3 + 1] = sy; T[v * 3 + 2] = 2;
+    A[v * 4] = 0.75; A[v * 4 + 1] = 1.0; A[v * 4 + 2] = 0.82; A[v * 4 + 3] = 0.95 * fade; }
+  g.attributes.position.needsUpdate = g.attributes.aT.needsUpdate = g.attributes.aC.needsUpdate = true;
+  mesh.visible = true; C.on = true;
 }
 // the page's moon pictures (its MOON_IMGS: 8 phase buckets, new moon first), used when its sky clock has not shown one yet
 const MOON_IDS = ['35cea205e90443258d2aeaa54414881a', '60161204787446faa5348897ff9578ef', '60161204787446faa5348897ff9578ef', 'f2c8bd9a09d54d75b97bd8ef98842611',
@@ -4700,6 +4790,9 @@ function layoutOverlay() {
     const books = boxes.filter(b => b.el.classList.contains('l3-books')), h = Math.max(...row.map(b => b.h)), x0 = side + 10;
     const limAt = y => Math.min(innerWidth - 10, ...books.filter(b => b.y < y + h + 8 && b.y + b.h > y - 8).map(b => b.x - 16));
     let y = Math.min(...row.map(b => b.y)), line = [];
+    // (clear of the page's sky clock and its weather line above them, the group's name between)
+    const clock = document.querySelector('.page.is-active .sky'), cr = clock && clock.getBoundingClientRect(), cap = UIEL.caps && UIEL.caps.research;
+    if (cr && cr.height > 0 && cr.left < innerWidth && cr.right > side) y = Math.max(y, cr.bottom + (cap ? cap.offsetHeight : 14) + 18);
     const settle = () => { if (!line.length) return; const last = line[line.length - 1], over = last.x + last.w - limAt(y);
       if (over > 0) { const room = line[0].x - x0, d = Math.min(over, room); for (const b of line) b.x -= d; } };
     for (const b of row) {
@@ -4851,7 +4944,7 @@ function loop(now) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
     // between the room's own frames too), which costs a blit and a few points
-    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok);
+    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok || METEOR.on || METEOR.comet.on);
     if (still || now - lastDraw < FRAME_MS - 2) {
       if (live && now - lastSharp >= (PETS.fast || METEOR.on ? 1000 / 60 : FLY.on || PETS.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }   // (animals on the move, a shooting star: 60 a second)
       return;
