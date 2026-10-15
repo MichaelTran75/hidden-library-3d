@@ -5090,7 +5090,10 @@ function layoutOverlay() {
         if (k !== k0) { UIEL.booksK = k; UIEL.labels.style.setProperty('--l3-k', k); for (const b of shelfCol) { b.w = b.el.offsetWidth; b.h = b.el.offsetHeight; } }
       }
       const wMax = Math.max(...shelfCol.map(b => b.w)), x = Math.max(side + 10, Math.min(edge, innerWidth - 10 - wMax));
-      for (const r of rowsAt) { const cx = x + r.b.w / 2, k = (cx - r.xl) / Math.max(1, r.xr - r.xl); r.b.x = x; r.b.y = THREE.MathUtils.clamp(r.yl + (r.yr - r.yl) * k - r.b.h / 2, 10, innerHeight - r.b.h - 10); }
+      // each lies along its shelf (G, 15/10/2026): sheared to the slope of its row on the screen (its boards rise toward the
+      // viewer above eye level and fall below it), its upright strokes kept upright, as if printed on the shelf's face
+      for (const r of rowsAt) { const cx = x + r.b.w / 2, k = (cx - r.xl) / Math.max(1, r.xr - r.xl); r.b.x = x; r.b.y = THREE.MathUtils.clamp(r.yl + (r.yr - r.yl) * k - r.b.h / 2, 10, innerHeight - r.b.h - 10);
+        r.b.skew = THREE.MathUtils.clamp(Math.atan((r.yr - r.yl) / Math.max(1, r.xr - r.xl)), -0.45, 0.45); }
     }
   }
   // the bays' labels in a row over them, left to right, each as near over its bay as the one before allows; kept clear of
@@ -5120,8 +5123,10 @@ function layoutOverlay() {
     if (q.x < p.x + p.w + 8 && q.x + q.w + 8 > p.x && q.y < p.y + p.h + 6) q.y = p.y + p.h + 6;
   }
   for (const b of boxes) {
-    b.el.style.transform = `translate(${Math.round(b.x)}px, ${Math.round(b.y)}px)`;
-    const ex = b.a.x < b.x ? b.x : b.a.x > b.x + b.w ? b.x + b.w : b.x + b.w / 2, ey = b.a.y < b.y ? b.y : b.a.y > b.y + b.h ? b.y + b.h : b.y + b.h / 2;
+    const sk = b.skew || 0;
+    b.el.style.transform = `translate(${Math.round(b.x)}px, ${Math.round(b.y)}px)` + (sk ? ` skewY(${sk.toFixed(4)}rad)` : '');
+    const ex = b.a.x < b.x ? b.x : b.a.x > b.x + b.w ? b.x + b.w : b.x + b.w / 2, dy = (ex - b.x - b.w / 2) * Math.tan(sk), top = b.y + dy, bot = top + b.h;   // (a sheared label's edge where the line meets it)
+    const ey = b.a.y < top ? top : b.a.y > bot ? bot : (top + bot) / 2;
     lines.push(`<path d="M${b.a.x.toFixed(1)},${b.a.y.toFixed(1)} L${ex.toFixed(1)},${ey.toFixed(1)}"/><circle cx="${b.a.x.toFixed(1)}" cy="${b.a.y.toFixed(1)}" r="4.2"/>`);
   }
   // the group names sit over their labels: Books over the stack of rows, Research centred over the three bays
@@ -5129,10 +5134,12 @@ function layoutOverlay() {
     const bs = boxes.filter(b => b.el.classList.contains('l3-' + g));
     if (!bs.length) { cap.classList.add('is-off'); continue; }
     cap.classList.remove('is-off'); const w = cap.offsetWidth, h = cap.offsetHeight, l = Math.min(...bs.map(b => b.x)), r = Math.max(...bs.map(b => b.x + b.w));
-    const first = bs.reduce((p, q) => q.y < p.y ? q : p); let x = g === 'books' ? l + 6 : (l + r - w) / 2, y = first.y - h - 10;
+    const first = bs.reduce((p, q) => q.y < p.y ? q : p), sk = first.skew || 0;
+    let x = g === 'books' ? l + 6 : (l + r - w) / 2, y = first.y - h - 10;
+    if (sk) y = first.y + (x + w / 2 - first.x - first.w / 2) * Math.tan(sk) - h - 10;   // (over a sheared label: along it, above its edge there)
     if (y < 8) { x = first.x - w - 12; y = first.y + (first.h - h) / 2; }   // no room above (a very wide window): beside the first label
     x = THREE.MathUtils.clamp(x, side + 10, innerWidth - w - 10);
-    cap.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    cap.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)` + (sk ? ` skewY(${sk.toFixed(4)}rad)` : '');
   }
   // a white outline around the section under the pointer (and, fainter, around the open one): the boards of a row, the posts of a bay
   for (const [sec, cls] of [[UIS.open, 'l3-outline is-open'], ...[...UIS.hovers].map(s => [s, 'l3-outline'])]) {
