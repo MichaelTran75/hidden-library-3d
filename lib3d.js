@@ -2495,7 +2495,7 @@ function stepGlass(force) {
    research topic is a shelf section with a brass plate, a label and a leader line; a click flies the camera there and
    opens its card; the book that is playing comes off the shelf (in front of the camera while its card is open, on the
    sofa otherwise). The record player stays the page's own, in the sidebar.                                     */
-const UIS = { secs: [], byId: new Map(), byCat: new Map(), hover: null, open: null, mode: 'home', peek: null, active: null, touched: new Set(), bySrc: new Map() };
+const UIS = { secs: [], byId: new Map(), byCat: new Map(), hover: null, hovers: new Set(), hoverKey: '', open: null, mode: 'home', peek: null, active: null, touched: new Set(), bySrc: new Map() };
 /* The room is organised in two parts. Books: every category is one whole row of the tall shelf on the right wall,
    top to bottom from the row under the 2.8 m board (rows 6, 5, 4, 3 for four categories: around eye level, where the
    rows run nearly level across the screen and each label sits in its own row: G, 15/10/2026; more categories go
@@ -3306,8 +3306,11 @@ function stepMeteors(t, camera) {
    then every three or four minutes, one drifts across the sky in about forty seconds, fading in and out. Drawn as a
    comet looks: a soft greenish coma round a bright point (its gas glows green: diatomic carbon), a dust tail behind it,
    widening and fading, curving a little away from its path and finely streaked, and a narrower, straight blue ion tail
-   leaning up and away (the two tails of a comet like Hale-Bopp). Sizes are angles on the sky (a tail of 9 to 13°), so
-   it looks the same however far the view is zoomed. Its path is chosen as a shooting star's is (probeSky: its middle
+   leaning up and away (the two tails of a comet like Hale-Bopp). Sizes are angles on the sky (a tail of 4.5 to 6.5°:
+   half the first size, G 15/10/2026), so it looks the same however far the view is zoomed. The tails move as they do in
+   a comet's time-lapse, slowed down to a few seconds: matter streams away from the head (the striae of the dust tail
+   and the knots of the ion tail drift outward along them), the ion tail's rays brighten and fade and it waves like a
+   flag in the solar wind (a kink running down it), and the dust tail's bend breathes a little. Its path is chosen as a shooting star's is (probeSky: its middle
    half where the room shows sky), and it is drawn under the same depth test, added to the sky. */
 const COMET = { mesh: null, e: null, next: 0, on: false, spawn: null };
 METEOR.comet = COMET;
@@ -3317,14 +3320,23 @@ function buildComet(sky) {
   strip(0, NS); strip((NS + 1) * 2, NI); const c0 = (NS + 1) * 2 + (NI + 1) * 2; idx.push(c0, c0 + 1, c0 + 2, c0 + 2, c0 + 1, c0 + 3);
   const g = new THREE.BufferGeometry(); g.setIndex(idx);
   for (const [k, n] of [['position', 3], ['aT', 3], ['aC', 4]]) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(nv * n), n));
-  COMET.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u },
+  COMET.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u, uTime: OVER.u.uTime },
     vertexShader: 'attribute vec4 aC; attribute vec3 aT; varying vec4 vC; varying vec3 vT; void main(){ vC = aC; vT = aT; gl_Position = vec4(position, 1.0); }',
-    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec4 vC; varying vec3 vT;
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uTime; varying vec4 vC; varying vec3 vT;
       void main(){ ${SKY_DEPTH}
         float u = clamp(vT.x, 0.0, 1.0), v = vT.y, k; vec3 col = vC.rgb;
-        if (vT.z < 0.5) k = exp(-v * v * 2.6) * pow(1.0 - u, 1.7) * (0.84 + 0.16 * sin(v * 7.0 + u * 5.0) * sin(v * 13.0 - u * 3.0));   // the dust tail, finely streaked
-        else if (vT.z < 1.5) k = exp(-v * v * 7.0) * pow(1.0 - u, 1.3) * (0.82 + 0.18 * sin(u * 37.0));                                // the ion tail
-        else { float r2 = dot(vT.xy, vT.xy); k = 0.42 * exp(-r2 * 3.0) + 0.6 * exp(-r2 * 30.0); col = mix(col, vec3(1.0, 1.0, 0.97), exp(-r2 * 22.0)); }   // the coma, a white point at its heart
+        if (vT.z < 0.5) {   // the dust tail: striae fanning out and drifting away from the head, the density breathing as it flows
+          float fl = u * 7.0 - uTime * 0.32;
+          float st = 0.78 + 0.22 * sin(v * 6.5 + u * 4.0 + 0.7 * sin(fl)) * sin(v * 11.0 - u * 2.5 + uTime * 0.06);
+          k = exp(-v * v * 2.4) * pow(1.0 - u, 1.6) * st * (0.84 + 0.16 * sin(fl * 1.7 + v * 1.3));
+        } else if (vT.z < 1.5) {   // the ion tail: a few thin rays, each brightening and fading, knots streaming out along them
+          float r = 0.0;
+          for (int i = 0; i < 3; i++) { float fi = float(i), c = (fi - 1.0) * 0.45 + 0.12 * sin(uTime * 0.21 + fi * 2.3 + u * 3.0);
+            float kn = 0.55 + 0.45 * sin(u * 15.0 - uTime * (1.5 + 0.3 * fi) + fi * 2.1);
+            r += exp(-pow((v - c) / (0.16 + 0.1 * u), 2.0)) * kn * (0.6 + 0.4 * sin(uTime * (0.35 + 0.13 * fi) + fi * 1.7)); }
+          k = (0.45 * exp(-v * v * 5.0) + 0.55 * r) * pow(1.0 - u, 1.25);
+        }
+        else { float r2 = dot(vT.xy, vT.xy); k = 0.42 * exp(-r2 * 3.0) + 0.62 * exp(-r2 * 18.0) * (0.95 + 0.05 * sin(uTime * 1.3)); col = mix(col, vec3(1.0, 1.0, 0.97), exp(-r2 * 14.0)); }   // the coma, a white point at its heart
         float a = vC.a * k * uNight; if (a < 0.002) discard;
         gl_FragColor = vec4(col * a, 0.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
@@ -3354,7 +3366,7 @@ function stepComet(t, dt, camera) {
   const fade = THREE.MathUtils.smoothstep(k, 0, 0.13) * (1 - THREE.MathUtils.smoothstep(k, 0.8, 1)) * e.b;
   const H = _cv.copy(e.d0).lerp(e.d1, k).normalize(), m = _cm.copy(e.d1).sub(e.d0); m.addScaledVector(H, -m.dot(H)).normalize();   // where it is, and which way it goes
   const n = _cn.crossVectors(H, m).normalize(), up = _cu.set(0, 1, 0); up.addScaledVector(H, -up.dot(H)).normalize();
-  const ion = _ci.copy(m).multiplyScalar(-0.85).addScaledVector(up, 0.53).normalize();
+  const ion = _ci.copy(m).multiplyScalar(-0.85).addScaledVector(up, 0.53).normalize(), side = _cu.crossVectors(H, ion).normalize();   // (up is done with)
   const g = mesh.geometry, P = g.attributes.position.array, T = g.attributes.aT.array, A = g.attributes.aC.array;
   const W = OVER.u.uRes.value.x / 2, Hh = OVER.u.uRes.value.y / 2, ppr = Hh / Math.tan(camera.fov * Math.PI / 360);   // pixels a radian, near the middle
   const at = d => d.multiplyScalar(230).add(camera.position).project(camera);
@@ -3370,11 +3382,12 @@ function stepComet(t, dt, camera) {
     }
     o += 2 * (N + 1); return true;
   };
-  const D = Math.PI / 180;
-  const ok = tail(NS, s => _cs.copy(H).addScaledVector(m, -s * e.L).addScaledVector(n, e.curl * e.L * s * s).normalize(), 0.3 * D, 2.2 * D, 0, [1.0, 0.95, 0.82], 0.5 * fade)   // (bending away from its path)
-    && tail(NI, s => _cs.copy(H).addScaledVector(ion, s * e.L * 0.85).normalize(), 0.22 * D, 0.85 * D, 1, [0.55, 0.75, 1.0], 0.18 * fade);
+  const D = Math.PI / 180, L = e.L * 0.5, Li = L * 0.85, curl = e.curl * (1 + 0.18 * Math.sin(t * 0.27 + e.b * 9));   // (half the first size; the bend breathing)
+  const wave = s => Li * s * Math.pow(s, 0.3) * (0.05 * Math.sin(Math.PI * 2 * (1.1 * s - 0.2 * t)) + 0.02 * Math.sin(Math.PI * 2 * (2.3 * s - 0.37 * t) + 1.3));   // (a kink running down the ion tail)
+  const ok = tail(NS, s => _cs.copy(H).addScaledVector(m, -s * L).addScaledVector(n, curl * L * s * s).normalize(), 0.15 * D, 1.1 * D, 0, [1.0, 0.95, 0.82], 0.5 * fade)   // (bending away from its path)
+    && tail(NI, s => _cs.copy(H).addScaledVector(ion, s * Li).addScaledVector(side, wave(s)).normalize(), 0.13 * D, 0.55 * D, 1, [0.55, 0.75, 1.0], 0.2 * fade);
   if (!ok) { mesh.visible = false; C.on = true; return; }
-  const h = at(_cs.copy(H)), r = 1.0 * D * ppr;   // the coma: a square round the head
+  const h = at(_cs.copy(H)), r = 0.5 * D * ppr;   // the coma: a square round the head
   for (let j = 0; j < 4; j++) { const sx = j & 1 ? 1 : -1, sy = j & 2 ? 1 : -1, v = o + j;
     P[v * 3] = h.x + sx * r / W; P[v * 3 + 1] = h.y + sy * r / Hh; P[v * 3 + 2] = h.z; T[v * 3] = sx; T[v * 3 + 1] = sy; T[v * 3 + 2] = 2;
     A[v * 4] = 0.75; A[v * 4 + 1] = 1.0; A[v * 4 + 2] = 0.82; A[v * 4 + 3] = 0.95 * fade; }
@@ -4678,10 +4691,11 @@ function buildOverlay() {
   UIEL.items.addEventListener('pointerleave', () => setPeek(null));
 }
 function setPeek(bk) { if (UIS.peek === bk) return; if (UIS.peek) UIS.touched.add(UIS.peek); UIS.peek = bk; if (bk) UIS.touched.add(bk); setNeeds(true); }
-function setHover(sec) {
-  if (UIS.hover === sec) return; UIS.hover = sec;
-  for (const s of UIS.secs) s.label.classList.toggle('is-hover', s === sec);
-  CANVAS.style.cursor = sec ? 'pointer' : ''; setNeeds(true);
+function setHover(sec) {   // a section, or several (a group's title in the sidebar), or none
+  const list = Array.isArray(sec) ? sec : sec ? [sec] : [], key = list.map(s => s.id).join('|');
+  if (UIS.hoverKey === key) return; UIS.hoverKey = key; UIS.hover = list.length === 1 ? list[0] : null; UIS.hovers = new Set(list);
+  for (const s of UIS.secs) s.label.classList.toggle('is-hover', UIS.hovers.has(s));
+  CANVAS.style.cursor = list.length ? 'pointer' : ''; setNeeds(true);
 }
 function renderCard(sec) {
   UIEL.card.querySelector('#l3-card-h').innerHTML = `<span class="en">${esc(sec.en)}</span><span class="vi">${esc(sec.vi || sec.en)}</span>`;
@@ -4728,7 +4742,7 @@ function showResearch() { closeCard(false); UIS.mode = 'research'; goView(resear
 function stepGlow(dt) {
   let moving = false;
   for (const s of UIS.secs) {
-    const tgt = Math.max(s.glowT, UIS.hover === s ? 0.6 : 0);
+    const tgt = Math.max(s.glowT, UIS.hovers.has(s) ? 0.6 : 0);
     if (Math.abs(s.glow - tgt) > 1e-3) { s.glow += THREE.MathUtils.clamp(tgt - s.glow, -dt * 3, dt * 3); moving = true; }
     const showing = UIS.active && UIS.active.sec === s && UIS.active.goal === 'present';   // the book in front reads better on a calm shelf
     s.glowMesh.material.opacity = s.glow * (NIGHT.u.value > 0.5 ? 0.42 : 0.5) * (showing ? 0.6 : 1); s.glowMesh.visible = s.glow > 0.001;
@@ -4824,8 +4838,8 @@ function layoutOverlay() {
     cap.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
   }
   // a white outline around the section under the pointer (and, fainter, around the open one): the boards of a row, the posts of a bay
-  for (const [sec, cls] of [[UIS.open, 'l3-outline is-open'], [UIS.hover, 'l3-outline']]) {
-    if (!sec || !show || (cls === 'l3-outline is-open' && sec === UIS.hover)) continue;
+  for (const [sec, cls] of [[UIS.open, 'l3-outline is-open'], ...[...UIS.hovers].map(s => [s, 'l3-outline'])]) {
+    if (!sec || !show || (cls === 'l3-outline is-open' && UIS.hovers.has(sec))) continue;
     const pts = sec.box.corners.map(project); if (pts.some(q => !q.ok)) continue;
     lines.push(`<polygon class="${cls}" points="${pts.map(q => q.x.toFixed(1) + ',' + q.y.toFixed(1)).join(' ')}"/>`);
   }
@@ -4885,6 +4899,18 @@ function bindPicking() {
     else if (UIS.mode !== 'home') closeCard();
   });
   addEventListener('keydown', e => { if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return; if (UIS.mode !== 'home') closeCard(); else togglePlayer(false); });
+  // a title in the sidebar under the pointer: its section is shown chosen in the room, as when its label there is
+  // hovered; a group's title (Books, Research) lights all of its sections (G, 15/10/2026)
+  const toc = document.getElementById('toc-groups');
+  if (toc) {
+    const secsOf = el => {
+      const a = el && el.closest ? el.closest('.toc-link[data-nav], [data-goto]') : null; if (!a || !toc.contains(a)) return null;
+      if (a.dataset.nav) return UIS.byCat.get(a.dataset.nav) || null;
+      const g = a.dataset.goto; return UIS.byId.get(g) || (g === 'books' || g === 'research' ? UIS.secs.filter(s => s.group === g) : null);
+    };
+    toc.addEventListener('pointerover', e => { if (ready && !offMode()) setHover(secsOf(e.target)); });
+    toc.addEventListener('pointerleave', () => setHover(null));
+  }
   // the sidebar and the now-playing bar steer the room (the page's own handlers still run on the hidden pages)
   document.addEventListener('click', e => {
     if (!ready) return;
