@@ -32,3 +32,5 @@ The cat and the chicken:
 - "Chicken" by pooiloui2: https://sketchfab.com/3d-models/chicken-98830a78e8c54354a7fbe5ca8346fbf9 (CC BY 4.0; decimated, re-materialled, compressed: `hen.glb`)
 
 Book covers (`covers/`, shown on a book as it leaves the shelf): the original English editions' covers from Open Library, https://openlibrary.org; The Nvidia Way's from its publisher, W. W. Norton; Trò chơi quyền lực's (Omega+, 2024) from Goodreads. The covers are their publishers'; resized.
+
+The stars: the Yale Bright Star Catalogue, 5th ed. (Hoffleit & Warren, Yale University Observatory / NASA ADC), via https://github.com/brettonw/YaleBrightStarCatalog (MIT licence); placed for the sidereal time at Pleiku.

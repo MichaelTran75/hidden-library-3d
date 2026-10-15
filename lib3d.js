@@ -3149,34 +3149,327 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
   drawSharpBooks();
 }
-/* ---- the night sky over the glass: stars and the moon, drawn sharp after the watercolour pass (its filter wipes out
-   points this small) and only where the room shows sky: every pixel is tested against the room's depth, which the sky
-   dome and the glass leave empty. The moon has the phase of the page's sky clock and hangs in the left glass. */
+/* The Yale Bright Star Catalogue, 5th edition (Hoffleit & Warren, Yale / NASA ADC): its 2887 stars to magnitude 5.5,
+   J2000 positions, from github.com/brettonw/YaleBrightStarCatalog (bsc5-short.json, MIT licence), packed as the 3D
+   garden packs it (3d-garden: app/core/star-catalog.js). Each star: its right ascension (rising; the difference as a
+   7-bit varint, in 360°/16384 steps), then 4 bytes: declination 13 bits (180°/8191 from −90°), V magnitude 8 bits
+   (0.05 from −1.5), colour temperature 5 bits (2400 to 42000 K on a log scale). */
+const STAR_BSC5 =
+  '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';
+/* ---- the night sky over the glass, drawn sharp after the watercolour pass (its filter wipes out points this small) and
+   only where the room shows sky: every pixel is tested against the room's depth, which the sky dome and the glass leave
+   empty. As the real sky over Pleiku is (G, 15/10/2026: "make the night sky realistic"; the 3D garden's research,
+   3d-garden: app/core/night-sky.js):
+   - the stars of the Yale Bright Star Catalogue (2887, to magnitude 5.5) where they stand at this minute: their J2000
+     places turned by the local sidereal time at Pleiku (13.98° N, 108° E) and set in the room by its compass (the same
+     one the sun is placed by, fx/hour.js: the left glass looks west, the back glass north), so they rise in the east,
+     wheel round the pole star 14° up in the north and set in the west as the night goes on; the fainter stars under the
+     catalogue's limit (5.5 to 7) made up, thicker toward the Milky Way's plane;
+   - each as bright as its magnitude (light ∝ 10^(−0.4 m), sized by its logarithm), the brightest with a halo; the
+     colour of its temperature (B−V), seen only in the bright ones (night vision barely sees colour); dimmed and reddened
+     low down by the air (0.2 magnitude per airmass, Kasten & Young 1989) and twinkling more and more slowly toward the
+     horizon, the bright ones there flashing colours;
+   - the faintest seen as dark a sky allows: up to magnitude 6.3 at full night (a country sky, the garden's Pleiku),
+     less in twilight and under the moon (up to 1.8 magnitudes lost at full moon, more close to it);
+   - the Milky Way, in galactic coordinates: brightest toward its centre in Sagittarius, star clouds and dark lanes, the
+     Great Rift from Cygnus to Sagittarius; washed out by moonlight, fading into the haze low down; and the moon's light
+     scattered round it.
+   Drawn back to front: the Milky Way, the stars, the comet, then the moon over them (it hides what is behind it), and
+   the shooting stars last (they burn in our own air, in front of the moon). The moon has the phase of the page's sky
+   clock and hangs in the left glass. */
+const SDEG = Math.PI / 180;
+// equatorial (J2000) → galactic
+const GAL = new THREE.Matrix3().set(-0.0548755604, -0.8734370902, -0.4838350155, 0.4941094279, -0.4448296300, 0.7469822445, -0.8676661490, -0.1980763734, 0.4559837762);
+const STARU = { uEq: { value: new THREE.Matrix3() }, uGal: { value: new THREE.Matrix3() }, uLim: { value: 6.3 }, uMW: { value: 1 }, uMoon: { value: new THREE.Vector3(0, 1, 0) }, uMoonK: { value: 0 }, uEye: { value: new THREE.Vector3() } };
+const SKY_NOISE = `
+  float sh3(vec3 p) { p = fract(p * 0.3183099 + 0.1) * 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float sn3(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(sh3(i), sh3(i + vec3(1, 0, 0)), f.x), mix(sh3(i + vec3(0, 1, 0)), sh3(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(sh3(i + vec3(0, 0, 1)), sh3(i + vec3(1, 0, 1)), f.x), mix(sh3(i + vec3(0, 1, 1)), sh3(i + 1.0), f.x), f.y), f.z); }
+  float sfbm(vec3 p) { float s = 0.0, a = 0.5; for (int k = 0; k < 4; k++) { s += a * sn3(p); p = p * 2.03 + 7.1; a *= 0.5; } return s * 1.0667; }`;
+const AIRMASS = 'float airmass(float el) { return 1.0 / (max(el, 0.0) + 0.50572 * pow(max(96.07995 - acos(clamp(el, -1.0, 1.0)) * 57.29578, 1.0), -1.6364)); }';   // (Kasten–Young)
+function kelvinRGB(K, out) {   // a black body's colour (Tanner Helland's fit), linear, its largest channel 1
+  const t = K / 100, r = t <= 66 ? 255 : 329.7 * Math.pow(t - 60, -0.1332), g = t <= 66 ? 99.47 * Math.log(t) - 161.1 : 288.1 * Math.pow(t - 60, -0.0755), b = t >= 66 ? 255 : t <= 19 ? 0 : 138.5 * Math.log(t - 10) - 305;
+  const c = [r, g, b].map(v => Math.pow(Math.max(0, Math.min(255, v)) / 255, 2.2)), m = Math.max(...c); out.push(c[0] / m, c[1] / m, c[2] / m);
+}
+function buildStars(sky) {
+  const dir = [], mag = [], col = [], seed = [], r = rng(90417), L0 = Math.log(2400), L1 = Math.log(42000);
+  { const raw = atob(STAR_BSC5); let p = 0, q = 0;   // the catalogue
+    while (p < raw.length) {
+      let dl = 0, sh = 0, c; do { c = raw.charCodeAt(p++); dl |= (c & 127) << sh; sh += 7; } while (c & 128);
+      q += dl; const y = raw.charCodeAt(p) | raw.charCodeAt(p + 1) << 8 | raw.charCodeAt(p + 2) << 16 | raw.charCodeAt(p + 3) << 24; p += 4;
+      const ra = q / 16384 * 2 * Math.PI, de = ((y & 8191) / 8191 * 180 - 90) * SDEG;
+      dir.push(Math.cos(de) * Math.cos(ra), Math.cos(de) * Math.sin(ra), Math.sin(de)); mag.push((y >>> 13 & 255) * 0.05 - 1.5);
+      kelvinRGB(Math.exp(L0 + (y >>> 21 & 31) / 31 * (L1 - L0)), col); seed.push(r());
+    }
+  }
+  { const v = new THREE.Vector3(), a = 0.44, A0 = Math.pow(10, a * 5.5), A1 = Math.pow(10, a * 7.0);   // fainter ones made up: ~2.75 times as many each magnitude, thicker toward the galactic plane
+    for (let n = 0; n < 6500;) {
+      const z = r() * 2 - 1, f = r() * 2 * Math.PI, sq = Math.sqrt(1 - z * z); v.set(sq * Math.cos(f), sq * Math.sin(f), z);
+      const gb = Math.abs(v.clone().applyMatrix3(GAL).z);
+      if (r() > 0.3 + 0.7 * Math.exp(-gb / 0.22)) continue;
+      dir.push(v.x, v.y, v.z); mag.push(Math.log10(A0 + r() * (A1 - A0)) / a);
+      const u = r(); kelvinRGB(u < 0.55 ? 4200 + r() * 1800 : u < 0.88 ? 6000 + r() * 3500 : 9500 + r() * 12000, col); seed.push(r()); n++;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(dir, 3)); g.setAttribute('aMag', new THREE.Float32BufferAttribute(mag, 1));
+  g.setAttribute('aCol', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1));
+  const stars = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: OVER.u.uTime, uNight: NIGHT.u, uPR: OVER.u.uPR, ...STARU },
+    vertexShader: `attribute float aMag, aSeed; attribute vec3 aCol; uniform mat3 uEq; uniform vec3 uEye, uMoon; uniform float uTime, uLim, uPR, uMoonK;
+      varying vec3 vCol; varying float vHalo; ${AIRMASS}
+      void main() {
+        gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        vec3 d = uEq * position; float el = d.y;
+        if (el < -0.005) return;
+        float X = airmass(el), lo = smoothstep(1.3, 7.0, X), fq = mix(4.5, 1.8, lo), ph = aSeed * 50.0;
+        float near = dot(d, uMoon), lost = uMoonK * (0.5 * smoothstep(0.7, 0.98, near) + 1.2 * smoothstep(0.985, 0.9995, near));   // (the moon's glare round it)
+        float m = aMag + 0.2 * (X - 1.0) + (0.05 + 0.4 * lo) * (0.6 * sin(uTime * fq + ph) + 0.4 * sin(uTime * fq * 1.71 + ph * 1.3));   // the air: dimmer, twinkling
+        float b = exp2(-1.329 * (m - (uLim - lost)));   // = 10^(−0.4 (m − the faintest seen))
+        if (b < 0.7) return;
+        gl_Position = projectionMatrix * viewMatrix * vec4(uEye + d * 240.0, 1.0);
+        float lb = log(b);
+        gl_PointSize = uPR * (2.4 + 0.9 * lb + 3.0 * smoothstep(5.0, 9.0, lb));
+        vHalo = smoothstep(4.0, 8.0, lb);
+        vec3 c = mix(vec3(1.0), aCol, 0.25 + 0.5 * smoothstep(2.0, 6.0, lb));
+        c *= vec3(1.0, pow(0.94, X - 1.0), pow(0.85, X - 1.0));   // reddened low down
+        c *= 1.0 + lo * smoothstep(3.0, 6.0, lb) * 0.3 * vec3(sin(uTime * 6.0 + ph), sin(uTime * 7.3 + ph * 2.0), sin(uTime * 8.9 + ph * 3.0));   // the bright ones low down flash colours
+        vCol = c * clamp((b - 0.7) * 0.5, 0.0, 1.0) * (1.0 + 0.5 * smoothstep(3.0, 7.0, lb));
+      }`,
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec3 vCol; varying float vHalo;
+      void main() { ${SKY_DEPTH}
+        vec2 q = gl_PointCoord * 2.0 - 1.0; float r2 = dot(q, q); if (r2 > 1.0) discard;
+        vec3 o = vCol * (exp(-r2 * 4.0 * mix(1.0, 4.0, vHalo)) + vHalo * 0.22 * exp(-r2 * 3.0) * (1.0 - r2)) * uNight;
+        if (max(o.r, max(o.g, o.b)) < 0.003) discard; gl_FragColor = vec4(o, 0.0); }`,
+    transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
+  stars.frustumCulled = false; stars.renderOrder = 1; sky.add(stars);
+  // the Milky Way and the moonlight in the air: a shell just inside the stars
+  const mw = new THREE.Mesh(new THREE.SphereGeometry(236, 64, 32), new THREE.ShaderMaterial({ side: THREE.BackSide,
+    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u, ...STARU },
+    vertexShader: 'uniform vec3 uEye; varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * viewMatrix * vec4(uEye + position, 1.0); }',
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uMW, uMoonK; uniform mat3 uGal; uniform vec3 uMoon; varying vec3 vD;
+      ${SKY_NOISE}
+      void main() { ${SKY_DEPTH}
+        vec3 d = normalize(vD); float el = d.y; if (el < -0.02) discard;
+        vec3 c = vec3(0.0);
+        if (uMW > 0.003) {   // in galactic coordinates: the bulge in Sagittarius, star clouds, dark lanes, the Great Rift (Cygnus to Sagittarius)
+          vec3 g = uGal * d; float b = asin(clamp(g.z, -1.0, 1.0)), l = atan(g.y, g.x);
+          float bul = exp(-l * l / 0.2), sg = 0.11 + 0.12 * bul, band = exp(-b * b / (sg * sg));
+          if (band > 0.01) {
+            float cl = sfbm(g * 5.0), cl2 = sfbm(g * 13.0 + 3.0), dk = smoothstep(0.42, 0.62, sfbm(g * 9.0 + 7.0));
+            float lon = 0.3 + 0.7 * pow(0.5 + 0.5 * cos(l), 1.5) + 0.45 * bul * exp(-b * b / 0.012);
+            float rb = b - 0.03 + 0.04 * (cl - 0.5), rift = exp(-rb * rb / 0.0012) * smoothstep(-0.55, -0.25, l) * smoothstep(1.55, 1.15, l);
+            c += uMW * band * lon * pow(0.25 + 0.95 * cl, 1.6) * (0.7 + 0.6 * cl2) * (1.0 - 0.8 * rift) * (1.0 - 0.45 * dk * band) * mix(vec3(0.5, 0.58, 0.78), vec3(0.95, 0.8, 0.58), bul) * 0.64;   // (faint, as from a country garden under a young moon)
+          }
+        }
+        c *= smoothstep(-0.02, 0.3, el);   // lost in the haze low down
+        float mn = max(dot(d, uMoon), 0.0);
+        c += uMoonK * vec3(0.05, 0.065, 0.09) * (0.35 * pow(mn, 6.0) + 0.65 * pow(mn, 60.0));   // the moon's light in the air round it
+        c *= uNight; if (max(c.r, max(c.g, c.b)) < 0.002) discard;
+        gl_FragColor = vec4(c, 0.0); }`,
+    transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
+  mw.frustumCulled = false; mw.renderOrder = 0; sky.add(mw);
+}
+// the sky turned to this minute: equatorial → the room, by the local sidereal time and the room's compass
+const _E = new THREE.Vector3(), _N = new THREE.Vector3(), _Z = new THREE.Vector3(), _gt = new THREE.Matrix3();
+function stepStars() {
+  const d = HOUR.pin || new Date(), tz = -d.getTimezoneOffset() / 60, vn = tz === 7, lat = (vn ? 13.98 : 14) * SDEG, lon = vn ? 108.0 : tz * 15;
+  const jd = d.getTime() / 864e5 + 2440587.5, th = ((280.46061837 + 360.98564736629 * (jd - 2451545.0) + lon) % 360) * SDEG;   // local sidereal time
+  const sf = Math.sin(lat), cf = Math.cos(lat), st = Math.sin(th), ct = Math.cos(th), p0 = 103.7 * SDEG, sp = Math.sin(p0), cp = Math.cos(p0);
+  _Z.set(cf * ct, cf * st, sf); _N.set(-sf * ct, -sf * st, cf); _E.set(-st, ct, 0);   // the zenith, north and east, in equatorial terms
+  const X = _E.clone().multiplyScalar(sp).addScaledVector(_N, cp), Z = _E.clone().multiplyScalar(cp).addScaledVector(_N, -sp);   // the room's x and z (as the sun is placed: fx/hour.js sunDirAt)
+  STARU.uEq.value.set(X.x, X.y, X.z, _Z.x, _Z.y, _Z.z, Z.x, Z.y, Z.z);
+  STARU.uGal.value.copy(GAL).multiply(_gt.copy(STARU.uEq.value).transpose());   // the room → galactic
+  // how faint a star is still seen, and how bright the Milky Way: the dark of the night, the moon's light
+  const n = NIGHT.u.value, lit = 0.5 - 0.5 * Math.cos(moonAge() * 2 * Math.PI), up = OVER.moon && OVER.moon.visible ? 1 : 0;
+  STARU.uMoonK.value = up * Math.pow(lit, 0.8);
+  STARU.uLim.value = 2.4 + 3.9 * Math.pow(n, 1.5) - 1.8 * STARU.uMoonK.value;
+  STARU.uMW.value = Math.pow(n, 3) * (1 - 0.88 * STARU.uMoonK.value) * (STARU.boost || 1);   // (boost: for tests)
+  if (OVER.moon) STARU.uMoon.value.copy(OVER.moon.position).sub(REF.eye).normalize();
+  STARU.uEye.value.copy(REF.eye);
+}
+
 const LUNAR = 29.530588853, NEW_MOON = Date.UTC(2025, 6, 25, 18, 2);   // the page's own reference new moon
 const moonAge = (t = Date.now()) => ((((t - NEW_MOON) / 864e5) % LUNAR) + LUNAR) % LUNAR / LUNAR;   // 0 new, 0.5 full
 const SKY_DEPTH = 'if (gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 1e-7) discard;';
 function buildNightSky() {
   const eye = REF.eye, far = 240, sky = new THREE.Group(); sky.visible = false; OVER.scene.add(sky); OVER.sky = sky;
   OVER.u.uTime = { value: 0 }; OVER.u.uPR = { value: 1 }; OVER.moonAge = { value: moonAge() };
-  // stars: uniform over the dome from ~1° up, most faint, a few bright; each twinkles at its own pace
-  const n = 8000, pos = new Float32Array(n * 3), size = new Float32Array(n), seed = new Float32Array(n), r = rng(2024);
-  for (let i = 0; i < n; i++) {
-    const az = r() * Math.PI * 2, el = Math.asin(0.02 + 0.98 * r()), b = Math.pow(r(), 6);
-    pos.set([eye.x + Math.cos(el) * Math.sin(az) * far, eye.y + Math.sin(el) * far, eye.z + Math.cos(el) * Math.cos(az) * far], i * 3);
-    size[i] = 1.6 + b * 3.2; seed[i] = r();
-  }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aSize', new THREE.BufferAttribute(size, 1)); g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
-  const stars = new THREE.Points(g, new THREE.ShaderMaterial({
-    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: OVER.u.uTime, uNight: NIGHT.u, uPR: OVER.u.uPR },
-    vertexShader: `attribute float aSize, aSeed; uniform float uTime, uPR; varying float vB;
-      void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = aSize * uPR;
-        vB = (0.6 + 0.4 * smoothstep(1.6, 4.0, aSize)) * (0.74 + 0.26 * sin(uTime * (0.8 + aSeed * 1.9) + aSeed * 37.0)); }`,
-    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying float vB;
-      void main(){ ${SKY_DEPTH} float d = length(gl_PointCoord - 0.5) * 2.0, a = smoothstep(1.0, 0.25, d) * vB * uNight; if (a < 0.01) discard;
-        gl_FragColor = vec4(vec3(1.0, 0.97, 0.9) * a, a); }`,
-    transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
-  stars.frustumCulled = false; sky.add(stars);
+  buildStars(sky);
   // the moon: the page's own moon picture for tonight's phase (the one its sky clock shows), 1.6° across (the real one is
   // 0.5°), with a soft halo
   const rad = far * Math.tan(0.8 * Math.PI / 180);
@@ -3194,6 +3487,7 @@ function buildNightSky() {
         if (c.a < 0.004) discard; gl_FragColor = c * uNight; }`,
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
   moon.visible = false;   // until its picture has loaded
+  moon.renderOrder = 3;   // (over the Milky Way, the stars and the comet: it hides them)
   sky.add(moon); OVER.moon = moon; placeMoon();
   buildMeteors(sky);
 }
@@ -3221,8 +3515,9 @@ function buildMeteors(sky) {
         float a = vC.a * k * smoothstep(1.04, 0.995, vT.x) * uNight; if (a < 0.003) discard;      // (a round tip, not a square end)
         gl_FragColor = vec4(vC.rgb * a, 0.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));   // (added as it is: ONE, ONE)
-  METEOR.mesh.frustumCulled = false; METEOR.mesh.visible = false; sky.add(METEOR.mesh);
+  METEOR.mesh.frustumCulled = false; METEOR.mesh.visible = false; METEOR.mesh.renderOrder = 4; sky.add(METEOR.mesh);   // (in our air: in front of the moon)
   METEOR.spawn = spawnMeteor; METEOR.probe = PROBE;   // (for tests)
+  METEOR.moonPos = () => { const p = OVER.moon.position.clone().project(OVER.cam || window.__lib3d.camera); return [(p.x + 1) * innerWidth / 2, (1 - p.y) * innerHeight / 2]; };   // (for tests)
   buildComet(sky);
 }
 function meteorPath(camera) {   // a start somewhere in the upper part of the view, 6° or more up; a path down and across
@@ -3278,6 +3573,7 @@ function spawnMeteor(camera) {   // 32 paths tried: the first whose bright middl
     () => { PROBE.left = Math.max(0, PROBE.left - 1); });
 }
 function stepMeteors(t, camera) {
+  stepStars();
   const dt = Math.min(0.1, Math.max(0, t - METEOR.last)); METEOR.last = t;
   const night = NIGHT.u.value, M = METEOR.list, mesh = METEOR.mesh; if (!mesh) return;
   if (night > 0.6 && Math.random() < dt / 16) PROBE.left = 5;   // one due (tried until it finds sky, five times at most)
@@ -3341,7 +3637,7 @@ function buildComet(sky) {
         float a = vC.a * k * uNight; if (a < 0.002) discard;
         gl_FragColor = vec4(col * a, 0.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
-  COMET.mesh.frustumCulled = false; COMET.mesh.visible = false; sky.add(COMET.mesh);
+  COMET.mesh.frustumCulled = false; COMET.mesh.visible = false; COMET.mesh.renderOrder = 2; sky.add(COMET.mesh);   // (far beyond the moon: behind it)
   for (let i = 0; i <= Math.max(NS, NI); i++) _cp.push(new THREE.Vector3());
   COMET.spawn = camera => probeSky(camera, () => cometPath(camera), 0.25, 0.75, e => { COMET.e = e; });   // (for tests)
 }
@@ -5047,7 +5343,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, METEOR, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
+window.__lib3d = { PETS, METEOR, STARU, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
 (window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => start().catch(e => {
   console.warn('3D library unavailable', e); setReady(false); updateOn(); document.documentElement.classList.add('lib3d-failed');
 }), { timeout: 800 });
