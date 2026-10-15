@@ -2465,7 +2465,7 @@ function glassMaterial() {
         float band = smoothstep(0.0, 0.04, s) * smoothstep(0.16, 0.08, s) + 0.6 * smoothstep(0.2, 0.22, s) * smoothstep(0.27, 0.25, s);
         band *= 0.6 + 0.4 * gn(q * 0.9 + 3.0);   // (not even along their length)
         float lit = 0.3 + 0.7 * uDay, haze = 0.012 + 0.05 * sm, sheen = band * (0.05 + 0.07 * uDay);
-        vec3 col = refl * F * (1.0 + sm) + vec3(0.93, 0.96, 0.94) * (haze + sheen) * lit + vec3(0.003, 0.007, 0.005);
+        vec3 col = refl * F * (1.0 + 0.3 * sm) + vec3(0.93, 0.96, 0.94) * (haze + sheen) * lit + vec3(0.003, 0.007, 0.005);   // (a smudge scatters a little more of what it reflects)
         gl_FragColor = vec4(col, clamp(F + (haze + sheen) * 0.8 + 0.015, 0.0, 0.7));   // (premultiplied: the view behind keeps 1 − alpha of itself)
       }`,
     transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide });
