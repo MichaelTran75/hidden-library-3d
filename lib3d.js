@@ -3355,13 +3355,26 @@ const STAR_BSC5 =
      ends and washed out by moonlight; as bright, where it is brightest, as two to three times the dark sky round it
      (its surface brightness ~20.5 against ~21.8 magnitudes per square arcsecond); and the moon's light scattered round
      the moon.
+   The sky is set as a painter would set it (G, 15/10/2026: "cho dải ngân hà nằm ngay góc"): the real sky, its
+   constellations as they are, turned so that the Milky Way crosses the corner of the left glass that the room's first
+   view shows (only some 12° of sky across, 3° to 16° up, round the moon), rising steeply through it from lower left to
+   upper right a few degrees left of the moon: its Scutum–Aquila stretch, the bright Scutum star cloud low in the corner
+   and the Great Rift down the band's middle (its bulge, broad enough to fill the whole corner with a glow, below and to
+   the left), drawn narrower and brighter than the real one (so a band, not a glow, in so small a window), and held
+   there; low as that corner is, the air there takes only a little of it. ?sky=real shows the sky as
+   it stands over Pleiku at this minute instead (turning with the hours, dimmed low down by the full air).
    Drawn back to front: the Milky Way, the stars, the comet, then the moon over them (it hides what is behind it), and
    the shooting stars last (they burn in our own air, in front of the moon). The moon has the phase of the page's sky
    clock and hangs in the left glass. */
 const SDEG = Math.PI / 180;
 // equatorial (J2000) → galactic
 const GAL = new THREE.Matrix3().set(-0.0548755604, -0.8734370902, -0.4838350155, 0.4941094279, -0.4448296300, 0.7469822445, -0.8676661490, -0.1980763734, 0.4559837762);
-const STARU = { uEq: { value: new THREE.Matrix3() }, uGal: { value: new THREE.Matrix3() }, uLim: { value: 6.3 }, uMW: { value: 1 }, uMoon: { value: new THREE.Vector3(0, 1, 0) }, uMoonK: { value: 0 }, uEye: { value: new THREE.Vector3() } };
+const STARU = { uEq: { value: new THREE.Matrix3() }, uGal: { value: new THREE.Matrix3() }, uLim: { value: 6.3 }, uMW: { value: 1 }, uMoon: { value: new THREE.Vector3(0, 1, 0) }, uMoonK: { value: 0 }, uEye: { value: new THREE.Vector3() },
+  uExtS: { value: 0.2 }, uExtM: { value: 0.32 }, uHz: { value: 0.12 },   // the air's toll low down: magnitudes per airmass (stars), its log (the Milky Way), the haze's height
+  uBand: { value: 1 }, uMWK: { value: 0.38 }, uBandStars: { value: 0 }, uGrain: { value: 1 }, uBandMag: { value: 0 } };   // (and its clouds finer, its stars brighter)   // (the painter's sky: the band drawn narrower and brighter, with its own grain of stars)
+// where the Milky Way is set (compass bearing from north and height, degrees): its centre, and a point further along it
+// toward Scutum and Aquila; ?sky=real: the sky of this minute instead
+const SKYSET = { real: (() => { try { return new URLSearchParams(location.search).get('sky') === 'real'; } catch (e) { return false; } })(), a: [351.9, 0], b: [7.3, 22], lc: 35, key: '' };   // (the band from a to b; galactic longitude lc between them)
 const SKY_NOISE = `
   float sh3(vec3 p) { p = fract(p * 0.3183099 + 0.1) * 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
   float sn3(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -3393,19 +3406,33 @@ function buildStars(sky) {
       const u = r(); kelvinRGB(u < 0.55 ? 4200 + r() * 1800 : u < 0.88 ? 6000 + r() * 3500 : 9500 + r() * 12000, col); seed.push(r()); n++;
     }
   }
+  // the band's own grain (the painter's sky only): faint stars, 5.8 to 7.6, packed into a band ±1.2° wide along the plane,
+  // thicker where the band is bright; set in galactic coordinates and turned back to equatorial ones (GAL is orthonormal)
+  const band = new Float32Array(dir.length / 3 + 9000);
+  { const v = new THREE.Vector3(), Gt = GAL.clone().transpose(), a = 0.4, A0 = Math.pow(10, a * 5.8), A1 = Math.pow(10, a * 7.6), i0 = dir.length / 3;
+    for (let n = 0; n < 9000;) {
+      const l = (r() * 2 - 1) * Math.PI, bright = 0.25 + 0.75 * Math.pow(0.5 + 0.5 * Math.cos(l), 1.6) + 0.4 * Math.exp(-Math.pow((l - 0.47) / 0.1, 2)) + 0.35 * Math.exp(-Math.pow((l - 1.33) / 0.17, 2));
+      if (r() * 1.6 > bright) continue;
+      const g1 = r(), g2 = r(), b = Math.sqrt(-2 * Math.log(g1 + 1e-9)) * Math.cos(2 * Math.PI * g2) * 0.021 * (1 + 0.8 * Math.exp(-l * l / 0.5));   // (wider toward the centre)
+      v.set(Math.cos(b) * Math.cos(l), Math.cos(b) * Math.sin(l), Math.sin(b)).applyMatrix3(Gt);
+      dir.push(v.x, v.y, v.z); mag.push(Math.log10(A0 + r() * (A1 - A0)) / a);
+      const u = r(); kelvinRGB(u < 0.6 ? 4300 + r() * 1700 : 6000 + r() * 4000, col); seed.push(r()); band[i0 + n] = 1; n++;
+    }
+  }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(dir, 3)); g.setAttribute('aMag', new THREE.Float32BufferAttribute(mag, 1));
-  g.setAttribute('aCol', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1));
+  g.setAttribute('aCol', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1)); g.setAttribute('aBand', new THREE.BufferAttribute(band, 1));
   const stars = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: OVER.u.uTime, uNight: NIGHT.u, uPR: OVER.u.uPR, ...STARU },
-    vertexShader: `attribute float aMag, aSeed; attribute vec3 aCol; uniform mat3 uEq; uniform vec3 uEye, uMoon; uniform float uTime, uLim, uPR, uMoonK;
+    vertexShader: `attribute float aMag, aSeed, aBand; attribute vec3 aCol; uniform mat3 uEq; uniform vec3 uEye, uMoon; uniform float uTime, uLim, uPR, uMoonK, uExtS, uBandStars, uBandMag;
       varying vec3 vCol; varying float vHalo; ${AIRMASS}
       void main() {
         gl_PointSize = 0.0; gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        if (aBand > 0.5 && uBandStars < 0.5) return;
         vec3 d = uEq * position; float el = d.y;
         if (el < -0.005) return;
         float X = airmass(el), lo = smoothstep(1.3, 7.0, X), fq = mix(4.5, 1.8, lo), ph = aSeed * 50.0;
         float near = dot(d, uMoon), lost = uMoonK * (0.5 * smoothstep(0.7, 0.98, near) + 1.2 * smoothstep(0.985, 0.9995, near));   // (the moon's glare round it)
-        float m = aMag + 0.2 * (X - 1.0) + (0.05 + 0.4 * lo) * (0.6 * sin(uTime * fq + ph) + 0.4 * sin(uTime * fq * 1.71 + ph * 1.3));   // the air: dimmer, twinkling
+        float m = aMag + aBand * uBandMag + uExtS * (X - 1.0) + (0.05 + 0.4 * lo) * (0.6 * sin(uTime * fq + ph) + 0.4 * sin(uTime * fq * 1.71 + ph * 1.3));   // the air: dimmer, twinkling
         float dm = uLim - lost - m;   // how many magnitudes above the faintest seen (a little under it still glimpsed)
         if (dm < -1.1) return;
         gl_Position = projectionMatrix * viewMatrix * vec4(uEye + d * 240.0, 1.0);
@@ -3413,7 +3440,7 @@ function buildStars(sky) {
         gl_PointSize = uPR * (2.2 + 0.5 * max(dm, 0.0) + 2.6 * smoothstep(4.5, 7.5, dm));
         vHalo = smoothstep(4.5, 7.5, dm);
         vec3 c = mix(vec3(1.0), aCol, 0.2 + 0.55 * smoothstep(1.5, 5.0, dm));   // (the eye sees colour only in the bright ones)
-        c *= vec3(1.0, pow(0.94, X - 1.0), pow(0.85, X - 1.0));   // reddened low down
+        c *= exp2(-(X - 1.0) * uExtS * vec3(0.0, 0.45, 1.17));   // reddened low down (as much as dimmed)
         c *= 1.0 + lo * smoothstep(3.0, 6.0, dm) * 0.3 * vec3(sin(uTime * 6.0 + ph), sin(uTime * 7.3 + ph * 2.0), sin(uTime * 8.9 + ph * 3.0));   // the bright ones low down flash colours
         vCol = c * I * smoothstep(-1.1, -0.5, dm);
       }`,
@@ -3428,27 +3455,28 @@ function buildStars(sky) {
   const mw = new THREE.Mesh(new THREE.SphereGeometry(236, 64, 32), new THREE.ShaderMaterial({ side: THREE.BackSide,
     uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u, ...STARU },
     vertexShader: 'uniform vec3 uEye; varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * viewMatrix * vec4(uEye + position, 1.0); }',
-    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uMW, uMoonK; uniform mat3 uGal; uniform vec3 uMoon; varying vec3 vD;
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uMW, uMoonK, uExtM, uHz, uBand, uMWK, uGrain; uniform mat3 uGal; uniform vec3 uMoon; varying vec3 vD;
       ${SKY_NOISE} ${AIRMASS}
       void main() { ${SKY_DEPTH}
         vec3 d = normalize(vD); float el = d.y; if (el < -0.02) discard;
         vec3 c = vec3(0.0);
         if (uMW > 0.003) {   // in galactic coordinates (x toward the centre, z toward the north galactic pole)
-          vec3 g = uGal * d; float b = asin(clamp(g.z, -1.0, 1.0)), l = atan(g.y, g.x), cl = cos(l);
+          vec3 g = uGal * d; float b = asin(clamp(g.z, -1.0, 1.0)) * uBand, l = atan(g.y, g.x), cl = cos(l);
+          vec3 gn = vec3(g.xy, g.z * sqrt(uBand)) * uGrain;   // (its clouds a little drawn out along it as it is narrowed; finer in a small window)
           float sg = 0.07 + 0.05 * exp(-l * l / 0.5), disk = exp(-b * b / (2.0 * sg * sg));   // the thin disk: ±4° far out, ±7° toward the centre
-          float glow = exp(-b * b / 0.16) * 0.12;                                              // the faint wide glow round it
+          float glow = exp(-b * b / 0.16) * 0.12 / uBand;                                      // the faint wide glow round it
           float bul = exp(-l * l / 0.12 - b * b / 0.035);                                      // the bulge in Sagittarius
           float lon = 0.18 + 0.82 * pow(0.5 + 0.5 * cl, 1.6)                                   // brightest toward the centre, faintest toward Auriga
             + 0.35 * exp(-pow((l - 0.47) / 0.1, 2.0)) + 0.3 * exp(-pow((l - 1.33) / 0.17, 2.0)) + 0.22 * exp(-pow((l + 1.38) / 0.22, 2.0));   // Scutum, Cygnus, Carina
-          float n1 = sfbm(g * 6.0), n2 = sfbm(g * 19.0 + 3.0), n3 = sfbm(g * 10.0 + 7.0), n4 = sfbm(g * 40.0 + 11.0);
+          float n1 = sfbm(gn * 6.0), n2 = sfbm(gn * 19.0 + 3.0), n3 = sfbm(gn * 10.0 + 7.0), n4 = sfbm(gn * 40.0 + 11.0);
           float clouds = pow(0.25 + 0.95 * n1, 2.2) * (0.65 + 0.7 * n2) * (0.82 + 0.36 * n4);   // star clouds, mottled finer and finer
           float dark = smoothstep(0.52, 0.7, n3);                                                // dark nebulae
           float rb = b - 0.03 + 0.05 * (n1 - 0.5), rift = exp(-rb * rb / 0.0011) * smoothstep(-0.25, 0.0, l) * smoothstep(1.5, 1.2, l);   // the Great Rift, Cygnus to Ophiuchus
           float I = disk * lon * clouds * (1.0 - 0.85 * rift) * (1.0 - 0.6 * dark) + glow * lon + 1.1 * bul * clouds * (1.0 - 0.5 * rift);
           vec3 tint = mix(vec3(0.62, 0.68, 0.86), vec3(1.0, 0.85, 0.64), clamp(1.4 * bul + 0.35 * smoothstep(0.4, 1.0, 0.5 + 0.5 * cl), 0.0, 1.0));
-          c += uMW * I * tint * 0.38;
+          c += uMW * I * tint * uMWK;
         }
-        c *= exp(-0.32 * (airmass(el) - 1.0)) * smoothstep(-0.01, 0.12, el);   // dimmed by the air and lost in the haze low down
+        c *= exp(-uExtM * (airmass(el) - 1.0)) * smoothstep(-0.01, uHz, el);   // dimmed by the air and lost in the haze low down
         c += uMW * vec3(0.012, 0.022, 0.013) * smoothstep(0.0, 0.06, el) * exp(-el / 0.3);   // the airglow: the upper air's own faint green light, low in a dark sky
         float mn = max(dot(d, uMoon), 0.0);
         c += uMoonK * vec3(0.05, 0.065, 0.09) * (0.35 * pow(mn, 6.0) + 0.65 * pow(mn, 60.0));   // the moon's light in the air round it
@@ -3459,7 +3487,26 @@ function buildStars(sky) {
 }
 // the sky turned to this minute: equatorial → the room, by the local sidereal time and the room's compass
 const _E = new THREE.Vector3(), _N = new THREE.Vector3(), _Z = new THREE.Vector3(), _gt = new THREE.Matrix3();
+const _sX = new THREE.Vector3(), _sP = new THREE.Vector3(), _sY = new THREE.Vector3(), _sZ = new THREE.Vector3(), _sM = new THREE.Matrix3();
+function skyDir(az, el, v) { const p = (az - 103.7) * SDEG, e = el * SDEG; return v.set(Math.cos(e) * Math.cos(p), Math.sin(e), Math.cos(e) * Math.sin(p)); }   // (the room's compass: fx/hour.js sunDirAt)
 function stepStars() {
+  if (!SKYSET.real) {   // the painter's sky: the galactic centre and the plane through it, set where SKYSET says
+    const key = SKYSET.a.join() + '|' + SKYSET.b.join() + '|' + SKYSET.lc;
+    if (key !== SKYSET.key) {
+      SKYSET.key = key; skyDir(SKYSET.a[0], SKYSET.a[1], _sX); skyDir(SKYSET.b[0], SKYSET.b[1], _sP);
+      _sZ.crossVectors(_sX, _sP).normalize();                      // the plane through a and b: its north pole
+      _sP.add(_sX).normalize(); _sY.crossVectors(_sZ, _sP);        // the middle of the two, and the way along the plane toward b there
+      const t = SKYSET.lc * SDEG; _sX.copy(_sP).multiplyScalar(Math.cos(t)).addScaledVector(_sY, -Math.sin(t));   // the centre: lc back along it
+      _sY.crossVectors(_sZ, _sX);                                   // (longitude 90° along it toward b)
+      _sM.set(_sX.x, _sY.x, _sZ.x, _sX.y, _sY.y, _sZ.y, _sX.z, _sY.z, _sZ.z);   // galactic → the room
+      STARU.uEq.value.multiplyMatrices(_sM, GAL); STARU.uGal.value.copy(_sM).transpose();
+      STARU.uExtS.value = 0.07; STARU.uExtM.value = 0.07; STARU.uHz.value = 0.035; STARU.uBand.value = 3.0; STARU.uMWK.value = 1.4; STARU.uBandStars.value = 1; STARU.uGrain.value = 2.4; STARU.uBandMag.value = -1.1;
+    }
+  } else stepRealSky();
+  skyLight();
+}
+function stepRealSky() {
+  STARU.uExtS.value = 0.2; STARU.uExtM.value = 0.32; STARU.uHz.value = 0.12; STARU.uBand.value = 1; STARU.uMWK.value = 0.38; STARU.uBandStars.value = 0; STARU.uGrain.value = 1; STARU.uBandMag.value = 0;
   const d = HOUR.pin || new Date(), tz = -d.getTimezoneOffset() / 60, vn = tz === 7, lat = (vn ? 13.98 : 14) * SDEG, lon = vn ? 108.0 : tz * 15;
   const jd = d.getTime() / 864e5 + 2440587.5, th = ((280.46061837 + 360.98564736629 * (jd - 2451545.0) + lon) % 360) * SDEG;   // local sidereal time
   const sf = Math.sin(lat), cf = Math.cos(lat), st = Math.sin(th), ct = Math.cos(th), p0 = 103.7 * SDEG, sp = Math.sin(p0), cp = Math.cos(p0);
@@ -3467,7 +3514,8 @@ function stepStars() {
   const X = _E.clone().multiplyScalar(sp).addScaledVector(_N, cp), Z = _E.clone().multiplyScalar(cp).addScaledVector(_N, -sp);   // the room's x and z (as the sun is placed: fx/hour.js sunDirAt)
   STARU.uEq.value.set(X.x, X.y, X.z, _Z.x, _Z.y, _Z.z, Z.x, Z.y, Z.z);
   STARU.uGal.value.copy(GAL).multiply(_gt.copy(STARU.uEq.value).transpose());   // the room → galactic
-  // how faint a star is still seen, and how bright the Milky Way: the dark of the night, the moon's light
+}
+function skyLight() {   // how faint a star is still seen, and how bright the Milky Way: the dark of the night, the moon's light
   const e = HOUR.e === null ? -20 : HOUR.e, lit = 0.5 - 0.5 * Math.cos(moonAge() * 2 * Math.PI), up = OVER.moon && OVER.moon.visible ? 1 : 0;
   STARU.uMoonK.value = up * Math.pow(lit, 0.8);
   STARU.uLim.value = 6.5 - 5.0 * THREE.MathUtils.smoothstep(e, -18, -4) - 1.8 * STARU.uMoonK.value;   // (the twilight's glow, then the moon's)
@@ -5382,7 +5430,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, METEOR, STARU, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
+window.__lib3d = { PETS, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
 (window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => start().catch(e => {
   console.warn('3D library unavailable', e); setReady(false); updateOn(); document.documentElement.classList.add('lib3d-failed');
 }), { timeout: 800 });
