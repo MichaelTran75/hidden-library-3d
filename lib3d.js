@@ -3859,10 +3859,11 @@ function stepZzz(t, dt, asleep) {
    both ways); the rest of the body pitches and rolls about the hips and rides up and sideways over the feet. */
 const HEN = { u: { uNeck: { value: new THREE.Vector3(0.085, 0.255, 0.02) }, uHeadR: { value: new THREE.Matrix3() }, uHeadT: { value: new THREE.Vector3() },
   uHip: { value: new THREE.Vector3(0, 0.12, 0) }, uBodyR: { value: new THREE.Matrix3() }, uBodyT: { value: new THREE.Vector3() }, uFootL: { value: new THREE.Vector3() }, uFootR: { value: new THREE.Vector3() },
-  uShankL: { value: new THREE.Vector2(0, 0.04) }, uShankR: { value: new THREE.Vector2(0, -0.04) } } };
+  uShankL: { value: new THREE.Vector2(0, 0.04) }, uShankR: { value: new THREE.Vector2(0, -0.04) }, uRestL: { value: new THREE.Vector3() }, uRestR: { value: new THREE.Vector3() } } };
+PETS.hen = HEN;   // (for tests)
 function henPatch(sh) {
   crispPatch(sh); Object.assign(sh.uniforms, HEN.u);
-  sh.vertexShader = 'uniform vec3 uNeck, uHeadT, uHip, uBodyT, uFootL, uFootR; uniform mat3 uHeadR, uBodyR; uniform vec2 uShankL, uShankR;\n' + sh.vertexShader
+  sh.vertexShader = 'uniform vec3 uNeck, uHeadT, uHip, uBodyT, uFootL, uFootR, uRestL, uRestR; uniform mat3 uHeadR, uBodyR; uniform vec2 uShankL, uShankR;\n' + sh.vertexShader
     .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
       float wH = smoothstep(0.26, 0.33, position.y) * smoothstep(0.02, 0.1, position.x), wF = 1.0 - smoothstep(0.08, 0.13, position.y);
       float sideL = smoothstep(-0.012, 0.012, distance(position.xz, uShankR) - distance(position.xz, uShankL));
@@ -3871,7 +3872,10 @@ function henPatch(sh) {
       vec3 foot = mix(uFootR, uFootL, sideL);   // (x ahead, y up; z: how far its toes are drawn in)
       // a foot in the air draws its toes in toward its shank (as a bird's do) and spreads them again to come down
       transformed.xz += (mix(uShankR, uShankL, sideL) - position.xz) * wF * foot.z * 0.6 * (1.0 - smoothstep(0.0, 0.035, position.y));
-      transformed += wF * clamp(1.0 - position.y / 0.13, 0.0, 1.0) * vec3(foot.xy, 0.0);
+      // (the model stands mid-stride, its left foot 8 cm ahead of its right: each foot is first set back square under the
+      // hips, rest, and the stride is taken from there)
+      vec3 rest = mix(uRestR, uRestL, sideL);
+      transformed += wF * clamp(1.0 - position.y / 0.13, 0.0, 1.0) * vec3(foot.x + rest.x, foot.y, rest.z);
       transformed = mix(transformed, uHeadR * (transformed - uNeck) + uNeck + uHeadT, wH);
       transformed = mix(uBodyR * (transformed - uHip) + uHip + uBodyT, transformed, wF);`);
 }
@@ -3918,6 +3922,14 @@ async function loadPets() {
     const p = g.attributes.position, sh = [[0, 0, 0], [0, 0, 0]];
     for (let i = 0; i < p.count; i++) { const y = p.getY(i); if (y < 0.04 || y > 0.09) continue; const s = sh[p.getZ(i) > 0 ? 0 : 1]; s[0] += p.getX(i); s[1] += p.getZ(i); s[2]++; }
     if (sh[0][2] && sh[1][2]) { HEN.u.uShankL.value.set(sh[0][0] / sh[0][2], sh[0][1] / sh[0][2]); HEN.u.uShankR.value.set(sh[1][0] / sh[1][2], sh[1][1] / sh[1][2]); }
+    // and where its feet stand (toes and ankles): the model has them a stride apart, the left ahead; the offsets that set
+    // them side by side under the hips, as far out either side
+    const ft = [[0, 0, 0], [0, 0, 0]];
+    for (let i = 0; i < p.count; i++) { if (p.getY(i) > 0.035) continue; const f = ft[p.getZ(i) > 0 ? 0 : 1]; f[0] += p.getX(i); f[1] += p.getZ(i); f[2]++; }
+    if (ft[0][2] && ft[1][2]) {
+      const xL = ft[0][0] / ft[0][2], zL = ft[0][1] / ft[0][2], xR = ft[1][0] / ft[1][2], zR = ft[1][1] / ft[1][2], xc = (xL + xR) / 2, zw = (zL - zR) / 2;
+      HEN.u.uRestL.value.set(xc - xL, 0, zw - zL); HEN.u.uRestR.value.set(xc - xR, 0, -zw - zR);
+    }
     const mat = petMaterial(mesh.material, { roughness: 0.8, sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xffefd8) }); mat.onBeforeCompile = henPatch; mat.fog = true;
     const bird = new THREE.Mesh(g, mat); bird.frustumCulled = false; bird.layers.set(L);
     PETS.chicken = new THREE.Group(); PETS.chicken.add(bird);
@@ -4656,25 +4668,44 @@ function layoutOverlay() {
   };
   for (const s of UIS.secs) {
     const vis = show && (home || (UIS.mode === 'research' && s.group === 'research'));
-    if (s.group === 'books') place(s.label, s.box.plate, s.box.tag, 30, 0, 'left', vis);   // on its row, just past the plate
-    else place(s.label, s.box.plate, s.box.tag, 0, -44, 'center', vis);                    // above its bay
+    const lh = s.label.offsetHeight || 26;   // (the labels' size follows the window: build.py's CSS)
+    if (s.group === 'books') place(s.label, s.box.plate, s.box.tag, 30 + lh * 0.4, 0, 'left', vis);   // on its row, just past the plate
+    else place(s.label, s.box.plate, s.box.tag, 0, -31 - lh / 2, 'center', vis);                       // above its bay
+  }
+  // the bays' labels in a row over them, left to right, each as near over its bay as the one before allows; kept clear of
+  // the shelf's labels on the right (the row moves left, toward the panel, as far as it can), and a label that still
+  // will not fit starts a second row under the first
+  const row = boxes.filter(b => b.el.classList.contains('l3-research')).sort((p, q) => p.a.x - q.a.x);
+  if (row.length > 1) {
+    const books = boxes.filter(b => b.el.classList.contains('l3-books')), h = Math.max(...row.map(b => b.h)), x0 = side + 10;
+    const limAt = y => Math.min(innerWidth - 10, ...books.filter(b => b.y < y + h + 8 && b.y + b.h > y - 8).map(b => b.x - 16));
+    let y = Math.min(...row.map(b => b.y)), line = [];
+    const settle = () => { if (!line.length) return; const last = line[line.length - 1], over = last.x + last.w - limAt(y);
+      if (over > 0) { const room = line[0].x - x0, d = Math.min(over, room); for (const b of line) b.x -= d; } };
+    for (const b of row) {
+      const prev = line[line.length - 1]; b.y = y; b.x = Math.max(b.a.x - b.w / 2, prev ? prev.x + prev.w + 12 : x0);
+      line.push(b); settle();
+      if (b.x + b.w > limAt(y) && line.length > 1) {   // no room left in this row: it goes down to the next
+        line.pop(); y += h + 8; line = [b]; b.y = y; b.x = Math.max(x0, Math.min(b.a.x - b.w / 2, limAt(y) - b.w));
+      }
+    }
   }
   boxes.sort((p, q) => p.y - q.y);
   for (let k = 1; k < boxes.length; k++) for (let j = 0; j < k; j++) {
     const p = boxes[j], q = boxes[k];
-    if (q.x < p.x + p.w + 6 && q.x + q.w + 6 > p.x && q.y < p.y + p.h + 4) q.y = p.y + p.h + 4;
+    if (q.x < p.x + p.w + 8 && q.x + q.w + 8 > p.x && q.y < p.y + p.h + 6) q.y = p.y + p.h + 6;
   }
   for (const b of boxes) {
     b.el.style.transform = `translate(${Math.round(b.x)}px, ${Math.round(b.y)}px)`;
     const ex = b.a.x < b.x ? b.x : b.a.x > b.x + b.w ? b.x + b.w : b.x + b.w / 2, ey = b.a.y < b.y ? b.y : b.a.y > b.y + b.h ? b.y + b.h : b.y + b.h / 2;
-    lines.push(`<path d="M${b.a.x.toFixed(1)},${b.a.y.toFixed(1)} L${ex.toFixed(1)},${ey.toFixed(1)}"/><circle cx="${b.a.x.toFixed(1)}" cy="${b.a.y.toFixed(1)}" r="3"/>`);
+    lines.push(`<path d="M${b.a.x.toFixed(1)},${b.a.y.toFixed(1)} L${ex.toFixed(1)},${ey.toFixed(1)}"/><circle cx="${b.a.x.toFixed(1)}" cy="${b.a.y.toFixed(1)}" r="4.2"/>`);
   }
   // the group names sit over their labels: Books over the stack of rows, Research centred over the three bays
   for (const [g, cap] of Object.entries(UIEL.caps)) {
     const bs = boxes.filter(b => b.el.classList.contains('l3-' + g));
     if (!bs.length) { cap.classList.add('is-off'); continue; }
     cap.classList.remove('is-off'); const w = cap.offsetWidth, h = cap.offsetHeight, l = Math.min(...bs.map(b => b.x)), r = Math.max(...bs.map(b => b.x + b.w));
-    const first = bs.reduce((p, q) => q.y < p.y ? q : p); let x = g === 'books' ? l + 4 : (l + r - w) / 2, y = first.y - h - 6;
+    const first = bs.reduce((p, q) => q.y < p.y ? q : p); let x = g === 'books' ? l + 6 : (l + r - w) / 2, y = first.y - h - 10;
     if (y < 8) { x = first.x - w - 12; y = first.y + (first.h - h) / 2; }   // no room above (a very wide window): beside the first label
     x = THREE.MathUtils.clamp(x, side + 10, innerWidth - w - 10);
     cap.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
