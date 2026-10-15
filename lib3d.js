@@ -5104,9 +5104,9 @@ function layoutOverlay() {
     const books = boxes.filter(b => b.el.classList.contains('l3-books')), h = Math.max(...row.map(b => b.h)), x0 = side + 10;
     const limAt = y => Math.min(innerWidth - 10, ...books.filter(b => b.y < y + h + 8 && b.y + b.h > y - 8).map(b => b.x - 16));
     let y = Math.min(...row.map(b => b.y)), line = [];
-    // (clear of the page's sky clock and its weather line above them, the group's name between)
-    const clock = document.querySelector('.page.is-active .sky'), cr = clock && clock.getBoundingClientRect(), cap = UIEL.caps && UIEL.caps.research;
-    if (cr && cr.height > 0 && cr.left < innerWidth && cr.right > side) y = Math.max(y, cr.bottom + (cap ? cap.offsetHeight : 14) + 18);
+    // (clear of the page's sky clock and its weather line above them)
+    const clock = document.querySelector('.page.is-active .sky'), cq = clock && clock.getBoundingClientRect(), cr = cq && cq.height > 0 && cq.left < innerWidth && cq.right > side ? cq : null;
+    if (cr) y = Math.max(y, cr.bottom + 10);
     const settle = () => { if (!line.length) return; const last = line[line.length - 1], over = last.x + last.w - limAt(y);
       if (over > 0) { const room = line[0].x - x0, d = Math.min(over, room); for (const b of line) b.x -= d; } };
     for (const b of row) {
@@ -5115,6 +5115,17 @@ function layoutOverlay() {
       if (b.x + b.w > limAt(y) && line.length > 1) {   // no room left in this row: it goes down to the next
         line.pop(); y += h + 8; line = [b]; b.y = y; b.x = Math.max(x0, Math.min(b.a.x - b.w / 2, limAt(y) - b.w));
       }
+    }
+    // the group's name over the row: centred over it, or as far left (toward the panel, no further than the row's start)
+    // as it must to keep clear of the clock; if it still meets the clock, the row goes down under it
+    const cap = UIEL.caps && UIEL.caps.research; UIEL.capAt = null;
+    if (cap) {
+      const cw = cap.offsetWidth, ch = cap.offsetHeight, l = Math.min(...row.map(b => b.x)), r = Math.max(...row.map(b => b.x + b.w)), top = Math.min(...row.map(b => b.y));
+      const meets = (x, yy) => cr && x < cr.right + 12 && x + cw > cr.left - 12 && yy < cr.bottom + 6 && yy + ch > cr.top;
+      let cx = THREE.MathUtils.clamp((l + r - cw) / 2, side + 10, innerWidth - cw - 10), cy = top - ch - 10;
+      if (meets(cx, cy)) cx = Math.max(side + 10, l, Math.min(cx, cr.left - 12 - cw));
+      if (meets(cx, cy)) { const d = cr.bottom + 6 - cy; for (const b of row) b.y += d; cy += d; }
+      UIEL.capAt = { research: [cx, cy] };
     }
   }
   boxes.sort((p, q) => p.y - q.y);
@@ -5135,8 +5146,16 @@ function layoutOverlay() {
     if (!bs.length) { cap.classList.add('is-off'); continue; }
     cap.classList.remove('is-off'); const w = cap.offsetWidth, h = cap.offsetHeight, l = Math.min(...bs.map(b => b.x)), r = Math.max(...bs.map(b => b.x + b.w));
     const first = bs.reduce((p, q) => q.y < p.y ? q : p), sk = first.skew || 0;
-    let x = g === 'books' ? l + 6 : (l + r - w) / 2, y = first.y - h - 10;
-    if (sk) y = first.y + (x + w / 2 - first.x - first.w / 2) * Math.tan(sk) - h - 10;   // (over a sheared label: along it, above its edge there)
+    if (g === 'research' && UIEL.capAt && UIEL.capAt.research) {   // (placed with its row: clear of the clock)
+      const [x, y] = UIEL.capAt.research; cap.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`; continue;
+    }
+    // over a sheared label: along it, above its edge there; moved on along it (right) where it would meet the clock
+    const clock = document.querySelector('.page.is-active .sky'), cr = clock && clock.getBoundingClientRect(), t = Math.tan(sk);
+    const yAt = x => sk ? first.y + (x + w / 2 - first.x - first.w / 2) * t - h - 10 : first.y - h - 10;
+    let x = g === 'books' ? l + 6 : (l + r - w) / 2, y = yAt(x);
+    const ext = (x, y) => [y - Math.abs(t) * w / 2, y + h + Math.abs(t) * w / 2];   // (its height on the screen, sheared)
+    const meets = (x, y) => { if (!cr || !cr.height) return false; const [a, b] = ext(x, y); return x < cr.right + 12 && x + w > cr.left - 12 && a < cr.bottom + 6 && b > cr.top; };
+    if (meets(x, y)) { x = Math.min(cr.right + 12, first.x + first.w - w); y = yAt(x); }
     if (y < 8) { x = first.x - w - 12; y = first.y + (first.h - h) / 2; }   // no room above (a very wide window): beside the first label
     x = THREE.MathUtils.clamp(x, side + 10, innerWidth - w - 10);
     cap.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)` + (sk ? ` skewY(${sk.toFixed(4)}rad)` : '');
