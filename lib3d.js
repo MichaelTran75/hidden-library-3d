@@ -214,7 +214,7 @@ function buildRoom() {
     const back = new THREE.Mesh(boardGeo(R.xW - R.xL, R.caseTop, 0.08, 1), MAT.shelfBack); back.position.set((R.xL + R.xW) / 2, R.caseTop / 2, zw - s * 0.06); back.receiveShadow = back.castShadow = true; room.add(back);
   }
   const frames = new THREE.Mesh(mergeGeometries([...fr, ...beams]), MAT.frame); frames.castShadow = frames.receiveShadow = true; room.add(frames);
-  const glass = new THREE.Mesh(mergeGeometries(gl), MAT.glass); glass.renderOrder = 2; room.add(glass);
+  const glass = new THREE.Mesh(mergeGeometries(gl), MAT.glass); glass.renderOrder = 2; room.add(glass); room.userData.glass = glass;   // (its glass: fx/glass.js)
   // handle
   const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.26, 10), MAT.bronze); handle.position.set(gx + 0.09, 1.05, -4.42); room.add(handle);
   // right solid wall (behind bookshelf)
@@ -1813,15 +1813,38 @@ function windify(mat, leaf, opt = {}) {
    gathered pleats on vertical faces, soft creases + lumps on top faces, "crushed" pile patches that tilt
    the fibres (changing sheen locally), micro pile noise for close-ups, and baked contact AO (vertex colour)
    that also damps the sheen inside crevices.                                                              */
-function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, normalMap = null, normalScale = null, ao = false, pleat = 0, crease = 0.4, allFaces = 0, crush = 1, seam = 0, freq = 1, spec = 0.1, sheenAmt = 0.8 }) {
+/* A cushion that gives (dent: true; G, 15/10/2026): where the cat stands or lies on it the top of the cushion is pressed
+   into a smooth hollow (its depth falls off as (1 - r²)² over SOFT's radius), only its upper part moving, so the faces
+   meeting at its edges move together and never part; the normals tip into the hollow, so it shades. pets.js sets
+   where and how deep (a damped spring: deeper as the cat lands, springing back as it leaves). */
+const SOFT = { u: { uDent: { value: new THREE.Vector4(0, 0, 0.16, 0) }, uDentY: { value: 0.4 } } };
+const DENT_GLSL = `
+  uniform vec4 uDent; uniform float uDentY;
+  float dentAt(vec3 w, out vec2 grad) {   // how far a point (world) is pressed down, and the slope of that
+    vec2 q = (w.xz - uDent.xy) / uDent.z; float r2 = dot(q, q); grad = vec2(0.0);
+    if (r2 >= 1.0 || uDent.w <= 0.0) return 0.0;
+    float h = smoothstep(uDentY - 0.12, uDentY - 0.015, w.y);
+    grad = uDent.w * h * 4.0 * (1.0 - r2) * q / uDent.z; return uDent.w * h * (1.0 - r2) * (1.0 - r2);
+  }`;
+function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, normalMap = null, normalScale = null, ao = false, pleat = 0, crease = 0.4, allFaces = 0, crush = 1, seam = 0, freq = 1, spec = 0.1, sheenAmt = 0.8, dent = false }) {
   const m = new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, sheen: sheenAmt, sheenColor: new THREE.Color(sheen), sheenRoughness: sheenRough, specularIntensity: spec, side: THREE.DoubleSide, vertexColors: ao });
   if (map) m.map = map; if (normalMap) { m.normalMap = normalMap; if (normalScale) m.normalScale.copy(normalScale); }
   const U = { uPleat: { value: pleat }, uCrease: { value: crease }, uAll: { value: allFaces }, uCrush: { value: crush }, uSeam: { value: seam }, uFreq: { value: freq } };
   m.userData.velvet = U;
+  if (dent) m.customProgramCacheKey = () => 'velvet-dent';
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObjP;\nvarying vec3 vObjN;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjP = position;\nvObjN = objectNormal;');
+    if (dent) {
+      Object.assign(sh.uniforms, SOFT.u);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>' + DENT_GLSL)
+        .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
+          { vec2 gr; dentAt((modelMatrix * vec4(position, 1.0)).xyz, gr); mat3 mm = mat3(modelMatrix); vec3 wn = normalize(mm * objectNormal);
+            objectNormal = normalize(inverse(mm) * normalize(wn - vec3(gr.x, 0.0, gr.y) * max(wn.y, 0.0))); }`)
+        .replace('vObjN = objectNormal;', `vObjN = objectNormal;
+          { vec2 gr; float dd = dentAt((modelMatrix * vec4(transformed, 1.0)).xyz, gr); transformed += inverse(mat3(modelMatrix)) * vec3(0.0, -dd, 0.0); }`);
+    }
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vObjP; varying vec3 vObjN;
       uniform float uPleat, uCrease, uAll, uCrush, uSeam, uFreq;
@@ -1942,7 +1965,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const sofa = new THREE.Group(); const S = 0.92; sofa.scale.setScalar(S);
   sofa.position.set(R.xS - 3.7213 * S, 0, R.zB + R.caseD + 0.26); F.add(sofa);
   const ref = B.sofa_seat_mid.material; const nS = ref.normalScale.clone();
-  MAT.sofaCushion = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 1, crease: 1, seam: 1, freq: 1 });
+  MAT.sofaCushion = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 1, crease: 1, seam: 1, freq: 1, dent: true });   // (gives under the cat)
   MAT.sofaBack = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 0, crease: 0.8, allFaces: 1, seam: 1, freq: 1 });
   MAT.sofaFrame = makeVelvet({ color: 0x3b5a3c, sheen: 0xd6dfbd, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.7), ao: true, pleat: 0, crease: 0.35, freq: 1 });
   const parts = [], aoT = [], aoO = []; let pid = 0;
@@ -2076,17 +2099,22 @@ function buildPost() {
       else gl_FragColor = vec4(fb(vec2(px.x*0.9, px.y*0.08)), fb(px*0.004+11.0), fb(px*0.6)*0.6 + fb(px*0.08)*0.4, 1.0);   // fibres · blotches · paper
     }`);
   POST.quad = quad({ tTone: { value: POST.tone.texture }, tDepth: { value: null }, tN1: { value: POST.n1.texture }, tN2: { value: POST.n2.texture },
-    res: { value: new THREE.Vector2(1, 1) }, near: { value: 0.05 }, far: { value: 400 }, exposure, lift: { value: 0.88 }, veil: { value: 0.06 } }, /* glsl */`
+    res: { value: new THREE.Vector2(1, 1) }, near: { value: 0.05 }, far: { value: 400 }, exposure, lift: { value: 0.88 }, veil: { value: 0.06 },
+    uInvVP: { value: new THREE.Matrix4() }, uRoom: { value: new THREE.Vector4(R.xL, R.xW, R.zB, R.zF) }, uFloorK: { value: 0.62 } }, /* glsl */`
     precision highp float;
-    uniform sampler2D tTone, tDepth, tN1, tN2; uniform vec2 res; uniform float near, far, lift, veil;
+    uniform sampler2D tTone, tDepth, tN1, tN2; uniform vec2 res; uniform float near, far, lift, veil, uFloorK; uniform mat4 uInvVP; uniform vec4 uRoom;
     varying vec2 vUv;
     float ld(float d){ float z=d*2.0-1.0; return 2.0*near*far/(far+near-z*(far-near)); }
     vec3 samp(vec2 uv){ return texture2D(tTone, uv).rgb; }
     void main(){
       vec2 tx = 1.0/res; float sc = res.y/1000.0;
       vec4 n1 = texture2D(tN1, vUv), n2 = texture2D(tN2, vUv);
+      // the room's wooden floor is painted more lightly (G, 15/10/2026: "wooden floor less water color"): where this pixel
+      // lies on it (its depth back to the room: y = 0 inside the walls), the painted strokes give way to the wood as drawn
+      vec4 wp = uInvVP * vec4(vUv * 2.0 - 1.0, texture2D(tDepth, vUv).r * 2.0 - 1.0, 1.0); wp.xyz /= wp.w;
+      float fl = uFloorK * (1.0 - smoothstep(0.003, 0.008, abs(wp.y))) * step(uRoom.x, wp.x) * step(wp.x, uRoom.y) * step(uRoom.z, wp.z) * step(wp.z, uRoom.w);
       // --- wobble (pigment pushed by paper)
-      vec2 uvw = vUv + (n1.xy - 0.5)*tx*3.5*sc;
+      vec2 uvw = vUv + (n1.xy - 0.5)*tx*3.5*sc*(1.0 - 0.8*fl);
       // --- 4-sector Kuwahara (radius 3)
       vec3 m[4]; vec3 s2[4]; for(int k=0;k<4;k++){ m[k]=vec3(0.0); s2[k]=vec3(0.0); }
       for(int j=-3;j<=3;j++) for(int i=-3;i<=3;i++){
@@ -2111,7 +2139,8 @@ function buildPost() {
       // wet-in-wet: in a mass of leaves the strokes run into each other, no cut-out edges (the four quarters' plain mean:
       // a soft 7×7 wash)
       col = mix(col, (m[0] + m[1] + m[2] + m[3]) / 64.0, leafy * 0.6);
-      float ink = max(de*0.85*(1.0 - 0.7*busy), smoothstep(0.25,0.65,ce)*0.38*(1.0 - 0.5*busy)) * (0.55 + 0.6*n1.z) * smoothstep(16.0, 8.5, d11);
+      float ink = max(de*0.85*(1.0 - 0.7*busy), smoothstep(0.25,0.65,ce)*0.38*(1.0 - 0.5*busy)) * (0.55 + 0.6*n1.z) * smoothstep(16.0, 8.5, d11) * (1.0 - 0.8*fl);
+      col = mix(col, samp(vUv), fl);   // (on the floor: the wood's grain and seams as drawn, under a lighter wash)
       // --- watercolour transparency: lift + slight desaturation, pigment granulation, edge darkening
       float lum = dot(col, vec3(0.299,0.587,0.114));
       col = mix(col, col * 1.25 + vec3(0.03, 0.04, 0.025), busy * (1.0 - smoothstep(0.05, 0.3, lum)) * 0.6);   // a mass of leaves in shade: a dark wash, not a hard black
@@ -2258,6 +2287,7 @@ async function main() {
   // interior materials ignore fog
   scene.fog = new THREE.FogExp2(0xd6e2e6, 0.03);   // a light blue haze over the far trees, matching the sky
   room.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.fog = false); });
+  buildGlass();   // (the panes' glass: it looks at the finished room)
   setLoad(1);
 }
 async function getLibBuffer() {   // the models: inline (base64) in the one-file build, a file next to the page on GitHub Pages
@@ -2396,6 +2426,68 @@ function stepHour(dt) {   // the light toward the hour: at once when it creeps, 
   const az = fast ? HOUR.az + THREE.MathUtils.clamp(da, -35 * dt, 35 * dt) : t.az;
   applyHour(e, (az + 360) % 360); setNeeds(true);
   return HOUR.moving = fast;
+}
+/* ---------------------------------------------------------------- glass
+   The panes of the glass walls (G, 15/10/2026: "tạo kính, improve glass effect"), as thin glass behaves:
+   - it reflects the room: a cube map of the room taken from its middle, looked up where the reflected ray leaves the
+     room's box (a parallax-corrected cubemap: Lagarde & Zanuttini, "Local Image-based Lighting with Parallax-corrected
+     Cubemaps", SIGGRAPH 2012), so a lamp or the shelves show in the glass about where they would, slightly softened;
+   - how much by Fresnel (Schlick): 4 % looking straight through, nearly all at a glancing angle. By day the bright
+     garden outshines the 4 %; by night, the garden dark, the glass turns into a dim mirror of the lit room, as windows
+     do;
+   - it takes from the view behind it what it reflects (blended premultiplied: the view keeps 1 − a), and a faint green
+     of the glass's own;
+   - its surface is not perfectly clean: dust and smudges, more toward the bottom, haze it a little and catch light;
+   - and two soft diagonal sheens cross each pane, the way glass is drawn, sliding a little as the view moves.
+   The cube map is taken again whenever the light changes (the hour, day to night), at most once a second; the panes
+   are hidden while it is taken. They write no depth: where the sky shows through them, the stars still show. */
+const GLASS = { mat: null, cube: null, cam: null, at: new THREE.Vector3((R.xL + R.xS) / 2, 1.6, (R.zB + R.zF) / 2), last: { n: -1, s: -1, x: 0, t: -1e9 } };
+function glassMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uEnv: { value: GLASS.cube.texture }, uBoxMin: { value: new THREE.Vector3(R.xL, 0, R.zB) }, uBoxMax: { value: new THREE.Vector3(R.xW, R.H, R.zF) }, uCap: { value: GLASS.at }, uDay: { value: 1 } },
+    vertexShader: `varying vec3 vW, vN;
+      void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform samplerCube uEnv; uniform vec3 uBoxMin, uBoxMax, uCap; uniform float uDay; varying vec3 vW, vN;
+      float gh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float gn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(gh(i), gh(i + vec2(1, 0)), f.x), mix(gh(i + vec2(0, 1)), gh(i + vec2(1, 1)), f.x), f.y); }
+      void main() {
+        vec3 V = normalize(vW - cameraPosition), N = normalize(vN); if (dot(N, V) > 0.0) N = -N;
+        float c = clamp(-dot(V, N), 0.0, 1.0), F = 0.04 + 0.96 * pow(1.0 - c, 5.0);
+        // the room reflected: where the reflected ray leaves the room's box, seen from where the cube map was taken
+        vec3 Rf = reflect(V, N), Rs = Rf + vec3(1e-5);
+        vec3 tA = (uBoxMax - vW) / Rs, tB = (uBoxMin - vW) / Rs, tf = max(tA, tB); float t = max(0.0, min(min(tf.x, tf.y), tf.z));
+        vec3 refl = textureCube(uEnv, vW + Rf * t - uCap, 0.8).rgb;
+        // the pane's own coordinates (metres): dust and smudges, more low down
+        vec2 q = abs(N.x) > 0.5 ? vec2(vW.z, vW.y) : vec2(vW.x, vW.y);
+        float sm = smoothstep(0.5, 0.95, 0.6 * gn(q * 3.1 + 7.0) + 0.4 * gn(q * 13.0)) * (0.45 + 0.55 * smoothstep(1.8, 0.25, vW.y));
+        // two soft diagonal sheens across it, sliding a little with the view
+        float s = fract((q.x * 0.75 + q.y) * 0.42 + dot(V, vec3(0.45, 0.2, -0.35)) * 0.45);
+        float band = smoothstep(0.0, 0.04, s) * smoothstep(0.16, 0.08, s) + 0.6 * smoothstep(0.2, 0.22, s) * smoothstep(0.27, 0.25, s);
+        band *= 0.6 + 0.4 * gn(q * 0.9 + 3.0);   // (not even along their length)
+        float lit = 0.3 + 0.7 * uDay, haze = 0.012 + 0.05 * sm, sheen = band * (0.05 + 0.07 * uDay);
+        vec3 col = refl * F * (1.0 + sm) + vec3(0.93, 0.96, 0.94) * (haze + sheen) * lit + vec3(0.003, 0.007, 0.005);
+        gl_FragColor = vec4(col, clamp(F + (haze + sheen) * 0.8 + 0.015, 0.0, 0.7));   // (premultiplied: the view behind keeps 1 − alpha of itself)
+      }`,
+    transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide });
+}
+// once the room is built: the cube map, the panes given their glass, and the first look at the room
+function buildGlass() {
+  GLASS.cube = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+  GLASS.cam = new THREE.CubeCamera(0.05, 120, GLASS.cube); GLASS.cam.position.copy(GLASS.at); GLASS.cam.updateMatrixWorld(true);
+  GLASS.mat = glassMaterial();
+  const pane = room.userData.glass; if (pane) pane.material = GLASS.mat;
+  stepGlass(true);
+}
+// before the room is drawn: the room looked at again if its light has changed since (the hour, day to night)
+function stepGlass(force) {
+  if (!GLASS.cam) return;
+  const n = NIGHT.u.value, sun = LIGHTS.sun, si = sun ? sun.intensity : 0, sx = sun ? sun.position.x + sun.position.y * 0.37 + sun.position.z * 0.11 : 0, L = GLASS.last, now = performance.now();
+  GLASS.mat.uniforms.uDay.value = 1 - n;
+  if (!force && (now - L.t < 1000 || (Math.abs(n - L.n) < 0.03 && Math.abs(si - L.s) < 0.06 * Math.max(0.3, L.s) && Math.abs(sx - L.x) < 0.3))) return;
+  L.n = n; L.s = si; L.x = sx; L.t = now;
+  const pane = room.userData.glass, vis = pane ? pane.visible : false; if (pane) pane.visible = false;
+  GLASS.cam.update(renderer, scene);
+  if (pane) pane.visible = vis;
 }
 /* ---------------------------------------------------------------- library interface
    Hidden Library keeps its data and its audio engine: its old cards stay in the DOM, hidden, and are driven by
@@ -3677,11 +3769,16 @@ function contactShadow(w, d) {
 }
 /* ---- crisp: drawn over the picture, a fragment is dropped where the room is nearer (the room's depth, as the deck).
    Laid over the picture through the room's own tone (its exposure, the filmic curve; toneK of the paper's lift and
-   warmth and its veil), the chicken's half painted as the picture is (the paint pass's own steps: post.js PAINT_GLSL). */
+   warmth and its veil). The chicken is given a watercolour's surface with its detail kept (uWash: washAt): the paper's
+   grain over it, pigment settled in the paper's valleys where it is dark (granulation), darker where one wash meets
+   another (the pigment that gathers at a drying wash's edge: Curtis et al. 1997, "Computer-Generated Watercolor";
+   Montesdeoca et al. 2016), a touch less saturated and warmer (pigment on paper), its outline a little uneven where
+   the paper took the paint unevenly, and a little colour bled past it into the paper; then 15 % of the painted pass
+   itself (post.js PAINT_GLSL) over that (G, 15/10/2026: 70 % less watercolour than the 50 % it had, but truer). */
 function sharpQuad(P) {
-  P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, uToneK: { value: P.toneK }, ...SHARP.u, ...paintUniforms() },
+  P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, uWash: { value: P.wash || 0 }, uToneK: { value: P.toneK }, ...SHARP.u, ...paintUniforms() },
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
-    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uToneK; varying vec2 vUv;
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK; varying vec2 vUv;
       ${PAINT_GLSL}
       vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
@@ -3690,11 +3787,23 @@ function sharpQuad(P) {
         col = 1.0 - (1.0 - col) * mix(1.0, uLift, 0.75 * uToneK);   // most of the paper's lift: blacks as deep as the painting's
         return mix(col, col * vec3(1.02,1.0,0.95), 0.6 * uToneK) * (1.0 - uVeil * uToneK); }
       vec4 shadeAt(vec2 uv){ vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(tone(c.rgb / c.a), c.a); }
-      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
+      vec4 washAt(vec2 uv, vec4 o){   // the crisp picture with a watercolour's surface, its detail kept
+        vec2 sp = gl_FragCoord.xy / uCanvas, d = uTexel * uStep; vec4 n1 = texture2D(tN1, sp), n2 = texture2D(tN2, sp);
+        vec4 b = vec4(0.0); for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) { vec4 c = shadeAt(uv + vec2(float(i), float(j)) * d * 1.6); b += vec4(c.rgb * c.a, c.a); } b /= 9.0;
+        vec3 col = o.rgb; float lum = dot(col, vec3(0.299, 0.587, 0.114)), dog = length(col * o.a - b.rgb) + abs(o.a - b.a) * 0.5;
+        col *= 1.0 - 0.2 * smoothstep(0.03, 0.2, dog) * o.a;                 // pigment gathered where one wash meets another
+        col *= 1.0 - 0.13 * (1.0 - n2.z) * (1.0 - lum);                     // granulation, in the paper's valleys
+        col *= 0.965 + n2.z * 0.06;                                          // the paper's grain
+        col = mix(vec3(lum), col, 0.93) * vec3(1.012, 1.0, 0.972);          // pigment on paper
+        float a = o.a * mix(1.0, smoothstep(0.3, 0.6, n2.z + o.a * 0.5), (1.0 - smoothstep(0.75, 1.0, o.a)) * 0.8);   // the outline taken unevenly
+        if (b.a > 0.02 && a < 0.5) { float bl = b.a * 0.22 * (0.55 + 0.9 * n1.z); col = mix(b.rgb / b.a * 1.04, col, a / max(a + bl, 1e-4)); a = max(a, bl); }   // a little colour bled past it
+        return vec4(col, a);
+      }
+      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uWash > 0.001) o = mix(o, washAt(uv, o), uWash); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
         if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
 }
 const SHARP = { cam: new THREE.Camera(), v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } },
-  cat: { rt: null, quad: null, paint: 0, layer: 1, toneK: 1 }, hen: { rt: null, quad: null, paint: 0.5, layer: 1, toneK: 1 },   // (each its own target; the chicken half painted: G, 14/10/2026)
+  cat: { rt: null, quad: null, paint: 0, layer: 1, toneK: 1 }, hen: { rt: null, quad: null, paint: 0.15, wash: 1, layer: 1, toneK: 1 },   // (each its own target; the chicken 15 % painted over a watercolour's surface: G, 15/10/2026)
   book: { rt: null, quad: null, paint: 0, layer: 3, toneK: 0.35 } };   // the book out of the shelf: sharp, its colours nearly as printed (G, 15/10/2026)
 PETS.sharp = SHARP;   // (for tests)
 function crispPatch(sh) {
@@ -3795,7 +3904,7 @@ async function loadPets() {
   PETS.fur = furCoat(CATR.mesh, crispPatch);   // its coat: shells of fur over the skin (fur.js)
   const holder = new THREE.Group(); holder.add(PETS.cat); PETS.holder = holder;
   for (const k of ['day', 'night']) { const s = CAT_SPOT[k]; s.y = surfaceAt(s.x, s.z); }
-  CAT_WAY.seatY = surfaceAt(...CAT_WAY.seat);
+  CAT_WAY.seatY = surfaceAt(...CAT_WAY.seat); SOFT.u.uDentY.value = CAT_WAY.seatY;
   PETS.catShadow = contactShadow(0.62, 0.36); room.add(PETS.catShadow); buildZzz();
   const hen = henBuf && (await loader.parseAsync(henBuf, '')).scene.getObjectByName('chicken');
   if (hen) {   // the chicken: its mesh baked into its own frame (standing on y = 0, facing +x, 0.42 m tall)
@@ -3869,12 +3978,26 @@ const gauge = (p, dur) => ({ dur, run: (k, dt, st, t) => {   // it looks at wher
 } });
 const gather = (dur, depth) => ({ dur, run: k => { const e = ease(k); Object.assign(W, { pose: 'stalk', ik: true, dy: -depth * e, pitch: -0.08 * e, half: 0.2 }); W.ears = 1; } });
 const leap = (to, T) => ({ run: (k, dt, st, t) => {   // ballistic: up as much faster as it has to rise, g pulling it back down
-  const G = CAT.G; if (!st.s) { st.s = { x: G.x, y: G.y, z: G.z }; st.vy = (to[1] - G.y + 4.905 * T * T) / T; st.vh = Math.hypot(to[0] - G.x, to[2] - G.z) / T; G.yaw = Math.atan2(to[0] - G.x, to[2] - G.z); }
+  const G = CAT.G; if (!st.s) { if (G.y > 0.2) DENT.v += 0.28; st.s = { x: G.x, y: G.y, z: G.z }; st.vy = (to[1] - G.y + 4.905 * T * T) / T; st.vh = Math.hypot(to[0] - G.x, to[2] - G.z) / T; G.yaw = Math.atan2(to[0] - G.x, to[2] - G.z); }
   const u = Math.min(T, t), q = u / T; G.x = st.s.x + (to[0] - st.s.x) * q; G.z = st.s.z + (to[2] - st.s.z) * q; G.y = st.s.y + st.vy * u - 4.905 * u * u;
   Object.assign(W, { pose: 'air', half: 0.07, pitch: -Math.atan2(st.vy - 9.81 * u, st.vh) * 0.5 });
   W.look = _w.set(to[0], to[1], to[2]); W.lookK = 0.8;
-  if (t >= T) { G.y = to[1]; G.sink = 0; G.feet = null; delete st.s; return true; }
+  if (t >= T) { G.y = to[1]; G.sink = 0; G.feet = null; if (to[1] > 0.2) DENT.v += 0.55; delete st.s; return true; }   // (landing on the cushion: it gives)
 } });
+// the cushion under the cat (velvet.js SOFT): a hollow where it stands (smaller, ~1.3 cm) or lies (wider, ~2 cm: a
+// soft cushion under a 4 kg cat), deeper as it lands and springing back with a bounce or two as it leaves (a damped spring, ~0.28 s, damping
+// 0.3); the room is drawn again only while the hollow moves
+const DENT = { d: 0, v: 0, x: 0, z: 0, r: 0.13, last: [0, 0, 0, 0] };
+PETS.dent = DENT; PETS.soft = SOFT;   // (for tests)
+function stepDent(dt) {
+  const hp = PETS.holder.position, on = hp.y > 0.2 && W.pose !== 'air', lying = /curl|side|sphinx|loaf/.test(W.pose || '');
+  const goal = on ? (lying ? 0.019 : 0.013) : 0, rr = lying ? 0.21 : 0.14;
+  if (on) { const k = Math.min(1, dt * 10); DENT.x += (hp.x - DENT.x) * (DENT.d < 1e-4 ? 1 : k); DENT.z += (hp.z - DENT.z) * (DENT.d < 1e-4 ? 1 : k); DENT.r += (rr - DENT.r) * Math.min(1, dt * 4); }
+  for (let n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n, i = 0; i < n; i++) { DENT.v += (504 * (goal - DENT.d) - 13.5 * DENT.v) * h; DENT.d = Math.max(0, DENT.d + DENT.v * h); }
+  if (Math.abs(DENT.d - goal) < 1e-5 && Math.abs(DENT.v) < 1e-4) { DENT.d = goal; DENT.v = 0; }
+  SOFT.u.uDent.value.set(DENT.x, DENT.z, DENT.r, Math.min(0.04, DENT.d));
+  const L = DENT.last; if (Math.abs(DENT.d - L[0]) > 4e-4 || Math.hypot(DENT.x - L[1], DENT.z - L[2]) > 0.004 || Math.abs(DENT.r - L[3]) > 0.004) { L[0] = DENT.d; L[1] = DENT.x; L[2] = DENT.z; L[3] = DENT.r; setNeeds(true); }
+}
 const touch = dur => ({ dur, run: k => {   // forepaws first, elbows giving, then the hind paws
   Object.assign(W, { pose: 'stand', half: 0.1, ik: true, pitch: 0.2 * (1 - ease(Math.min(1, k * 1.7))), dy: -0.028 * Math.sin(Math.PI * Math.min(1, k * 1.25)), hindUp: Math.max(0, 1 - k * 3.2) });
 } });
@@ -4141,6 +4264,7 @@ function drawPets() {
   const t = clock.getElapsedTime(), dt = Math.min(0.1, Math.max(0, t - PETS.last)); PETS.last = t;
   if (!reduceMotion) { stepCat(t, dt); if (PETS.chicken && PETS.chicken.visible) stepHen(dt); }
   else if (CAT.mode === 'trip') settle(PETS.state);
+  stepDent(reduceMotion ? 1 : dt);
   const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
   // the chicken first (beyond the glass, so the cat is never behind it), then the cat and its Zzz, each alone
   const hen = PETS.chicken && PETS.chicken.visible, zzz = ZZZ.grp && ZZZ.grp.visible, hp = PETS.holder.position;
@@ -4654,9 +4778,11 @@ function draw() {
   if (motes) motes.visible = false;
   if (LIGHTS.candle) { const f = LIGHTS.candle.userData.flame; f.scale.y = 2 + Math.sin(t * 13) * .25 + Math.sin(t * 7.3) * .2; }
   if (shadowsDirty) { renderer.shadowMap.needsUpdate = true; setShadowsDirty(false); }
+  stepGlass();   // (the room seen again in the glass if its light has changed)
   renderer.setRenderTarget(POST.rt); renderer.render(scene, camera);
   POST.toneQuad.material.uniforms.tColor.value = POST.rt.texture; renderer.setRenderTarget(POST.tone); POST.toneQuad.render(renderer);
   const U = POST.mat.uniforms; U.tDepth.value = POST.rt.depthTexture; U.near.value = camera.near; U.far.value = camera.far;
+  U.uInvVP.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);   // (the floor's lighter wash: post.js)
   renderer.setRenderTarget(POST.out); POST.quad.render(renderer); renderer.setRenderTarget(null); POST.blit.render(renderer);
   drawWords();
   layoutOverlay();
