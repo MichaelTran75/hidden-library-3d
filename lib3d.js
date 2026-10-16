@@ -2359,9 +2359,11 @@ function buildNightLights() {
 }
 /* ---------------------------------------------------------------- the hour
    The room's light follows the visitor's clock through the day instead of switching at dusk. What it rests on:
-   - Where the sun is: NOAA's solar equations (declination and equation of time from the date) for Pleiku (13.98° N,
-     108.0° E) when the clock keeps Vietnam time, else for 14° N on the time zone's meridian. The room is turned so
-     that its left glass looks west-south-west: an October afternoon sun (~15:15, 30° up) comes in as in the painting;
+   - Where the sun is: where the visitor's clock says they are, as the page works it out (src/sun: window.HL_SUN; G,
+     17/10/2026: "cho mặt trời mọc và mặt trời lặn depend on local time"): NOAA's solar equations at their time zone's
+     principal city, at Pleiku (13.98° N, 108.0° E) for a clock on Vietnam's time, the sun as it is seen (lifted by the
+     air's refraction). So it rises and sets in the room when it does there, and the room's dark comes in the same
+     minute as the page's. The room is turned so that its left glass looks west-south-west: an October afternoon sun (~15:15, 30° up) comes in as in the painting;
      in the morning the sun stands behind the shelf wall, at noon high over the front glass.
    - Sunlight crosses more air as the sun sinks (air mass, Kasten & Young 1989) and loses blue first: per air mass the
      optical depth is ~0.17 red, ~0.25 green, ~0.41 blue (Rayleigh scattering plus haze). So the light is white-gold
@@ -2382,17 +2384,7 @@ const OVC = { hemi: new THREE.Color(0xb7bdc4), win: new THREE.Color(0xc4cad0), f
 const TINT = { warm: { hemi: new THREE.Color(0xffcb92), win: new THREE.Color(0xffc489), fog: new THREE.Color(0xe8c6a2), ring: new THREE.Color(0xd0ae7e) },
   blue: { hemi: new THREE.Color(0x6c74b4), win: new THREE.Color(0x7880c4), fog: new THREE.Color(0x3c4664), ring: new THREE.Color(0x2c3548) } };
 const HOUR = { e: null, az: null, pin: null, moving: false, S: {}, dir: new THREE.Vector3(), refDots: null };
-function sunPlace(d) {   // the sun's elevation and azimuth (degrees; azimuth from north, clockwise) at the date d
-  const tz = -d.getTimezoneOffset() / 60, vn = tz === 7, lat = (vn ? 13.98 : 14) * DEG, lon = vn ? 108.0 : tz * 15;
-  const doy = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 864e5) + 1, hr = d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
-  const g = 2 * Math.PI / 365 * (doy - 1 + (hr - 12) / 24);
-  const eot = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
-  const dec = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
-  const ha = ((hr * 60 + eot + 4 * lon - 60 * tz) / 4 - 180) * DEG;
-  const e = Math.asin(THREE.MathUtils.clamp(Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(ha), -1, 1)) / DEG;
-  const az = (Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(dec) * Math.cos(lat)) / DEG + 540) % 360;
-  return { e, az };
-}
+const sunPlace = d => window.HL_SUN.at(d);   // the sun's elevation (as seen) and azimuth (degrees; azimuth from north, clockwise) at the date d
 // the direction toward the sun in the room (y up); its light leaves the scene under 2°, so it never comes from below
 const sunDirAt = (e, az, v) => { const p = (az - 103.7) * DEG, el = Math.max(e, 2) * DEG; return v.set(Math.cos(el) * Math.cos(p), Math.sin(el), Math.cos(el) * Math.sin(p)); };
 const airMass = e => { const z = 90 - Math.max(e, 0); return 1 / (Math.cos(z * DEG) + 0.50572 * Math.pow(96.07995 - z, -1.6364)); };
@@ -2454,7 +2446,7 @@ function applyHour(e, az) {
 const TMPV = new THREE.Vector3(), _ovf = new THREE.Color();
 function hourTarget() {   // where the light should be: the sun of the clock, or the page's switch when it was used by hand
   if (HOUR.pin) return sunPlace(HOUR.pin);
-  const d = new Date(), m = d.getHours() * 60 + d.getMinutes(), clockDark = m < 382 || m >= 1050;   // the page's own rule (6:22, 17:30)
+  const d = new Date(), clockDark = !window.HL_SUN.isDay(d);   // the page's own rule (sunset to sunrise where the visitor is)
   const dark = body.classList.contains('dark-mode');
   if (dark === clockDark) return sunPlace(d);
   return dark ? { e: -20, az: 290 } : SUN_REF;
@@ -3772,10 +3764,11 @@ const STAR_BSC5 =
   'AYKPEQEKD3vxAQH/Ku8BHKPMMAIIa4EwAQVmk3AAAfIR0QEUODpPASWSRPABAXh0bwAIItkPAANe7w8BA5+mEAEB6RlwAwM40W0BB1cELwI=';
 /* ---- the night sky over the glass, drawn sharp after the watercolour pass (its filter wipes out points this small) and
    only where the room shows sky: every pixel is tested against the room's depth, which the sky dome and the glass leave
-   empty. As the real sky over Pleiku is (G, 15/10/2026: "make the night sky realistic"; the 3D garden's research,
+   empty. As the real sky over the visitor is (G, 15/10/2026: "make the night sky realistic"; the 3D garden's research,
    3d-garden: app/core/night-sky.js):
    - the stars of the Yale Bright Star Catalogue (2887, to magnitude 5.5) where they stand at this minute: their J2000
-     places turned by the local sidereal time at Pleiku (13.98° N, 108° E) and set in the room by its compass (the same
+     places turned by the local sidereal time where the visitor's clock says they are (src/sun: Pleiku, 13.98° N,
+     108° E, for a clock on Vietnam's time) and set in the room by its compass (the same
      one the sun is placed by, fx/hour.js: the left glass looks west, the back glass north), so they rise in the east,
      wheel round the pole star 14° up in the north and set in the west as the night goes on; and the fainter ones under
      the catalogue's limit, 5.5 to 7.5, made up as many as the sky has (about 21,000: some 2.5 times as many each
@@ -3806,7 +3799,7 @@ const STAR_BSC5 =
    with faint stars (a field of them, made in the shader, as many as the photo shows: some 35 a 100 × 100 px patch), the
    band clumped into star clouds that sparkle with the stars they are made of, cut by ragged dust lanes, and the moon
    washing out less of it than it would the real one; then the band 20 % fainter, twice (G, 16/10/2026: "less bright
-   20%", "bớt sáng lại 20%"), the field of stars and the dark of the sky as they were. ?sky=real shows the sky as it stands over Pleiku at this minute
+   20%", "bớt sáng lại 20%"), the field of stars and the dark of the sky as they were. ?sky=real shows the sky as it stands over the visitor at this minute
    instead (turning with the hours, dimmed low down by the full air).
    Drawn back to front: the Milky Way, the stars, the comet, then the moon over them (it hides what is behind it), and
    the shooting stars last (they burn in our own air, in front of the moon). The moon has the phase of the page's sky
@@ -4014,7 +4007,7 @@ function stepStars() {
 }
 function stepRealSky() {
   STARU.uExtS.value = 0.2; STARU.uExtM.value = 0.32; STARU.uHz.value = 0.12; STARU.uBand.value = 1; STARU.uMWK.value = 0.42; STARU.uBandStars.value = 0; STARU.uGrain.value = 1; STARU.uBandMag.value = 0; STARU.uField.value = 0; STARU.uFaintMag.value = 0;
-  const d = HOUR.pin || new Date(), tz = -d.getTimezoneOffset() / 60, vn = tz === 7, lat = (vn ? 13.98 : 14) * SDEG, lon = vn ? 108.0 : tz * 15;
+  const d = HOUR.pin || new Date(), P = window.HL_SUN.place, lat = P.lat * SDEG, lon = P.lon;
   const jd = d.getTime() / 864e5 + 2440587.5, th = ((280.46061837 + 360.98564736629 * (jd - 2451545.0) + lon) % 360) * SDEG;   // local sidereal time
   const sf = Math.sin(lat), cf = Math.cos(lat), st = Math.sin(th), ct = Math.cos(th), p0 = 103.7 * SDEG, sp = Math.sin(p0), cp = Math.cos(p0);
   _Z.set(cf * ct, cf * st, sf); _N.set(-sf * ct, -sf * st, cf); _E.set(-st, ct, 0);   // the zenith, north and east, in equatorial terms
@@ -6244,13 +6237,13 @@ window.__lib3d = { PETS, RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, t
   atlas: (which, lang, w = 1024, h = 1371) => { const c = canvas(w, h), t0 = performance.now(); drawAtlas(c, which, lang); return { url: c.toDataURL('image/png'), ms: performance.now() - t0 }; } };   // (tests: the Geography books' page on its own)
 // The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
 // the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page
-// opened with ?at= starts in the theme of that hour, as the room does (the page's own rule: dark before 6:22 and from
-// 17:30), set through the switch itself so the page keeps it.
+// opened with ?at= starts in the theme of that hour, as the room does (the page's own rule: dark from sunset to sunrise
+// where the visitor is, src/sun), set through the switch itself so the page keeps it.
 const THEME = { box: document.getElementById('checkbox'), sync: false };
 if (THEME.box) THEME.box.addEventListener('change', () => { if (!THEME.sync && HOUR.pin) { HOUR.pin = null; setNeeds(true); } });
 function themeFromPin() {
   if (!HOUR.pin || !THEME.box) return;
-  const m = HOUR.pin.getHours() * 60 + HOUR.pin.getMinutes(), dark = m < 382 || m >= 1050;
+  const dark = !window.HL_SUN.isDay(HOUR.pin);
   if (THEME.box.checked === dark) return;
   THEME.sync = true; THEME.box.checked = dark; THEME.box.dispatchEvent(new Event('change', { bubbles: true })); THEME.sync = false;
 }

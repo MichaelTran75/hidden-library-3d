@@ -1085,7 +1085,7 @@
      'examples/jsm/utils/BufferGeometryUtils.js', 'examples/jsm/postprocessing/Pass.js'].forEach(function (u) {
       var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = 'https://cdn.jsdelivr.net/npm/three@0.170.0/' + u; document.head.appendChild(l);
     });
-    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=fff56f6f96'; document.head.appendChild(p);
+    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=31fb0a249b'; document.head.appendChild(p);
   }
   // the room replaces the painted backgrounds: drop them before anything paints, so they are never downloaded
   (function () {
@@ -1242,12 +1242,132 @@
   @media (max-width: 768px) { .wx { font-size: 10px; } .wx svg { width: 12px; height: 12px; } }
   @media (prefers-reduced-motion: reduce) { .wx-flash.on { animation: none; } }
 </style>
+<script id="sun-clock">
+(function () {
+// Where each time zone is: its principal city (tzdata 2026d, zone.tab), under its IANA name and the older one
+// Chromium reports for it. Made by tools/sunplace/make.py: "Area:City lat lon,...;Area:...", in tenths of a degree.
+var ZONES = 'Africa:Abidjan 53 -40,Accra 56 -2,Addis_Ababa 90 387,Algiers 368 30,Asmara 153 389,Asmera 153 389,Bamako 126 -80,Bangui 44 186,Banjul 135 -166,Bissau 118 -156,Blantyre -158 350,Brazzaville -43 153,Bujumbura -34 294,Cairo 300 312,Casablanca 336 -76,Ceuta 359 -53,Conakry 95 -137,Dakar 147 -174,Dar_es_Salaam -68 393,Djibouti 116 432,Douala 40 97,El_Aaiun 272 -132,Freetown 85 -132,Gaborone -246 259,Harare -178 310,Johannesburg -262 280,Juba 48 316,Kampala 3 324,Khartoum 156 325,Kigali -20 301,Kinshasa -43 153,Lagos 64 34,Libreville 4 94,Lome 61 12,Luanda -88 132,Lubumbashi -117 275,Lusaka -154 283,Malabo 38 88,Maputo -260 326,Maseru -295 275,Mbabane -263 311,Mogadishu 21 454,Monrovia 63 -108,Nairobi -13 368,Ndjamena 121 150,Niamey 135 21,Nouakchott 181 -160,Ouagadougou 124 -15,Porto-Novo 65 26,Sao_Tome 3 67,Tripoli 329 132,Tunis 368 102,Windhoek -226 171;America:Adak 519 -1767,Anchorage 612 -1499,Anguilla 182 -631,Antigua 170 -618,Araguaina -72 -482,Argentina/Buenos_Aires -346 -584,Argentina/Catamarca -285 -658,Argentina/Cordoba -314 -642,Argentina/Jujuy -242 -653,Argentina/La_Rioja -294 -668,Argentina/Mendoza -329 -688,Argentina/Rio_Gallegos -516 -692,Argentina/Salta -248 -654,Argentina/San_Juan -315 -685,Argentina/San_Luis -333 -664,Argentina/Tucuman -268 -652,Argentina/Ushuaia -548 -683,Aruba 125 -700,Asuncion -253 -577,Atikokan 488 -916,Bahia -130 -385,Bahia_Banderas 208 -1052,Barbados 131 -596,Belem -14 -485,Belize 175 -882,Blanc-Sablon 514 -571,Boa_Vista 28 -607,Bogota 46 -741,Boise 436 -1162,Buenos_Aires -346 -584,Cambridge_Bay 691 -1051,Campo_Grande -204 -546,Cancun 211 -868,Caracas 105 -669,Catamarca -285 -658,Cayenne 49 -523,Cayman 193 -814,Chicago 418 -876,Chihuahua 286 -1061,Ciudad_Juarez 317 -1065,Coral_Harbour 488 -916,Cordoba -314 -642,Costa_Rica 99 -841,Coyhaique -456 -721,Creston 491 -1165,Cuiaba -156 -561,Curacao 122 -690,Danmarkshavn 768 -187,Dawson 641 -1394,Dawson_Creek 558 -1202,Denver 397 -1050,Detroit 423 -830,Dominica 153 -614,Edmonton 536 -1135,Eirunepe -67 -699,El_Salvador 137 -892,Fort_Nelson 588 -1227,Fortaleza -37 -385,Glace_Bay 462 -600,Godthab 642 -517,Goose_Bay 533 -604,Grand_Turk 215 -711,Grenada 120 -618,Guadeloupe 162 -615,Guatemala 146 -905,Guayaquil -22 -798,Guyana 68 -582,Halifax 446 -636,Havana 231 -824,Hermosillo 291 -1110,Indiana/Indianapolis 398 -862,Indiana/Knox 413 -866,Indiana/Marengo 384 -863,Indiana/Petersburg 385 -873,Indiana/Tell_City 380 -868,Indiana/Vevay 387 -851,Indiana/Vincennes 387 -875,Indiana/Winamac 411 -866,Indianapolis 398 -862,Inuvik 683 -1337,Iqaluit 637 -685,Jamaica 180 -768,Jujuy -242 -653,Juneau 583 -1344,Kentucky/Louisville 383 -858,Kentucky/Monticello 368 -848,Kralendijk 122 -683,La_Paz -165 -682,Lima -120 -770,Los_Angeles 341 -1182,Louisville 383 -858,Lower_Princes 181 -630,Maceio -97 -357,Managua 122 -863,Manaus -31 -600,Marigot 181 -631,Martinique 146 -611,Matamoros 258 -975,Mazatlan 232 -1064,Mendoza -329 -688,Menominee 451 -876,Merida 210 -896,Metlakatla 551 -1316,Mexico_City 194 -992,Miquelon 470 -563,Moncton 461 -648,Monterrey 257 -1003,Montevideo -349 -562,Montserrat 167 -622,Nassau 251 -774,New_York 407 -740,Nome 645 -1654,Noronha -38 -324,North_Dakota/Beulah 473 -1018,North_Dakota/Center 471 -1013,North_Dakota/New_Salem 468 -1014,Nuuk 642 -517,Ojinaga 296 -1044,Panama 90 -795,Paramaribo 58 -552,Phoenix 334 -1121,Port-au-Prince 185 -723,Port_of_Spain 106 -615,Porto_Velho -88 -639,Puerto_Rico 185 -661,Punta_Arenas -532 -709,Rankin_Inlet 628 -921,Recife -80 -349,Regina 504 -1046,Resolute 747 -948,Rio_Branco -100 -678,Santarem -24 -549,Santiago -334 -707,Santo_Domingo 185 -699,Sao_Paulo -235 -466,Scoresbysund 705 -220,Sitka 572 -1353,St_Barthelemy 179 -628,St_Johns 476 -527,St_Kitts 173 -627,St_Lucia 140 -610,St_Thomas 184 -649,St_Vincent 132 -612,Swift_Current 503 -1078,Tegucigalpa 141 -872,Thule 766 -688,Tijuana 325 -1170,Toronto 436 -794,Tortola 184 -646,Vancouver 493 -1231,Whitehorse 607 -1350,Winnipeg 499 -972,Yakutat 595 -1397;Antarctica:Casey -663 1105,Davis -686 780,DumontDUrville -667 1400,Macquarie -545 1590,Mawson -676 629,McMurdo -778 1666,Palmer -648 -641,Rothera -676 -681,Syowa -690 396,Troll -720 25,Vostok -784 1069;Arctic:Longyearbyen 780 160;Asia:Aden 128 452,Almaty 432 770,Amman 320 359,Anadyr 648 1775,Aqtau 445 503,Aqtobe 503 572,Ashgabat 380 584,Atyrau 471 519,Baghdad 334 444,Bahrain 264 506,Baku 404 498,Bangkok 138 1005,Barnaul 534 838,Beirut 339 355,Bishkek 429 746,Brunei 49 1149,Calcutta 225 884,Chita 520 1135,Colombo 69 798,Damascus 335 363,Dhaka 237 904,Dili -86 1256,Dubai 253 553,Dushanbe 386 688,Famagusta 351 340,Gaza 315 345,Hebron 315 351,Ho_Chi_Minh 108 1067,Hong_Kong 223 1142,Hovd 480 916,Irkutsk 523 1043,Jakarta -62 1068,Jayapura -25 1407,Jerusalem 318 352,Kabul 345 692,Kamchatka 530 1586,Karachi 249 670,Kathmandu 277 853,Katmandu 277 853,Khandyga 627 1356,Kolkata 225 884,Krasnoyarsk 560 928,Kuala_Lumpur 32 1017,Kuching 16 1103,Kuwait 293 480,Macau 222 1135,Magadan 596 1508,Makassar -51 1194,Manila 146 1210,Muscat 236 586,Nicosia 352 334,Novokuznetsk 538 871,Novosibirsk 550 829,Omsk 550 734,Oral 512 514,Phnom_Penh 116 1049,Pontianak 0 1093,Pyongyang 390 1258,Qatar 253 515,Qostanay 532 636,Qyzylorda 448 655,Rangoon 168 962,Riyadh 246 467,Saigon 108 1067,Sakhalin 470 1427,Samarkand 397 668,Seoul 376 1270,Shanghai 312 1215,Singapore 13 1038,Srednekolymsk 675 1537,Taipei 250 1215,Tashkent 413 693,Tbilisi 417 448,Tehran 357 514,Thimphu 275 896,Tokyo 357 1397,Tomsk 565 850,Ulaanbaatar 479 1069,Urumqi 438 876,Ust-Nera 646 1432,Vientiane 180 1026,Vladivostok 432 1319,Yakutsk 620 1297,Yangon 168 962,Yekaterinburg 568 606,Yerevan 402 445;Atlantic:Azores 377 -257,Bermuda 323 -648,Canary 281 -154,Cape_Verde 149 -235,Faeroe 620 -68,Faroe 620 -68,Madeira 326 -169,Reykjavik 642 -218,South_Georgia -543 -365,St_Helena -159 -57,Stanley -517 -578;Australia:Adelaide -349 1386,Brisbane -275 1530,Broken_Hill -320 1414,Darwin -125 1308,Eucla -317 1289,Hobart -429 1473,Lindeman -203 1490,Lord_Howe -316 1591,Melbourne -378 1450,Perth -320 1158,Sydney -339 1512;Europe:Amsterdam 524 49,Andorra 425 15,Astrakhan 464 480,Athens 380 237,Belgrade 448 205,Berlin 525 134,Bratislava 482 171,Brussels 508 43,Bucharest 444 261,Budapest 475 191,Busingen 477 87,Chisinau 470 288,Copenhagen 557 126,Dublin 533 -62,Gibraltar 361 -54,Guernsey 495 -25,Helsinki 602 250,Isle_of_Man 542 -45,Istanbul 410 290,Jersey 492 -21,Kaliningrad 547 205,Kiev 504 305,Kirov 586 496,Kyiv 504 305,Lisbon 387 -91,Ljubljana 460 145,London 515 -1,Luxembourg 496 62,Madrid 404 -37,Malta 359 145,Mariehamn 601 200,Minsk 539 276,Monaco 437 74,Moscow 558 376,Oslo 599 108,Paris 489 23,Podgorica 424 193,Prague 501 144,Riga 570 241,Rome 419 125,Samara 532 502,San_Marino 439 125,Sarajevo 439 184,Saratov 516 460,Simferopol 450 341,Skopje 420 214,Sofia 427 233,Stockholm 593 180,Tallinn 594 248,Tirane 413 198,Ulyanovsk 543 484,Vaduz 472 95,Vatican 419 125,Vienna 482 163,Vilnius 547 253,Volgograd 487 444,Warsaw 522 210,Zagreb 458 160,Zurich 474 85;Indian:Antananarivo -189 475,Chagos -73 724,Christmas -104 1057,Cocos -122 969,Comoro -117 433,Kerguelen -494 702,Mahe -47 555,Maldives 42 735,Mauritius -202 575,Mayotte -128 452,Reunion -209 555;Pacific:Apia -138 -1717,Auckland -369 1748,Bougainville -62 1556,Chatham -440 -1766,Chuuk 74 1518,Easter -272 -1094,Efate -177 1684,Enderbury -28 -1717,Fakaofo -94 -1712,Fiji -181 1784,Funafuti -85 1792,Galapagos -9 -896,Gambier -231 -1350,Guadalcanal -95 1602,Guam 135 1448,Honolulu 213 -1579,Kanton -28 -1717,Kiritimati 19 -1573,Kosrae 53 1630,Kwajalein 91 1673,Majuro 72 1712,Marquesas -90 -1395,Midway 282 -1774,Nauru -5 1669,Niue -190 -1699,Norfolk -290 1680,Noumea -223 1664,Pago_Pago -143 -1707,Palau 73 1345,Pitcairn -251 -1301,Pohnpei 70 1582,Ponape 70 1582,Port_Moresby -95 1472,Rarotonga -212 -1598,Saipan 152 1458,Tahiti -175 -1496,Tarawa 14 1730,Tongatapu -211 -1752,Truk 74 1518,Wake 193 1666,Wallis -133 -1762';
+/* The sun where the visitor is, by their own clock (G, 17/10/2026: "do research và cho mặt trời mọc và mặt trời lặn
+   depend on local time"): window.HL_SUN, for the page (its day/night theme, its sky clock's sunrise and sunset, the
+   weather's sign) and the 3D room (fx/hour.js: its light; fx/sky.js: the real sky). Put in the page's <head> by
+   build.py, after zones.js, so the theme is right from the first paint.
+   - Where: the time zone the browser's clock keeps (Intl.DateTimeFormat().resolvedOptions().timeZone), at the zone's
+     principal city (zones.js: the IANA time zone database's zone.tab). No permission is asked: inside the Wix frame
+     the page could not ask for the visitor's position anyway (a cross-origin frame gets no geolocation unless the page
+     around it allows it). A clock on Vietnam's time (Asia/Ho_Chi_Minh, or Asia/Saigon as Chromium names it) is taken
+     to be at Pleiku (13.98° N, 108.0° E), the room's own place and its weather's; so is any UTC+7 clock in a browser
+     that speaks Vietnamese (Windows keeps "(UTC+07:00) Bangkok, Hanoi, Jakarta" as Asia/Bangkok unless its region is
+     set to Vietnam). A zone the table lacks (UTC, Etc/GMT-7): 14° N on its standard meridian (its UTC offset × 15°).
+   - Where the sun is: NOAA's solar equations (from Meeus, "Astronomical Algorithms", as NOAA's Solar Calculator works
+     them: sunrise and sunset to within a minute between 72° N and 72° S), from the instant itself, so daylight saving
+     time and the date take no special care; its elevation as it is seen, lifted by the air's refraction (NOAA's
+     approximation: ~0.57° at the horizon, nothing near the zenith).
+   - Sunrise and sunset: the sun's top edge on a level horizon, its centre 0.833° below it (34′ of refraction and 16′
+     of the sun's radius): from the sun's noon, stepped to the hour angle of that with the sun's place worked out
+     again at each step. Where the sun does not rise or set that day (inside the polar circles), all day or all night.
+   - The page's day runs from sunrise to sunset in whole minutes of the local clock, the same rule wherever it is asked
+     (the theme, the sky clock, the weather's sign, the room), so they all turn in the same minute.
+   Where the clock's zone cannot be read at all, Pleiku. */
+(function () {
+  'use strict';
+  var DEG = Math.PI / 180, DAY = 864e5, COS_RISE = Math.cos(90.833 * DEG);
+  var PLEIKU = { lat: 13.98, lon: 108.0 };
+
+  function stdOffset() {   // the zone's standard UTC offset in hours (the smaller of winter's and summer's)
+    var y = new Date().getFullYear();
+    return -Math.max(new Date(y, 0, 1).getTimezoneOffset(), new Date(y, 6, 1).getTimezoneOffset()) / 60;
+  }
+  function where() {
+    var zone = '';
+    try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { /* no Intl */ }
+    var langs = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || '']);
+    var vi = langs.some(function (l) { return /^vi\b/i.test(l); });
+    if (/^Asia\/(Ho_Chi_Minh|Saigon)$/.test(zone) || (vi && stdOffset() === 7)) return { lat: PLEIKU.lat, lon: PLEIKU.lon, zone: zone, city: 'Pleiku' };
+    var area = zone.split('/')[0], city = zone.slice(area.length + 1), all = ';' + ZONES + ';', g = all.indexOf(';' + area + ':');
+    if (area && city && g >= 0) {
+      var list = all.slice(g + area.length + 2, all.indexOf(';', g + 1)).split(',');
+      for (var i = 0; i < list.length; i++) {
+        var p = list[i].split(' ');
+        if (p[0] === city) return { lat: p[1] / 10, lon: p[2] / 10, zone: zone, city: city.split('/').pop().replace(/_/g, ' ') };
+      }
+    }
+    return { lat: 14, lon: stdOffset() * 15, zone: zone, city: '' };
+  }
+
+  function solar(t) {   // the sun's declination (radians) and the equation of time (minutes) at the instant t (ms)
+    var T = (t / DAY + 2440587.5 - 2451545) / 36525;   // Julian centuries from J2000
+    var L0 = (280.46646 + T * (36000.76983 + T * 0.0003032)) % 360, M = (357.52911 + T * (35999.05029 - 0.0001537 * T)) * DEG;
+    var ecc = 0.016708634 - T * (0.000042037 + 0.0000001267 * T);
+    var C = Math.sin(M) * (1.914602 - T * (0.004817 + 0.000014 * T)) + Math.sin(2 * M) * (0.019993 - 0.000101 * T) + Math.sin(3 * M) * 0.000289;
+    var om = (125.04 - 1934.136 * T) * DEG, lam = (L0 + C - 0.00569 - 0.00478 * Math.sin(om)) * DEG;   // its apparent longitude
+    var eps = (23 + (26 + (21.448 - T * (46.815 + T * (0.00059 - T * 0.001813))) / 60) / 60 + 0.00256 * Math.cos(om)) * DEG;   // the obliquity
+    var y = Math.pow(Math.tan(eps / 2), 2), L = L0 * DEG;
+    var eot = 4 / DEG * (y * Math.sin(2 * L) - 2 * ecc * Math.sin(M) + 4 * ecc * y * Math.sin(M) * Math.cos(2 * L) - 0.5 * y * y * Math.sin(4 * L) - 1.25 * ecc * ecc * Math.sin(2 * M));
+    return { dec: Math.asin(Math.sin(eps) * Math.sin(lam)), eot: eot };
+  }
+  var wrap = function (a) { return ((a % 360) + 540) % 360 - 180; };   // degrees into −180..180
+  function hourAngle(t, s) {   // the sun's hour angle (degrees, 0 at its noon, west positive) at the instant t
+    return wrap(((t % DAY) + DAY) % DAY / 6e4 / 4 + s.eot / 4 + P.lon - 180);
+  }
+  function refraction(e) {   // how far the air lifts the sun at a true elevation e (degrees; NOAA's approximation)
+    if (e > 85) return 0;
+    var te = Math.tan(e * DEG);
+    return (e > 5 ? 58.1 / te - 0.07 / Math.pow(te, 3) + 0.000086 / Math.pow(te, 5)
+      : e > -0.575 ? 1735 + e * (-518.2 + e * (103.4 + e * (-12.79 + e * 0.711))) : -20.772 / te) / 3600;
+  }
+  function at(d) {   // where the sun is seen at the date d (now if none): elevation and azimuth (degrees; azimuth from north, clockwise)
+    var t = d ? +d : Date.now(), s = solar(t), ha = hourAngle(t, s) * DEG, lat = P.lat * DEG;
+    var e = Math.asin(Math.max(-1, Math.min(1, Math.sin(lat) * Math.sin(s.dec) + Math.cos(lat) * Math.cos(s.dec) * Math.cos(ha)))) / DEG;
+    var az = (Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(s.dec) * Math.cos(lat)) / DEG + 540) % 360;
+    return { e: e + refraction(e), az: az };
+  }
+  function times(d) {   // that local day's sunrise, the sun's noon and sunset (instants, ms); polar: 'day' or 'night' where it does not rise or set
+    var noon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12).getTime(), out = { rise: null, noon: 0, set: null, polar: null };
+    for (var i = 0; i < 2; i++) noon -= hourAngle(noon, solar(noon)) / 360 * DAY;
+    out.noon = noon;
+    [-1, 1].forEach(function (sign) {
+      var t = noon;
+      for (var i = 0; i < 4; i++) {
+        var s = solar(t), lat = P.lat * DEG, c = (COS_RISE - Math.sin(lat) * Math.sin(s.dec)) / (Math.cos(lat) * Math.cos(s.dec));
+        if (c < -1 || c > 1) { out.polar = c < -1 ? 'day' : 'night'; return; }
+        t += wrap(sign * Math.acos(c) / DEG - hourAngle(t, s)) / 360 * DAY;
+      }
+      out[sign < 0 ? 'rise' : 'set'] = t;
+    });
+    return out;
+  }
+  var cache = { key: '', m: null };
+  function minutes(d) {   // that local day's sunrise, the sun's noon and sunset in minutes of the local clock (0..1440);
+    d = d || new Date();  // the same object all day; all day {rise 0, set 1440} or all night {0, 0} where it does not rise or set
+    var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+    if (cache.key === key) return cache.m;
+    var T = times(d), day0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    var clock = function (t) {   // (to the nearest minute; past midnight counts on, so a sunset after it stays after the sunrise)
+      var x = new Date(t + 3e4), dd = Math.round((new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime() - day0) / DAY);
+      return Math.max(0, Math.min(1440, dd * 1440 + x.getHours() * 60 + x.getMinutes()));
+    };
+    var m = T.polar ? { rise: 0, noon: clock(T.noon), set: T.polar === 'day' ? 1440 : 0 } : { rise: clock(T.rise), noon: clock(T.noon), set: clock(T.set) };
+    cache.key = key; cache.m = m;
+    return m;
+  }
+  function isDay(d) {   // the page's day: from sunrise to sunset, in whole minutes of the local clock
+    d = d || new Date();
+    var m = minutes(d), x = d.getHours() * 60 + d.getMinutes();
+    return x >= m.rise && x < m.set;
+  }
+
+  var P;
+  try { P = where(); } catch (e) { P = { lat: PLEIKU.lat, lon: PLEIKU.lon, zone: '', city: 'Pleiku' }; }   // (the place unreadable: the room's own)
+  window.HL_SUN = { place: P, at: at, times: times, minutes: minutes, isDay: isDay };
+})();
+})();
+</script>
 </head>
 <body class="no-anim">
 <div id="lib3d-loader" aria-hidden="true"><i></i></div>
 <script>
   // Apply the night theme before first paint so the page does not flash light → dark.
-  (function () { var d = new Date(), m = d.getHours() * 60 + d.getMinutes(); if (m < 382 || m >= 1050) document.body.classList.add('dark-mode'); })();
+  (function () { if (!window.HL_SUN.isDay()) document.body.classList.add('dark-mode'); })();
 </script>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
@@ -1705,8 +1825,12 @@
     { dish: '1ded0e_af9238006b2c492696e9bfce459e7a47~mv2.png', src: 'https://static.wixstatic.com/mp3/1ded0e_bc6ae13fa37c4a37b3570e9d5202d27d.mp3' }
   ];
 
-  const SUNRISE = 6 * 60 + 22, SUNSET = 17 * 60 + 30;      // local minutes
-  const DAY_LEN = SUNSET - SUNRISE, NIGHT_LEN = 1440 - DAY_LEN;
+  let SUNRISE = 382, SUNSET = 1050, DAY_LEN = 668, NIGHT_LEN = 772, SUN_DAY = null;   // local minutes: today's, where the visitor is
+  function sunDay(now) {
+    const m = HL_SUN.minutes(now);
+    if (m === SUN_DAY) return;
+    SUN_DAY = m; SUNRISE = m.rise; SUNSET = m.set; DAY_LEN = SUNSET - SUNRISE; NIGHT_LEN = 1440 - DAY_LEN;
+  }
   const MID_AUTUMN = ['2026-09-25', '2027-09-15', '2028-10-03', '2029-09-22', '2030-09-12'];
   const MOON_IMGS = [   // 8 phase buckets, new moon first
     '1ded0e_35cea205e90443258d2aeaa54414881a~mv2.png', '1ded0e_60161204787446faa5348897ff9578ef~mv2.png',
@@ -2129,16 +2253,17 @@
   function drawSky(now = new Date()) {
     const s = skies[curPage];
     if (!s) return;
+    sunDay(now);
     const mins = now.getHours() * 60 + now.getMinutes();
     const isDay = mins >= SUNRISE && mins < SUNSET;
     const p = isDay ? (mins - SUNRISE) / DAY_LEN : ((mins - SUNSET + 1440) % 1440) / NIGHT_LEN;
     const zenith = isDay ? 38 : 30;
-    if (s.isDay !== isDay) {
-      s.isDay = isDay;
+    if (s.isDay !== isDay || s.sunDay !== SUN_DAY) {
+      s.isDay = isDay; s.sunDay = SUN_DAY;
       s.root.classList.toggle('is-night', !isDay);
       s.arc.setAttribute('d', `M0,86 Q50,${2 * zenith - 86} 100,86`);
       const midnight = (1440 - SUNSET) / NIGHT_LEN * 100;
-      const marks = isDay ? [[hm(SUNRISE), 0], ['12:00', 50], [hm(SUNSET), 100]] : [[hm(SUNSET), 0], ['24:00', midnight], [hm(SUNRISE), 100]];
+      const marks = isDay ? [[hm(SUNRISE), 0], ['12:00', Math.max(0, Math.min(100, (720 - SUNRISE) / DAY_LEN * 100))], [hm(SUNSET), 100]] : [[hm(SUNSET), 0], ['24:00', midnight], [hm(SUNRISE), 100]];
       s.marks.forEach((el, i) => { el.textContent = marks[i][0]; el.style.left = marks[i][1] + '%'; });
     }
     const x = (p * 100).toFixed(2) + '%';
@@ -2163,6 +2288,7 @@
 
   function tick() {
     const now = new Date();
+    sunDay(now);
     const mins = now.getHours() * 60 + now.getMinutes();
     const isDay = mins >= SUNRISE && mins < SUNSET;
     if (!manualTheme && !offMode) applyTheme(!isDay);
@@ -3168,6 +3294,8 @@
   The Geography atlases' map of Vietnam: the coastline and the border from OpenStreetMap, (c) OpenStreetMap contributors
   (ODbL, https://www.openstreetmap.org/copyright), and the bands of height and depth from AWS Terrain Tiles (terrarium),
   as G's own map of Vietnam has them, simplified; Hoang Sa's islands placed by hand.
+  Sunrise and sunset: NOAA's solar equations (after Meeus, "Astronomical Algorithms"); each time zone's place from the
+  IANA time zone database's zone.tab (public domain).
   Architecture, shelves and shelf books, pouf, bolsters, rug, lamps, plants and trees are built in code.
 -->
 <script id="sky-weather-js">
@@ -3255,7 +3383,7 @@
   // ---- the state, from the API (or a look forced by ?wx=)
   var W = { cur: null, at: 0, kind: null };
   window.HL_WEATHER = W;
-  function isDay() { var h = new Date().getHours() * 60 + new Date().getMinutes(); return h >= 6 * 60 + 22 && h < 17 * 60 + 30; }   // (the page's own sunrise and sunset)
+  function isDay() { return window.HL_SUN.isDay(); }   // (the page's own day: sunrise to sunset where the visitor is, src/sun)
   function take(cur, at) {
     W.cur = cur; W.at = at; W.kind = kindOf(cur.weather_code);
     root.setAttribute('data-wx', W.kind);
@@ -3413,6 +3541,6 @@
 <script id="cat-bin" type="application/octet-stream" data-src="cat.bin"></script>
 <script id="hen-glb" type="application/octet-stream" data-src="hen.glb"></script>
 <script id="book-covers" type="application/json">{"80-20-principle":"covers/80-20-principle.webp","blind-watchmaker":"covers/blind-watchmaker.webp","brief-history-of-time":"covers/brief-history-of-time.webp","damn-right":"covers/damn-right.webp","deep-simplicity":"covers/deep-simplicity.webp","encouragement-of-learning":"covers/encouragement-of-learning.webp","guns-germs-and-steel":"covers/guns-germs-and-steel.webp","innovators-dilemma":"covers/innovators-dilemma.webp","laws-of-human-nature":"covers/laws-of-human-nature.webp","money-masters":"covers/money-masters.webp","motivation-and-personality":"covers/motivation-and-personality.webp","nvidia-way":"covers/nvidia-way.webp","paths-to-wealth":"covers/paths-to-wealth.webp","poor-charlies-almanack":"covers/poor-charlies-almanack.webp","power-game":"covers/power-game.webp","predictably-irrational":"covers/predictably-irrational.webp","prisoners-of-geography":"covers/prisoners-of-geography.webp","psychology-of-money":"covers/psychology-of-money.webp","quirkology":"covers/quirkology.webp","rise-and-fall-of-nations":"covers/rise-and-fall-of-nations.webp","think-again":"covers/think-again.webp","think-like-a-freak":"covers/think-like-a-freak.webp","wealth-and-poverty-of-nations":"covers/wealth-and-poverty-of-nations.webp","when-to-rob-a-bank":"covers/when-to-rob-a-bank.webp"}</script>
-<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=fff56f6f96'; document.body.appendChild(m); }</script>
+<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=31fb0a249b'; document.body.appendChild(m); }</script>
 </body>
 </html>
