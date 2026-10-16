@@ -5000,7 +5000,7 @@ function togglePlayer(open = !body.classList.contains('l3-player-open')) {   // 
   }
   else if (body.classList.contains('l3-player-open')) { body.classList.add('l3-player-closing'); togglePlayer.t = setTimeout(() => body.classList.remove('l3-player-open', 'l3-player-closing'), 280); }
 }
-/* ---- labels, leader lines and the card (HTML over the canvas: crisp text in either language) */
+/* ---- labels and the card (HTML over the canvas: crisp text in either language) */
 const UIEL = {};
 // the book under the pointer, named beside it: title, author · year and pages, in the page's language (a thin spine
 // cannot hold its title legibly, and a long title is cut short on any spine)
@@ -5119,7 +5119,7 @@ function layoutOverlay() {
   const side = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 290;
   const show = !offMode(), home = UIS.mode === 'home';
   const boxes = [], lines = [];
-  // a label hangs at `tag` (+dx, dy px; 'left' starts there, 'center' centres on it); its leader line ends on `anchor`
+  // a label hangs at `tag` (+dx, dy px; 'left' starts there, 'center' centres on it); it shows while `anchor` is in view
   const place = (el, anchor, tag, dx, dy, align, visible, sec) => {
     if (!visible) { el.classList.add('is-off'); return; }
     const a = project(anchor), t = tag === anchor ? a : project(tag);
@@ -5194,12 +5194,9 @@ function layoutOverlay() {
     const p = boxes[j], q = boxes[k];
     if (q.x < p.x + p.w + 8 && q.x + q.w + 8 > p.x && q.y < p.y + p.h + 6) q.y = p.y + p.h + 6;
   }
-  for (const b of boxes) {
+  for (const b of boxes) {   // (no leader lines to the shelves: G, 16/10/2026; each label stands on its own row or bay)
     const sk = b.skew || 0;
     b.el.style.transform = `translate(${Math.round(b.x)}px, ${Math.round(b.y)}px)` + (sk ? ` skewY(${sk.toFixed(4)}rad)` : '');
-    const ex = b.a.x < b.x ? b.x : b.a.x > b.x + b.w ? b.x + b.w : b.x + b.w / 2, dy = (ex - b.x - b.w / 2) * Math.tan(sk), top = b.y + dy, bot = top + b.h;   // (a sheared label's edge where the line meets it)
-    const ey = b.a.y < top ? top : b.a.y > bot ? bot : (top + bot) / 2;
-    lines.push(`<path d="M${b.a.x.toFixed(1)},${b.a.y.toFixed(1)} L${ex.toFixed(1)},${ey.toFixed(1)}"/><circle cx="${b.a.x.toFixed(1)}" cy="${b.a.y.toFixed(1)}" r="4.2"/>`);
   }
   // the group names sit over their labels: Books over the stack of rows, Research centred over the three bays
   for (const [g, cap] of Object.entries(UIEL.caps)) {
