@@ -4596,6 +4596,15 @@ const CAT_POSES = {
     ['hips', 'z', 80],
     ['spine', 'y', 24], ['chest', 'y', 30], ['neck', 'y', 36], ['head', 'y', 34], ['neck', 'z', -18], ['head', 'z', -12],
     ['tailArc', 10, 25, 1.2]] },
+  // asleep lightly, curled up in a ball (as cats first fall asleep, before they roll onto their side and sleep deeply: G,
+  // 17/10/2026, after his photo of a tabby curled up so): belly down, its forelegs tucked under its chest and its hind
+  // legs folded under it; the head lowered first, its face kept forward, then the back curved round to its left into a
+  // ring, so the head rests low at the front, chin by the cushion and cheek a little down; rolled a touch onto its
+  // right side; the tail wrapped round its left side to the front
+  nest: { ops: [['arm', 'x', 45], ['fore', 'x', 105], ['paw', 'x', 50], ['thigh', 'x', -48], ['thigh', 'z', -14], ['shin', 'x', 125], ['foot', 'x', -72],
+    ['neck', 'x', 38], ['head', 'x', -18], ['hips', 'z', 22],
+    ['spine', 'y', 28], ['chest', 'y', 32], ['neck', 'y', 28], ['head', 'y', 14], ['head', 'z', -14],
+    ['tailArc', 55, 28, 1.1]] },
   // sitting: haunches down (the trunk only ~26° up, as far as its short forelegs reach), forelegs straight, head level,
   // tail round its side on the floor
   sit: { ops: [['hips', 'x', -26], ['thigh', 'x', -62], ['thigh', 'z', 10], ['shin', 'x', 118], ['foot', 'x', -58], ['arm', 'x', 22], ['fore', 'x', 6],
@@ -4888,9 +4897,11 @@ function furLight(renderer, scene, camera) {
    - At dusk (cats are most active at dusk and dawn) it wakes, stretches (forelegs out, haunches up), walks to the
      sofa, looks up and gauges the jump, gathers, jumps (a ballistic arc, g = 9.81 m/s²) and lands forepaws first, the
      hind paws after (the forelimbs take the larger share of a cat's landing: Wu et al. 2019), kneads the cushion,
-     turns round, lies down and rolls onto its side, curled up to sleep (back rounded, head down by its paws, tail
-     round in front), eyes shut, pressed a little into the cushion and never through it; asleep it breathes slowly, sighs, twitches an ear, now and then
-     lifts its head and settles again. At dawn the other way, down to the floor and back to the glass.
+     turns round and lies down, curled up in a ball to doze (belly down, legs tucked under, head resting at the front,
+     tail wrapped round: G's photo, 17/10/2026), eyes shut; after a while it rolls slowly onto its side and sleeps
+     deeply (back rounded, head down by its paws, tail round in front), the Zzz rising only then; pressed a little into
+     the cushion and never through it; asleep it breathes slowly, sighs, twitches an ear, now and then lifts its head
+     and settles again. At dawn the other way, down to the floor and back to the glass.
    How it moves is in cat.js. The chicken: feet planted for 60 % of its stride, the body riding over the standing leg
    like an inverted pendulum and swaying over it, the head holding still in space while the body passes, then
    thrusting ahead; it scratches in a four-stroke bout, steps back, looks at the ground with one eye and pecks in quick
@@ -5115,7 +5126,9 @@ async function loadPets() {
    frame its wishes are gathered (W: the pose to go toward and how fast, its legs on the ground or in the pose, its speed
    and turning, how it looks, its lids), then its body is moved by them (moveCat). */
 const CAT = { mode: 'still', place: 'day', seq: null, G: null, v: 0, ikW: 0, lid: 0, look: null, blinkT: 3, blinkK: 0, slow: 0, earT: [1, 2.5], ear: [0, 0],
-  tailT: 2, kick: 0, sigh: 0, sighT: 20, glance: 0, glanceT: 6, actT: 20, huntT: 30, twitchT: 30, prev: null };
+  tailT: 2, kick: 0, sigh: 0, sighT: 20, glance: 0, glanceT: 6, actT: 20, huntT: 30, twitchT: 30, prev: null,
+  sleep: 'light', sleepT: 45 };   // (asleep: dozing in a ball first, then deeply on its side, sleepT seconds later)
+const sleepPose = () => CAT.sleep === 'deep' ? 'curl' : 'nest';
 PETS.CAT = CAT; PETS.act = k => dayActs(k);   // (for tests: an act can be started by hand)
 const rnd = (a, b) => a + (b - a) * Math.random();
 const ease = k => k * k * (3 - 2 * k), angTo = (a, b) => ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
@@ -5168,7 +5181,7 @@ const leap = (to, T) => ({ run: (k, dt, st, t) => {   // ballistic: up as much f
 const DENT = { d: 0, v: 0, x: 0, z: 0, r: 0.13, last: [0, 0, 0, 0] };
 PETS.dent = DENT; PETS.soft = SOFT;   // (for tests)
 function stepDent(dt) {
-  const hp = PETS.holder.position, on = hp.y > 0.2 && W.pose !== 'air', lying = /curl|side|sphinx|loaf/.test(W.pose || '');
+  const hp = PETS.holder.position, on = hp.y > 0.2 && W.pose !== 'air', lying = /curl|nest|side|sphinx|loaf/.test(W.pose || '');
   const goal = on ? (lying ? 0.019 : 0.013) : 0, rr = lying ? 0.21 : 0.14;
   if (on) { const k = Math.min(1, dt * 10); DENT.x += (hp.x - DENT.x) * (DENT.d < 1e-4 ? 1 : k); DENT.z += (hp.z - DENT.z) * (DENT.d < 1e-4 ? 1 : k); DENT.r += (rr - DENT.r) * Math.min(1, dt * 4); }
   for (let n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n, i = 0; i < n; i++) { DENT.v += (504 * (goal - DENT.d) - 13.5 * DENT.v) * h; DENT.d = Math.max(0, DENT.d + DENT.v * h); }
@@ -5190,7 +5203,7 @@ const lieDown = (pose, spot, dur) => ({ dur, run: (k, dt, st) => {   // down int
   const G = CAT.G; if (!st.s) st.s = { x: G.x, y: G.y, z: G.z, yaw: G.yaw, sink: G.sink || 0 };
   const e = ease(k); G.x = st.s.x + (spot.x - st.s.x) * e; G.z = st.s.z + (spot.z - st.s.z) * e; G.yaw = st.s.yaw + angTo(st.s.yaw, spot.yaw) * e;
   G.y = st.s.y + (spot.y - spot.sink - st.s.y) * e; G.sink = (st.s.sink || 0) + (spot.sink - (st.s.sink || 0)) * e;
-  Object.assign(W, { pose, half: 0.32, lid: pose === 'curl' ? Math.min(1, k * 1.4) : null }); if (k >= 1) delete st.s;
+  Object.assign(W, { pose, half: 0.32, lid: /curl|nest/.test(pose) ? Math.min(1, k * 1.4) : null }); if (k >= 1) delete st.s;
 } });
 const groomSteps = () => [   // sitting up to wash: a forepaw licked, drawn over the face, licked again
   stay('sit', 1.3, { half: 0.3 }),
@@ -5212,7 +5225,7 @@ function dayActs(kind) {   // what it may do by day: wash, or (the hen pecking n
 }
 function nightActs() {   // asleep: now and then it lifts its head, looks about, and settles again
   CAT.actT = rnd(40, 90);
-  play([{ dur: 4.2, run: k => { W.pose = 'curl'; W.lid = k < 0.15 ? 1 - k / 0.15 * 0.6 : k > 0.75 ? 0.4 + (k - 0.75) / 0.25 * 0.6 : 0.4;
+  play([{ dur: 4.2, run: k => { W.pose = sleepPose(); W.lid = k < 0.15 ? 1 - k / 0.15 * 0.6 : k > 0.75 ? 0.4 + (k - 0.75) / 0.25 * 0.6 : 0.4;
     W.look = _w.copy(camera.position); W.lookK = Math.sin(Math.PI * Math.min(1, k * 1.25)) * 0.35; W.ears = 0.6; } }]);   // (a half-raised head, curled as it is)
 }
 // by day on the floor (and the chicken outside), by night asleep on the chaise (the chicken has gone to roost)
@@ -5228,7 +5241,8 @@ function petsForHour(S) {
 function settle(state, soft) {   // in its place for that time of day (at once, unless it has just got there)
   const s = CAT_SPOT[state]; CAT.mode = 'still'; CAT.place = state; CAT.seq = null; CAT.v = 0;
   at(s.x, s.y, s.z, s.yaw, s.sink); CAT.G.feet = null;
-  if (!soft) { catSnap(CATR.poses[state === 'night' ? 'curl' : 'sphinx']); CAT.lid = state === 'night' ? 1 : 0; CAT.ikW = 0; }
+  if (state === 'night') { CAT.sleep = 'light'; CAT.sleepT = rnd(35, 55); }   // (asleep in a ball first, on its side later)
+  if (!soft) { catSnap(CATR.poses[state === 'night' ? 'nest' : 'sphinx']); CAT.lid = state === 'night' ? 1 : 0; CAT.ikW = 0; }
   PETS.holder.position.set(s.x, s.y, s.z); PETS.holder.rotation.set(0, s.yaw, 0); PETS.holder.updateMatrixWorld(true);
   Object.assign(CAT, { look: null, actT: rnd(14, 26), huntT: rnd(10, 30), prev: null });
 }
@@ -5242,8 +5256,8 @@ function startTrip(to) {
     ? [{ dur: 0.9, run: k => { W.pose = 'sphinx'; W.lid = 0; W.look = _w.set(F[0], 0.3, F[1]); W.lookK = ease(k); } },   // awake: it looks over to the sofa
        stay('stand', 1.0, { half: 0.24 }), stay('bow', 1.6, { half: 0.3, lid: 0.5 }), stay('stand', 0.7, { half: 0.25 }),
        walkTo(F[0], F[1]), turnTo(Sx), gauge(seat, 1.1), gather(0.4, 0.034), leap([Sx[0], sy, Sx[1]], 0.42), touch(0.42),
-       knead(2.8), circle(1.15, 2.4), lieDown('sphinx', S1, 1.2), lieDown('curl', S1, 1.6)]   // down onto its belly, then over onto its side
-    : [{ dur: 1.0, run: k => { W.pose = 'curl'; W.lid = 1 - ease(k); W.look = _w.set(F[0], 0.2, F[1]); W.lookK = ease(k) * 0.35; } },   // eyes open, head up
+       knead(2.8), circle(1.15, 2.4), lieDown('sphinx', S1, 1.2), lieDown('nest', S1, 1.8)]   // down onto its belly, then curled up in a ball (later onto its side)
+    : [{ dur: 1.0, run: k => { W.pose = sleepPose(); W.lid = 1 - ease(k); W.look = _w.set(F[0], 0.2, F[1]); W.lookK = ease(k) * 0.35; } },   // eyes open, head up
        stay('sphinx', 1.0, { half: 0.28 }), stay('stand', 1.1, { half: 0.26 }),   // over onto its belly, then up stay('bow', 1.5, { half: 0.3, lid: 0.5 }), stay('stand', 0.6, { half: 0.25 }),
        turnTo(F), gauge([F[0], 0, F[1]], 0.6), gather(0.28, 0.02), leap([F[0], 0, F[1]], 0.36), touch(0.42),
        walkTo(S1.x, S1.z), turnTo(S1.yaw), lieDown('sphinx', S1, 1.5)];
@@ -5257,9 +5271,12 @@ function stepCat(t, dt) {
   if (CAT.mode === 'trip' || CAT.seq) { if (CAT.seq) stepSeq(dt); }
   if (!CAT.seq && CAT.mode === 'trip') return;   // (settled by the sequence's end)
   if (!CAT.seq) {   // in its place
-    W.pose = night ? 'curl' : 'sphinx'; W.half = 0.35;
-    CAT.actT -= dt; CAT.huntT -= dt;
-    if (CAT.actT <= 0) { if (night) nightActs(); else dayActs(); }
+    W.pose = night ? sleepPose() : 'sphinx'; W.half = 0.35;
+    CAT.actT -= dt; CAT.huntT -= dt; if (night && CAT.sleep === 'light') CAT.sleepT -= dt;
+    if (night && CAT.sleep === 'light' && CAT.sleepT <= 0) {   // dozing done: over onto its side, slowly, into deep sleep
+      CAT.sleep = 'deep'; CAT.actT = Math.max(CAT.actT, rnd(30, 60));
+      play([{ dur: 4.4, run: k => { Object.assign(W, { pose: 'curl', half: 0.85, lid: 1 }); } }]);
+    } else if (CAT.actT <= 0) { if (night) nightActs(); else dayActs(); }
     else if (!night && henBusy() && CAT.huntT <= 0 && Math.random() < dt * 0.15) dayActs();
     if (!night && !CAT.seq) {   // awake in its place: its eyes on the chicken, with glances into the room (at you)
       CAT.glanceT -= dt; if (CAT.glanceT <= 0) { CAT.glance = CAT.glance ? 0 : 1; CAT.glanceT = CAT.glance ? rnd(2, 3.5) : rnd(5, 11); if (CAT.glance) CAT.blinkT = 0.8; }
@@ -5323,7 +5340,7 @@ function moveCat(t, dt, night) {
     catLook(CAT.look, M.lookK, 1.2);
   } else CAT.look = null;
   idleLife(t, dt, night);
-  stepZzz(t, dt, night && !CAT.seq && CAT_EYE.u.uBlink.value > 0.9);   // Zzz while it sleeps
+  stepZzz(t, dt, night && !CAT.seq && CAT.sleep === 'deep' && CAT_EYE.u.uBlink.value > 0.9);   // Zzz while it sleeps deeply
   // its tail: pushed by the body's own moves (and swinging once a stride as it walks, lashing as it stalks)
   const vel = _v.set(G.x, G.y, G.z), prev = CAT.prev || (CAT.prev = { p: vel.clone(), v: new THREE.Vector3(), yaw: G.yaw, w: 0 });
   const nv = _nv.copy(vel).sub(prev.p).divideScalar(Math.max(dt, 1e-3)), acc = _acc.copy(nv).sub(prev.v).divideScalar(Math.max(dt, 1e-3)).clampLength(0, 12);
@@ -5359,7 +5376,7 @@ function idleLife(t, dt, night) {
   CAT.kick *= Math.max(0, 1 - dt * 6);
 }
 function placeShadow(G, pose) {   // the contact shadow: its shape (lying, sitting, curled, standing) and where the cat is
-  const sh = PETS.catShadow, S = { sphinx: [1, 1], sit: [0.62, 0.9], lick: [0.62, 0.9], wipe: [0.62, 0.9], curl: [0.75, 1.15], air: [0.5, 0.5] }[pose] || [0.85, 0.65];
+  const sh = PETS.catShadow, S = { sphinx: [1, 1], sit: [0.62, 0.9], lick: [0.62, 0.9], wipe: [0.62, 0.9], curl: [0.75, 1.15], nest: [0.8, 0.9], air: [0.5, 0.5] }[pose] || [0.85, 0.65];
   const y = pose === 'air' ? (G.y > 0.2 ? CAT_WAY.seatY : 0) : G.y + (G.sink || 0);   // on the surface, not where it is pressed in to
   sh.position.set(G.x, y + 0.004, G.z); sh.rotation.z = G.yaw + Math.PI / 2; sh.scale.set(S[0], S[1], 1);
 }
