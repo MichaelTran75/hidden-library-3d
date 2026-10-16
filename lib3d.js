@@ -2023,6 +2023,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const tb2 = flatBook(B.book_book01, 0.2 + Math.PI / 2, 1.1); tb2.position.set(-0.13, 0.42 + tb1.userData.h, -6.21); F.add(tb2);
   // ---- floor lamp in the back-right corner, behind the sofa
   const fl = floorLamp(); fl.position.set(R.xS - 0.28, 0, R.zB + R.caseD + 0.16); fl.rotation.y = -0.15; F.add(fl); LIGHTS.floor = fl;
+  paintLightly(fl);   // (75 % less watercolour on it: G, 16/10/2026)
   // ---- stump side table + plant
   const st = stumpTable(); st.position.set(R.xL + 0.32, 0, -5.85); F.add(st);
   const pot = new THREE.Mesh(new THREE.LatheGeometry([[.001, 0], [.1, 0], [.14, .05], [.15, .11], [.14, .12]].map(p => new THREE.Vector2(p[0], p[1])), 28), MAT.stone); pot.position.set(R.xL + 0.28, 0.53, -5.98); pot.castShadow = true; F.add(pot);
@@ -2072,7 +2073,8 @@ function dust() {
   const pts = new THREE.Points(g, m); scene.add(pts); return pts;
 }
 /* ---------------------------------------------------------------- post: watercolour */
-const POST = {};
+// (light: the parts of the room painted lightly, drawLight below)
+const POST = { light: { scene: new THREE.Scene(), parts: [], mat: null, k: { value: 0.75 } } };
 /* The watercolour picture is made in three passes:
    1. tone: the scene's colours through the tone curve, once per pixel (the paint pass reads each one ~50 times);
    2. paper: the noise fields that only depend on the screen position (wobble, pigment, fibres, blotches, paper grain),
@@ -2092,7 +2094,7 @@ function buildPost() {
     precision highp float; uniform sampler2D tColor; uniform float exposure; varying vec2 vUv;
     vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
     vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
-    void main(){ gl_FragColor = vec4(toS(aces(texture2D(tColor, vUv).rgb*exposure*0.85)), 1.0); }`);
+    void main(){ vec4 c = texture2D(tColor, vUv); gl_FragColor = vec4(toS(aces(c.rgb*exposure*0.85)), 1.0 - clamp(c.a, 0.0, 1.0)); }`);   // (alpha: the parts painted lightly, see drawLight)
   const nearest = { depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter };
   POST.n1 = new THREE.WebGLRenderTarget(4, 4, nearest); POST.n2 = new THREE.WebGLRenderTarget(4, 4, nearest);
   POST.bakeQuad = quad({ res: { value: new THREE.Vector2() }, which: { value: 0 } }, /* glsl */`
@@ -2106,9 +2108,9 @@ function buildPost() {
     }`);
   POST.quad = quad({ tTone: { value: POST.tone.texture }, tDepth: { value: null }, tN1: { value: POST.n1.texture }, tN2: { value: POST.n2.texture },
     res: { value: new THREE.Vector2(1, 1) }, near: { value: 0.05 }, far: { value: 400 }, exposure, lift: { value: 0.88 }, veil: { value: 0.06 },
-    uInvVP: { value: new THREE.Matrix4() }, uRoom: { value: new THREE.Vector4(R.xL, R.xW, R.zB, R.zF) }, uFloorK: { value: 0.62 } }, /* glsl */`
+    uInvVP: { value: new THREE.Matrix4() }, uRoom: { value: new THREE.Vector4(R.xL, R.xW, R.zB, R.zF) }, uFloorK: { value: 0.62 }, uLightK: POST.light.k }, /* glsl */`
     precision highp float;
-    uniform sampler2D tTone, tDepth, tN1, tN2; uniform vec2 res; uniform float near, far, lift, veil, uFloorK; uniform mat4 uInvVP; uniform vec4 uRoom;
+    uniform sampler2D tTone, tDepth, tN1, tN2; uniform vec2 res; uniform float near, far, lift, veil, uFloorK, uLightK; uniform mat4 uInvVP; uniform vec4 uRoom;
     varying vec2 vUv;
     float ld(float d){ float z=d*2.0-1.0; return 2.0*near*far/(far+near-z*(far-near)); }
     vec3 samp(vec2 uv){ return texture2D(tTone, uv).rgb; }
@@ -2160,6 +2162,9 @@ function buildPost() {
       col = mix(col, col*vec3(1.02,1.0,0.95), 0.6);                   // warm paper tint
       col = mix(col, vec3(0.24,0.17,0.11), ink*0.55);                  // brown ink line
       col *= 0.96 + n2.z*0.07;                                         // paper texture
+      // a part painted lightly (drawLight's mask): most of it as drawn, under the paper's lift and warmth only
+      float lite = texture2D(tTone, vUv).a * uLightK;
+      if (lite > 0.001) { vec3 cl = 1.0 - (1.0 - samp(vUv))*lift; cl = mix(cl, cl*vec3(1.02,1.0,0.95), 0.6); col = mix(col, cl, lite); }
       gl_FragColor = vec4(col*(1.0-veil),1.0);
     }`);
   POST.mat = POST.quad.material;
@@ -2178,6 +2183,27 @@ function buildPost() {
       vec3 a = 0.5 * (texture2D(t, vUv + dir * (1.0 / 3.0 - 0.5)).rgb + texture2D(t, vUv + dir * (2.0 / 3.0 - 0.5)).rgb);
       vec3 b = a * 0.5 + 0.25 * (texture2D(t, vUv - dir * 0.5).rgb + texture2D(t, vUv + dir * 0.5).rgb);
       float lb = L(b); gl_FragColor = vec4((lb < lo || lb > hi) ? a : b, 1.0); }`);
+}
+/* ---- parts of the room painted lightly (G, 16/10/2026: the floor lamp behind the sofa "75% less" watercolour): stand-ins
+   for their meshes, in a scene of their own, drawn into the picture's target after the room, through the room's own
+   depth (so what stands in front of them still hides them), writing nothing but the target's alpha: 0 where they show,
+   1 everywhere else (set first: the leaves' alpha-to-coverage leaves less than 1 in it). The tone pass hands that on and
+   the paint pass lets 75 % of the paint go there, the part as drawn under the paper's lift and warmth. They stay in the
+   room: lit, shadowed, in its depth. */
+function paintLightly(obj) {
+  const L = POST.light;
+  if (!L.mat) L.mat = new THREE.ShaderMaterial({ vertexShader: 'void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'void main(){ gl_FragColor = vec4(0.0); }', side: THREE.DoubleSide, depthTest: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,   // (its own surface, drawn twice, always passes the depth test)
+    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor });
+  if (!L.reset) L.reset = new FullScreenQuad(new THREE.ShaderMaterial({ vertexShader: QUAD_VS, fragmentShader: 'void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }',
+    depthTest: false, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor }));
+  obj.traverse(o => { if (!o.isMesh) return; const c = new THREE.Mesh(o.geometry, L.mat); c.matrixAutoUpdate = false; L.scene.add(c); L.parts.push([c, o]); });
+}
+function drawLight(camera) {   // (into the picture's target, right after the room)
+  const L = POST.light; if (!L.parts.length) return;
+  for (const [c, o] of L.parts) { c.matrix.copy(o.matrixWorld); c.matrixWorldNeedsUpdate = true; let v = o.visible; for (let p = o.parent; v && p; p = p.parent) v = p.visible; c.visible = v; }
+  const ac = renderer.autoClear; renderer.autoClear = false; L.reset.render(renderer); renderer.render(L.scene, camera); renderer.autoClear = ac;
 }
 function bakePaper(w, h) {   // the screen-fixed noise of the paint pass, for this window size
   POST.n1.setSize(w, h); POST.n2.setSize(w, h); const U = POST.bakeQuad.material.uniforms; U.res.value.set(w, h); POST.blit.material.uniforms.px.value.set(1 / w, 1 / h);
@@ -6086,7 +6112,7 @@ function draw() {
   if (LIGHTS.candle) { const f = LIGHTS.candle.userData.flame; f.scale.y = 2 + Math.sin(t * 13) * .25 + Math.sin(t * 7.3) * .2; }
   if (shadowsDirty) { renderer.shadowMap.needsUpdate = true; setShadowsDirty(false); }
   stepGlass();   // (the room seen again in the glass if its light has changed)
-  renderer.setRenderTarget(POST.rt); renderer.render(scene, camera);
+  renderer.setRenderTarget(POST.rt); renderer.render(scene, camera); drawLight(camera);   // (and the parts painted lightly: post.js)
   POST.toneQuad.material.uniforms.tColor.value = POST.rt.texture; renderer.setRenderTarget(POST.tone); POST.toneQuad.render(renderer);
   const U = POST.mat.uniforms; U.tDepth.value = POST.rt.depthTexture; U.near.value = camera.near; U.far.value = camera.far;
   U.uInvVP.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);   // (the floor's lighter wash: post.js)
