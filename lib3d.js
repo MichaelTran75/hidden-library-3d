@@ -2454,7 +2454,9 @@ function stepHour(dt) {   // the light toward the hour: at once when it creeps, 
    - it takes from the view behind it what it reflects (blended premultiplied: the view keeps 1 − a), and a faint green
      of the glass's own;
    - its surface is not perfectly clean: dust and smudges, more toward the bottom, haze it a little and catch light;
-   - and two soft diagonal sheens cross each pane, the way glass is drawn, sliding a little as the view moves.
+   - and two soft diagonal sheens cross each pane, the way glass is drawn, sliding a little as the view moves;
+   - by night all of it is let go nearly (the reflection kept at an eighth, the haze and sheens at a tenth), so the night
+     sky through it is clear (G, 16/10/2026).
    The cube map is taken again whenever the light changes (the hour, day to night), at most once a second; the panes
    are hidden while it is taken. They write no depth: where the sky shows through them, the stars still show. */
 const GLASS = { mat: null, cube: null, cam: null, at: new THREE.Vector3((R.xL + R.xS) / 2, 1.6, (R.zB + R.zF) / 2), last: { n: -1, s: -1, x: 0, t: -1e9 } };
@@ -2480,9 +2482,12 @@ function glassMaterial() {
         float s = fract((q.x * 0.75 + q.y) * 0.42 + dot(V, vec3(0.45, 0.2, -0.35)) * 0.45);
         float band = smoothstep(0.0, 0.04, s) * smoothstep(0.16, 0.08, s) + 0.6 * smoothstep(0.2, 0.22, s) * smoothstep(0.27, 0.25, s);
         band *= 0.6 + 0.4 * gn(q * 0.9 + 3.0);   // (not even along their length)
-        float lit = 0.3 + 0.7 * uDay, haze = 0.012 + 0.05 * sm, sheen = band * (0.05 + 0.07 * uDay);
-        vec3 col = refl * F * (1.0 + 0.3 * sm) * mix(0.4, 1.0, uDay) + vec3(0.93, 0.96, 0.94) * (haze + sheen) * lit + vec3(0.003, 0.007, 0.005);   // (a smudge scatters a little more of what it reflects; by night the room's mirror image kept faint, so the stars and the Milky Way show through)
-        gl_FragColor = vec4(col, clamp(F + (haze + sheen) * 0.8 + 0.015, 0.0, 0.7));   // (premultiplied: the view behind keeps 1 − alpha of itself)
+        // by night the glass is kept clear, so the stars and the Milky Way are seen through it as if it were not there (G,
+        // 16/10/2026): its haze, smudges and sheens almost gone, the room's mirror image faint
+        float clearK = mix(0.1, 1.0, uDay);
+        float lit = 0.3 + 0.7 * uDay, haze = (0.012 + 0.05 * sm) * clearK, sheen = band * (0.05 + 0.07 * uDay) * clearK;
+        vec3 col = refl * F * (1.0 + 0.3 * sm) * mix(0.12, 1.0, uDay) + vec3(0.93, 0.96, 0.94) * (haze + sheen) * lit + vec3(0.003, 0.007, 0.005) * clearK;   // (a smudge scatters a little more of what it reflects)
+        gl_FragColor = vec4(col, clamp(F * mix(0.12, 1.0, uDay) + (haze + sheen) * 0.8 + 0.015 * clearK, 0.0, 0.7));   // (premultiplied: the view behind keeps 1 − alpha of itself)
       }`,
     transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide });
 }
