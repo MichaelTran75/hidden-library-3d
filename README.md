@@ -24,6 +24,10 @@ The garden's trees are rebuilt in code from measurements of these CC BY 4.0 mode
 - "Stylized Tree" by yonimantz: https://sketchfab.com/3d-models/stylized-tree-6d1aeea748f147789004bc03e1930d32
 - "Platano Tree" by gelmi.com.br: https://sketchfab.com/3d-models/platano-tree-ef48485b7c534acc905c0d9964c5fe7c
 
+The bulb hanging over the sofa is rebuilt in code from the measurements of this CC BY 4.0 model (its glass profile, screw base, stem, wires and filament measured; its mesh is not shipped):
+
+- "Incandescent Light Bulb" by AleixoAlonso: https://sketchfab.com/3d-models/incandescent-light-bulb-217c6b059c584243893b36ab76472ddd
+
 Architecture, shelves and shelf books, pouf, bolsters, rug, lamps, plants and trees are built in code.
 
 The cat and the chicken:
@@ -33,6 +37,8 @@ The cat and the chicken:
 
 Book covers (`covers/`, shown on a book as it leaves the shelf): the original English editions' covers from Open Library, https://openlibrary.org; The Nvidia Way's from its publisher, W. W. Norton; Trò chơi quyền lực's (Omega+, 2024) from Goodreads. The covers are their publishers'; resized.
 
-The stars: the Yale Bright Star Catalogue, 5th ed. (Hoffleit & Warren, Yale University Observatory / NASA ADC), via https://github.com/brettonw/YaleBrightStarCatalog (MIT licence); placed for the sidereal time at Pleiku.
+The stars: the Yale Bright Star Catalogue, 5th ed. (Hoffleit & Warren, Yale University Observatory / NASA ADC), via https://github.com/brettonw/YaleBrightStarCatalog (MIT licence); placed for the sidereal time where the visitor's clock says they are (Pleiku for a clock on Vietnam's time).
+
+Sunrise and sunset: NOAA's solar equations (after Meeus, "Astronomical Algorithms"); each time zone's place from the IANA time zone database's zone.tab (public domain).
 
 The Geography atlases' map of Vietnam (the page a Geography book opens on): the coastline and the border from OpenStreetMap, © OpenStreetMap contributors (ODbL, https://www.openstreetmap.org/copyright), and the bands of height and depth from AWS Terrain Tiles (terrarium), as G's own map of Vietnam has them, simplified; Hoàng Sa's islands placed by hand.

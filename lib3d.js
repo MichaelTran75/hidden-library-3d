@@ -1170,6 +1170,66 @@ function candleJar() {
   const flame = new THREE.Mesh(new THREE.SphereGeometry(.007, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffd28a })); flame.scale.y = 2; flame.position.y = .052; g.add(flame); g.userData.flame = flame;
   return g;
 }
+/* A bare bulb on a cord from the ceiling (G, 17/10/2026: "em cho bóng đèn này thành downlight ... nhớ làm thêm chuôi
+   đèn và dây từ ceiling xuống"). The bulb is rebuilt from the measurements of "Incandescent Light Bulb" by AleixoAlonso
+   (CC BY 4.0; 3D Assets/interior/light-bulb-incandescent.glb, an A-shape bulb 15.2 cm tall, its glass 9.2 cm across).
+   Measured in its own frame, from the tip of its base up:
+   - its glass, the model's profile turned;
+   - its screw base, the thread's last ridges showing under the socket, and the black insulator at its tip;
+   - the flattened glass stem; the two lead-in wires and the two supports; the coiled filament across their tops.
+   It hangs base up in a brass socket (a shell over the thread, a collar, a domed cap, a cord grip), on a cloth cord
+   from a brass cup on the ceiling. Its light is a spot straight down (a downlight); by night the filament glows, and
+   the glass a little with it. drop: from the ceiling to the middle of the socket and bulb (m).                        */
+function pendantLamp(drop) {
+  const g = new THREE.Group(), lathe = (pts, mat, seg = 32) => new THREE.Mesh(new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg), mat);
+  const tipY = -drop + 0.047, gripY = tipY + 0.058, cord = -gripY - 0.032;   // (the bulb's frame: the base's tip at tipY, its glass 0.152 below)
+  // the ceiling cup and the cord
+  g.add(lathe([[.004, -.032], [.010, -.031], [.030, -.027], [.045, -.018], [.052, -.008], [.055, 0]], MAT.brass, 40));
+  const cloth = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .0035, cord, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0x2b2420, roughness: .85 }));
+  cloth.position.y = -.032 - cord / 2; g.add(cloth);
+  // the bulb, in its own frame (y up from the tip of the base), turned base up
+  const b = new THREE.Group(); b.rotation.x = Math.PI; b.position.y = tipY; g.add(b);
+  b.add(lathe([[.0001, 0], [.0022, .0003], [.0086, .0028], [.0086, .0037]], new THREE.MeshStandardMaterial({ color: 0x141414, roughness: .3 }), 24));   // the insulator
+  b.add(lathe([[.0086, .0037], [.0187, .0095], [.0200, .024], [.0207, .0255], [.0189, .0272], [.0207, .0289], [.0198, .0301], [.0191, .031], [.0184, .0326], [.0176, .0332]],
+    new THREE.MeshStandardMaterial({ color: 0xc9c9c4, metalness: 1, roughness: .3 }), 32));   // the screw base
+  // its glass: clear, lit by the room, more of it seen toward its edges (as glass is: Fresnel), a little warm from inside
+  // when on; it keeps its depth, so the night sky (drawn after the paint, where the room left no depth) stays behind it
+  const glass = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: .05, metalness: 0, transparent: true, opacity: .04, envMapIntensity: 1.6, emissive: 0xffd2a0, emissiveIntensity: 0 });
+  glass.onBeforeCompile = s => { s.fragmentShader = s.fragmentShader.replace('#include <opaque_fragment>', `#include <opaque_fragment>
+    gl_FragColor.a = clamp(gl_FragColor.a + 0.45 * pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.5), 0.0, 0.7);`); };
+  const env = [[.0176, .0315], [.0205, .0365], [.0227, .040], [.0236, .0432], [.0240, .0466], [.0248, .0533], [.0279, .0633], [.0325, .070], [.0382, .080], [.0424, .090],
+    [.0450, .0968], [.0459, .1069], [.0450, .1136], [.0424, .1236], [.0382, .1303], [.0325, .137], [.0255, .1437], [.0176, .1471], [.0090, .1504], [.0001, .1521]];
+  // (its far side first, as the profile turned the other way, so its faces look inward and it shares the near side's
+  // shader; the stem between them)
+  const back = lathe([...env].reverse(), glass, 40), front = lathe(env, glass, 40); back.renderOrder = 1; front.renderOrder = 3; b.add(back, front);
+  const stemShape = new THREE.Shape(), sp = [[.0084, .030], [.0085, .048], [.0062, .0525], [.0069, .057], [.0079, .0615], [.0068, .066], [.0026, .0705], [.0021, .075], [.0021, .0795], [.0048, .084]];
+  stemShape.moveTo(-sp[0][0], sp[0][1]); for (const [x, y] of sp) stemShape.lineTo(x, y); for (let i = sp.length - 1; i >= 0; i--) stemShape.lineTo(-sp[i][0], sp[i][1]);
+  const stemG = new THREE.ExtrudeGeometry(stemShape, { depth: .0038, bevelEnabled: false }); stemG.translate(0, 0, -.0019);
+  const stem = new THREE.Mesh(stemG, new THREE.MeshStandardMaterial({ color: 0xf4f6f2, roughness: .1, transparent: true, opacity: .32, depthWrite: false })); stem.renderOrder = 2; b.add(stem);
+  // the wires: lead-ins from the stem to the filament's ends, supports from its top up over it and hooked down onto it
+  const V = (x, y, z = 0) => new THREE.Vector3(x, y, z), rod = (a, c, r) => { const d = c.clone().sub(a), m = new THREE.CylinderGeometry(r, r, d.length(), 5, 1, true);
+    m.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize())); m.translate((a.x + c.x) / 2, (a.y + c.y) / 2, (a.z + c.z) / 2); return m; };
+  const wires = [];
+  for (const s of [-1, 1]) {
+    wires.push(rod(V(s * .005, .034), V(s * .005, .0373), .0004), rod(V(s * .005, .0373), V(s * .0148, .1007), .0004));
+    wires.push(rod(V(s * .0011, .0687), V(s * .0087, .1063), .00032), rod(V(s * .0087, .1063), V(s * .0087, .1013), .00032));
+  }
+  b.add(new THREE.Mesh(mergeGeometries(wires), new THREE.MeshStandardMaterial({ color: 0x5a5a58, metalness: .7, roughness: .35 })));
+  const turns = 18, hp = []; for (let i = 0; i <= turns * 10; i++) { const t = i / (turns * 10), a = t * turns * 2 * Math.PI; hp.push(V(-.016 + .032 * t, .1008 + .0011 * Math.cos(a), -.0002 + .0011 * Math.sin(a))); }
+  const coil = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(hp), turns * 16, .00028, 4), new THREE.MeshStandardMaterial({ color: 0x6a6a66, metalness: .6, roughness: .4, emissive: 0xffcf90, emissiveIntensity: 0 }));
+  b.add(coil);
+  // the socket over the base, base up: cord grip, domed cap, collar, shell, lip, and in under the lip
+  b.add(lathe([[.0036, -.058], [.0062, -.0575], [.0062, -.044], [.012, -.043], [.0175, -.040], [.0215, -.0355], [.024, -.029], [.0248, -.024], [.0258, -.0235], [.0258, -.0195], [.0247, -.019],
+    [.0247, -.002], [.0241, -.001], [.0247, 0], [.0247, .0225], [.0253, .0235], [.0253, .025], [.0213, .0252], [.0211, .02]], MAT.brass, 40));
+  // its light: a spot straight down, from just under the glass (from the filament it would light the glass itself, 5 cm
+  // away, white), and a glow round the bulb
+  const spotY = tipY - .162, light = new THREE.SpotLight(0xffc98f, 0, 9, 0.85, 0.8, 2); light.position.y = spotY; light.target.position.y = spotY - 2.5; light.visible = false; g.add(light, light.target);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffc98f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(.26); glow.position.y = tipY - .105; glow.renderOrder = 4; g.add(glow);
+  const at = new THREE.Vector3(), toCam = new THREE.Vector3();   // (drawn 7 cm toward the eye, in front of the glass that hides what is behind it)
+  glow.onBeforeRender = (r, s, cam) => { g.localToWorld(at.set(0, tipY - .105, 0)); toCam.setFromMatrixPosition(cam.matrixWorld).sub(at).normalize(); glow.matrixWorld.setPosition(at.addScaledVector(toCam, .07)); };
+  g.userData.light = light; g.userData.glow = glow; g.userData.coil = coil; g.userData.glass = glass;
+  return g;
+}
 /* ---------------------------------------------------------------- bushes
    The shrubs past the glass, drawn the way stylized games draw a bush ("fluffy" foliage, as in Breath of the Wild or
    Genshin Impact; Minions Art's write-ups of the technique): a cloud of cards around an ellipsoid, each a cluster of
@@ -2025,6 +2085,10 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   // ---- floor lamp in the back-right corner, behind the sofa
   const fl = floorLamp(); fl.position.set(R.xS - 0.28, 0, R.zB + R.caseD + 0.16); fl.rotation.y = -0.15; F.add(fl); LIGHTS.floor = fl;
   paintLightly(fl);   // (75 % less watercolour on it: G, 16/10/2026)
+  // ---- a bare bulb hanging over the front of the sofa's seat: from the room's first view it is seen above the RESEARCH
+  // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up
+  const pd = pendantLamp(R.H - 3.27); pd.position.set(0.43, R.H, -7.2); F.add(pd); LIGHTS.pendant = pd;
+  paintLightly(pd);   // (as the lamps: 75 % less watercolour)
   // ---- stump side table + plant
   const st = stumpTable(); st.position.set(R.xL + 0.32, 0, -5.85); F.add(st);
   const pot = new THREE.Mesh(new THREE.LatheGeometry([[.001, 0], [.1, 0], [.14, .05], [.15, .11], [.14, .12]].map(p => new THREE.Vector2(p[0], p[1])), 28), MAT.stone); pot.position.set(R.xL + 0.28, 0.53, -5.98); pot.castShadow = true; F.add(pot);
@@ -2438,6 +2502,10 @@ function applyHour(e, az) {
   L.table.userData.light.intensity = lerp(D.table, 7, k); L.table.userData.glow.material.opacity = lerp(D.tableGlow, 0.9, k);
   L.floor.userData.light.intensity = lerp(D.floor, 32, k); L.floor.userData.pt.intensity = lerp(D.floorPt, 5, k); L.floor.userData.glow.material.opacity = lerp(D.floorGlow, 0.95, k);
   MAT.shade.emissiveIntensity = lerp(D.shade, 2.4, k);
+  if (L.pendant) {   // the bulb over the sofa: off by day, on with the lamps (its spot shown and hidden with the downlights, so the shaders change once)
+    const P = L.pendant.userData; P.light.intensity = 40 * k; P.light.visible = k > 0.001; P.glow.material.opacity = 0.6 * k;
+    P.coil.material.emissiveIntensity = 9 * k; P.glass.emissiveIntensity = 0.35 * k;
+  }
   for (const sp of NIGHT.spots) { sp.sp.intensity = 55 * sp.k * k; sp.sp.visible = k > 0.001; sp.disc.material.color.setRGB(0.1, 0.086, 0.07).lerp(NC.disc, k); }
   // the eye opens a little as the light goes
   petsForHour(S);
@@ -6208,15 +6276,16 @@ async function compileFor(sc) {
 }
 async function precompileLightStates() {
   if (!renderer.compileAsync) return;
-  const L = LIGHTS, was = { sun: L.sun.visible, rects: L.rects.map(r => r.visible), spots: NIGHT.spots.map(s => s.sp.visible) };
+  const L = LIGHTS, spl = [...NIGHT.spots.map(s => s.sp), ...(L.pendant ? [L.pendant.userData.light] : [])];   // (the bulb over the sofa comes on with the ceiling spots)
+  const was = { sun: L.sun.visible, rects: L.rects.map(r => r.visible), spots: spl.map(s => s.visible) };
   hold = true;
   try {
     for (const [sun, rects, spots] of [[true, true, false], [true, true, true], [false, true, true], [false, false, true]]) {
-      L.sun.visible = sun; L.rects.forEach(r => { r.visible = rects; }); NIGHT.spots.forEach(s => { s.sp.visible = spots; });
+      L.sun.visible = sun; L.rects.forEach(r => { r.visible = rects; }); spl.forEach(s => { s.visible = spots; });
       await compileFor(scene);
     }
   } catch (e) { /* compiled on first use instead */ }
-  L.sun.visible = was.sun; L.rects.forEach((r, i) => { r.visible = was.rects[i]; }); NIGHT.spots.forEach((s, i) => { s.sp.visible = was.spots[i]; });
+  L.sun.visible = was.sun; L.rects.forEach((r, i) => { r.visible = was.rects[i]; }); spl.forEach((s, i) => { s.visible = was.spots[i]; });
   hold = false; needs = true;
 }
 
