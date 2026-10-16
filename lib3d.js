@@ -1879,18 +1879,45 @@ function windify(mat, leaf, opt = {}) {
    gathered pleats on vertical faces, soft creases + lumps on top faces, "crushed" pile patches that tilt
    the fibres (changing sheen locally), micro pile noise for close-ups, and baked contact AO (vertex colour)
    that also damps the sheen inside crevices.                                                              */
-/* A cushion that gives (dent: true; G, 15/10/2026): where the cat stands or lies on it the top of the cushion is pressed
-   into a smooth hollow (its depth falls off as (1 - r²)² over SOFT's radius), only its upper part moving, so the faces
-   meeting at its edges move together and never part; the normals tip into the hollow, so it shades. pets.js sets
-   where and how deep (a damped spring: deeper as the cat lands, springing back as it leaves). */
-const SOFT = { u: { uDent: { value: new THREE.Vector4(0, 0, 0.16, 0) }, uDentY: { value: 0.4 } } };
-const DENT_GLSL = `
-  uniform vec4 uDent; uniform float uDentY;
+/* A cushion that gives (dent: true; G, 15/10/2026, and deeper and softer, G, 17/10/2026): where the cat lies, stands or
+   treads on it, the top of the cushion is pressed into smooth hollows, each falling off as (1 − q²)² to its edge:
+   - the body's, an ellipse along the cat (round when it curls up);
+   - one under each paw that bears on it;
+   - and the imprint where it lay, going slowly.
+   They add up, the sum easing off as the cushion bottoms out (no deeper than ~4.5 cm). Only the cushion's upper part
+   moves, so faces meeting at its edges move together and never part; the normals tip into the hollows, so they shade.
+   The cover drawn into the body's hollow folds round it (radial folds on the rim, ~2 mm deep at a 3 cm hollow, in the
+   fabric's own bump), and the hollow's floor is a little in shadow. pets.js sets where and how deep (stepDent). */
+const SOFT = { u: { uDentB: { value: new THREE.Vector4() }, uDentA: { value: new THREE.Vector4(1, 0, 0.16, 0.12) }, uDentI: { value: new THREE.Vector4() },
+  uDentIA: { value: new THREE.Vector4(1, 0, 0.16, 0.12) }, uPaw: { value: [0, 1, 2, 3].map(() => new THREE.Vector4(0, 0, 0.05, 0)) }, uDentY: { value: 0.4 } } };
+const DENT_U = `uniform vec4 uDentB, uDentA, uDentI, uDentIA; uniform vec4 uPaw[4]; uniform float uDentY;
+  // an ellipse (B: x, z, depth; A: its long axis as cos, sin, then its two radii): its depth there, and −∇depth added to grad
+  float dentEll(vec2 p, vec4 B, vec4 A, inout vec2 grad) {
+    if (B.z <= 0.0) return 0.0;
+    vec2 d = p - B.xy, uv = vec2(dot(d, A.xy), dot(d, vec2(-A.y, A.x))) / A.zw; float q2 = dot(uv, uv);
+    if (q2 >= 1.0) return 0.0;
+    float k = 1.0 - q2; vec2 gl = 4.0 * B.z * k * uv / A.zw; grad += vec2(gl.x * A.x - gl.y * A.y, gl.x * A.y + gl.y * A.x); return B.z * k * k;
+  }
+  float dentCirc(vec2 p, vec4 C, inout vec2 grad) {   // a paw's: x, z, radius, depth
+    if (C.w <= 0.0) return 0.0; vec2 q = (p - C.xy) / C.z; float r2 = dot(q, q); if (r2 >= 1.0) return 0.0;
+    float k = 1.0 - r2; grad += 4.0 * C.w * k * q / C.z; return C.w * k * k;
+  }
+`;
+const DENT_GLSL = DENT_U + `
   float dentAt(vec3 w, out vec2 grad) {   // how far a point (world) is pressed down, and the slope of that
-    vec2 q = (w.xz - uDent.xy) / uDent.z; float r2 = dot(q, q); grad = vec2(0.0);
-    if (r2 >= 1.0 || uDent.w <= 0.0) return 0.0;
-    float h = smoothstep(uDentY - 0.12, uDentY - 0.015, w.y);
-    grad = uDent.w * h * 4.0 * (1.0 - r2) * q / uDent.z; return uDent.w * h * (1.0 - r2) * (1.0 - r2);
+    grad = vec2(0.0); float h = smoothstep(uDentY - 0.12, uDentY - 0.015, w.y); if (h <= 0.0) return 0.0;
+    float d = dentEll(w.xz, uDentB, uDentA, grad) + dentEll(w.xz, uDentI, uDentIA, grad);
+    for (int i = 0; i < 4; i++) d += dentCirc(w.xz, uPaw[i], grad);
+    float s = 1.0 / (1.0 + d / 0.045); grad *= h * s * s; return h * d * s;   // (bottoming out: d / (1 + d/4.5 cm))
+  }`;
+// the cover's folds round the body's hollow, as a height (metres) for the fabric's bump: radial, drawn in toward it
+const DENT_FOLDS = DENT_U + `
+  float dentFolds(vec3 w) {
+    if (uDentB.z <= 0.0) return 0.0; float h = smoothstep(uDentY - 0.12, uDentY - 0.015, w.y); if (h <= 0.0) return 0.0;
+    vec2 d = w.xz - uDentB.xy, uv = vec2(dot(d, uDentA.xy), dot(d, vec2(-uDentA.y, uDentA.x))) / uDentA.zw; float q = length(uv);
+    float ring = smoothstep(0.42, 0.78, q) * (1.0 - smoothstep(0.92, 1.38, q)); if (ring <= 0.0) return 0.0;
+    float a = atan(uv.y, uv.x), ph = a * 11.0 + 1.3 * sin(a * 3.0 + 1.7) + 2.0 * q, aa = 1.0 - smoothstep(0.6, 1.5, fwidth(ph));
+    return -h * ring * aa * min(1.2, uDentB.z / 0.03) * 0.0022 * pow(0.5 + 0.5 * cos(ph), 2.0);
   }`;
 function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, normalMap = null, normalScale = null, ao = false, pleat = 0, crease = 0.4, allFaces = 0, crush = 1, seam = 0, freq = 1, spec = 0.1, sheenAmt = 0.8, dent = false }) {
   const m = new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, sheen: sheenAmt, sheenColor: new THREE.Color(sheen), sheenRoughness: sheenRough, specularIntensity: spec, side: THREE.DoubleSide, vertexColors: ao });
@@ -1909,7 +1936,9 @@ function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, 
           { vec2 gr; dentAt((modelMatrix * vec4(position, 1.0)).xyz, gr); mat3 mm = mat3(modelMatrix); vec3 wn = normalize(mm * objectNormal);
             objectNormal = normalize(inverse(mm) * normalize(wn - vec3(gr.x, 0.0, gr.y) * max(wn.y, 0.0))); }`)
         .replace('vObjN = objectNormal;', `vObjN = objectNormal;
-          { vec2 gr; float dd = dentAt((modelMatrix * vec4(transformed, 1.0)).xyz, gr); transformed += inverse(mat3(modelMatrix)) * vec3(0.0, -dd, 0.0); }`);
+          { vec2 gr; vec3 w0 = (modelMatrix * vec4(transformed, 1.0)).xyz; float dd = dentAt(w0, gr); transformed += inverse(mat3(modelMatrix)) * vec3(0.0, -dd, 0.0); vDentW = w0; vDentD = dd; }`)
+        .replace('#include <common>', '#include <common>\nvarying vec3 vDentW; varying float vDentD;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vDentW; varying float vDentD;' + DENT_FOLDS);
     }
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vObjP; varying vec3 vObjN;
@@ -1949,6 +1978,7 @@ function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, 
           float hC = (vfbm(vObjP * uFreq * 3.0 + 1.3) - 0.5) * 0.012 * uCrush * (0.4 + vCrush);
           vHt = (hF + hC) * length(modelMatrix[0].xyz);           // metres in world space
           vCav = clamp(1.0 + hF * 30.0, 0.55, 1.0);                // fold valleys hold shadow
+          ${dent ? 'vHt += dentFolds(vDentW); vCav *= 1.0 - 0.16 * smoothstep(0.0, 0.035, vDentD);   // (the cover drawn in round the cat; the hollow\'s floor a little in shadow)' : ''}
         }
         diffuseColor.rgb *= mix(0.9, 1.07, vCrush * uCrush + (1.0 - uCrush) * 0.5) * vCav;`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -2082,6 +2112,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const cj = candleJar(); cj.position.set(-0.72, 0.42, -6.25); F.add(cj); LIGHTS.candle = cj;
   const tb1 = flatBook(B.book_book002, 0.35 + Math.PI / 2, 1.15); tb1.position.set(-0.13, 0.42, -6.22); F.add(tb1);
   const tb2 = flatBook(B.book_book01, 0.2 + Math.PI / 2, 1.1); tb2.position.set(-0.13, 0.42 + tb1.userData.h, -6.21); F.add(tb2);
+  paintLightly(tb1, 0.1); paintLightly(tb2, 0.1);   // (every book 10 % less watercolour: G, 17/10/2026)
   // ---- floor lamp in the back-right corner, behind the sofa
   const fl = floorLamp(); fl.position.set(R.xS - 0.28, 0, R.zB + R.caseD + 0.16); fl.rotation.y = -0.15; F.add(fl); LIGHTS.floor = fl;
   paintLightly(fl);   // (75 % less watercolour on it: G, 16/10/2026)
@@ -2093,6 +2124,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const st = stumpTable(); st.position.set(R.xL + 0.32, 0, -5.85); F.add(st);
   const pot = new THREE.Mesh(new THREE.LatheGeometry([[.001, 0], [.1, 0], [.14, .05], [.15, .11], [.14, .12]].map(p => new THREE.Vector2(p[0], p[1])), 28), MAT.stone); pot.position.set(R.xL + 0.28, 0.53, -5.98); pot.castShadow = true; F.add(pot);
   const pl = plant({ leaves: 120, spread: 0.55, height: 0.7, seed: 11, scale: 0.13 }); pl.position.set(R.xL + 0.28, 0.6, -5.98); F.add(pl);
+  for (const o of [st, pot, pl]) paintLightly(o, 0.5);   // (the plant, its pot and its stump: 50 % less watercolour, G, 17/10/2026)
   // ---- rug + pouf + books on it
   MAT.pouf = makeVelvet({ color: 0x30553c, sheen: 0xd6e6cf, sheenAmt: 1, sheenRough: 0.5, pleat: 0, crease: 1.1, allFaces: 1, freq: 1.6, ao: true });   // fine crumple shading between the modelled folds
   const pouf = new THREE.Mesh(poufGeometry(1.4, 1.22, 0.5), MAT.pouf);
@@ -2114,6 +2146,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
     obj.position.set(x, y, z); obj.rotation.set(-tiltX, yaw, tiltZ, 'YXZ'); F.add(obj); return y; };
   const toW = (lx, lz) => new THREE.Vector3(lx, 0, lz).applyAxisAngle(new THREE.Vector3(0, 1, 0), pouf.rotation.y).add(pouf.position);
   const b1 = flatBook(B.book_book002, Math.PI / 2, 1.5), b2 = flatBook(B.book_book005, Math.PI / 2 + 0.07, 1.42), b3 = flatBook(B.book_book006, Math.PI / 2, 1.55);
+  for (const b of [b1, b2, b3]) paintLightly(b, 0.1);
   { const p = toW(-0.17, -0.22); restOn(b1, p.x, p.z, 0.22, 0.13, 0.17); }
   const y2 = b1.position.y + b1.userData.h; b2.position.set(b1.position.x + 0.006, y2, b1.position.z - 0.004); b2.rotation.copy(b1.rotation); b2.rotation.y += 0.06; F.add(b2);
   { const p = toW(-0.33, 0.05); restOn(b3, p.x, p.z, 0.36, 0.14, 0.19); }
@@ -2139,7 +2172,7 @@ function dust() {
 }
 /* ---------------------------------------------------------------- post: watercolour */
 // (light: the parts of the room painted lightly, drawLight below)
-const POST = { light: { scene: new THREE.Scene(), parts: [], mat: null, k: { value: 0.75 } } };
+const POST = { light: { scene: new THREE.Scene(), parts: [], mats: new Map(), k: { value: 1 } } };   // (k: all of each part's own share)
 /* The watercolour picture is made in three passes:
    1. tone: the scene's colours through the tone curve, once per pixel (the paint pass reads each one ~50 times);
    2. paper: the noise fields that only depend on the screen position (wobble, pigment, fibres, blotches, paper grain),
@@ -2249,26 +2282,33 @@ function buildPost() {
       vec3 b = a * 0.5 + 0.25 * (texture2D(t, vUv - dir * 0.5).rgb + texture2D(t, vUv + dir * 0.5).rgb);
       float lb = L(b); gl_FragColor = vec4((lb < lo || lb > hi) ? a : b, 1.0); }`);
 }
-/* ---- parts of the room painted lightly (G, 16/10/2026: the floor lamp behind the sofa "75% less" watercolour; 17/10: the
-   table lamp by the sofa too): stand-ins
-   for their meshes, in a scene of their own, drawn into the picture's target after the room, through the room's own
-   depth (so what stands in front of them still hides them), writing nothing but the target's alpha: 0 where they show,
-   1 everywhere else (set first: the leaves' alpha-to-coverage leaves less than 1 in it). The tone pass hands that on and
-   the paint pass lets 75 % of the paint go there, the part as drawn under the paper's lift and warmth. They stay in the
-   room: lit, shadowed, in its depth. */
-function paintLightly(obj) {
-  const L = POST.light;
-  if (!L.mat) L.mat = new THREE.ShaderMaterial({ vertexShader: 'void main(){ gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: 'void main(){ gl_FragColor = vec4(0.0); }', side: THREE.DoubleSide, depthTest: true, depthWrite: false,
+/* ---- parts of the room painted lightly: stand-ins for their meshes, in a scene of their own.
+   - Asked for: the floor lamp behind the sofa "75% less" watercolour (G, 16/10/2026); 17/10: the table lamp by the
+     sofa too, then the potted plant by the glass 50 % less and every book 10 % less.
+   - They are drawn into the picture's target after the room, through the room's own depth, so what stands in front of
+     them still hides them.
+   - They write nothing but the target's alpha: 1 − k where they show (k: how much less paint), 1 everywhere else (set
+     first: the leaves' alpha-to-coverage leaves less than 1 in it).
+   - The tone pass hands 1 − alpha on, and the paint pass lets that share of the paint go, the part as drawn under the
+     paper's lift and warmth.
+   - The parts stay in the room: lit, shadowed, in its depth. An instanced mesh's stand-in shares its instances. */
+function paintLightly(obj, k = 0.75) {
+  const L = POST.light; let mat = L.mats.get(k);
+  if (!mat) L.mats.set(k, mat = new THREE.ShaderMaterial({ vertexShader: 'void main(){ vec4 p = vec4(position, 1.0);\n#ifdef USE_INSTANCING\n  p = instanceMatrix * p;\n#endif\n  gl_Position = projectionMatrix * modelViewMatrix * p; }',
+    fragmentShader: `void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, ${(1 - k).toFixed(3)}); }`, side: THREE.DoubleSide, depthTest: true, depthWrite: false,
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,   // (its own surface, drawn twice, always passes the depth test)
-    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor });
+    blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor }));
   if (!L.reset) L.reset = new FullScreenQuad(new THREE.ShaderMaterial({ vertexShader: QUAD_VS, fragmentShader: 'void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }',
     depthTest: false, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor }));
-  obj.traverse(o => { if (!o.isMesh) return; const c = new THREE.Mesh(o.geometry, L.mat); c.matrixAutoUpdate = false; L.scene.add(c); L.parts.push([c, o]); });
+  obj.traverse(o => {
+    if (!o.isMesh) return; const c = o.isInstancedMesh ? new THREE.InstancedMesh(o.geometry, mat, o.count) : new THREE.Mesh(o.geometry, mat);
+    if (o.isInstancedMesh) c.instanceMatrix = o.instanceMatrix;   // (the same instances, as they move)
+    c.matrixAutoUpdate = false; c.frustumCulled = false; L.scene.add(c); L.parts.push([c, o]);
+  });
 }
 function drawLight(camera) {   // (into the picture's target, right after the room)
   const L = POST.light; if (!L.parts.length) return;
-  for (const [c, o] of L.parts) { c.matrix.copy(o.matrixWorld); c.matrixWorldNeedsUpdate = true; let v = o.visible; for (let p = o.parent; v && p; p = p.parent) v = p.visible; c.visible = v; }
+  for (const [c, o] of L.parts) { c.matrix.copy(o.matrixWorld); c.matrixWorldNeedsUpdate = true; if (o.isInstancedMesh) c.count = o.count; let v = o.visible; for (let p = o.parent; v && p; p = p.parent) v = p.visible; c.visible = v; }
   const ac = renderer.autoClear; renderer.autoClear = false; L.reset.render(renderer); renderer.render(L.scene, camera); renderer.autoClear = ac;
 }
 function bakePaper(w, h) {   // the screen-fixed noise of the paint pass, for this window size
@@ -2373,7 +2413,7 @@ async function main() {
   setLoad(0.05); await tick();
   await buildTextures(); setLoad(0.25); buildMaterials();
   buildRoom(); setLoad(0.3);
-  BOOK.atlas = buildSpineAtlas(); buildShelves(); booksMesh = buildBookInstances(); setLoad(0.45); await tick();
+  BOOK.atlas = buildSpineAtlas(); buildShelves(); booksMesh = buildBookInstances(); paintLightly(booksMesh, 0.1); setLoad(0.45); await tick();   // (the shelves' books: 10 % less watercolour, G, 17/10/2026)
   buildLights(); buildPost();
   const trees = await makeTrees(); await tick();   // built in code while the models download
   // they sway as the GLB trees did: the sway grows with the square of the height in model units, and those models were
@@ -4009,8 +4049,8 @@ function readHint(bk, h) {
 }
 function relabelRead(bk) { const R = bk.read; if (!R || !R.painting) return; titlePaint(R); for (const f of [2 * R.spread - 1, 2 * R.spread]) if (f >= 0) facePaint(R, f); R.painting = false; readOpening(bk); }
 /* ---- the titles on the shelves' spines: drawn after the watercolour pass so they stay sharp, and hidden wherever the
-   room stands in front of the book (each pixel is tested against the room's depth). (A book out of the shelf has its
-   words printed on itself: hero-books.js.) */
+   room stands in front of the book (each pixel is tested against the room's depth); shown only once its section is
+   opened and the camera has come close. (A book out of the shelf has its words printed on itself: hero-books.js.) */
 const OVER = { scene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) } } };
 function crispMaterial(map) {
   return new THREE.ShaderMaterial({
@@ -4072,7 +4112,8 @@ function spinePx(bk) {   // how wide the spine shows on screen, in pixels
 function drawWords() {   // the sharp layer: titles on the spines, words of the books on the move, and the night sky
   let any = false;
   for (const sec of UIS.secs) for (const bk of sec.books) {
-    const on = !bk.away && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;   // too narrow to read (the whole room in view): none
+    // only in the close-up of its own section (G, 17/10/2026: "các text này ko nên hiện ra khi chưa close up"), and wide enough to read there
+    const on = !bk.away && UIS.open === sec && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;
   }
   if (OVER.sky) { const night = NIGHT.u.value > 0.005; OVER.sky.visible = night; if (night) { OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); stepMeteors(clock.getElapsedTime(), camera); } }
   if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
@@ -4303,7 +4344,7 @@ const STAR_BSC5 =
    with faint stars (a field of them, made in the shader, as many as the photo shows: some 35 a 100 × 100 px patch), the
    band clumped into star clouds that sparkle with the stars they are made of, cut by ragged dust lanes, and the moon
    washing out less of it than it would the real one; then the band 20 % fainter, twice (G, 16/10/2026: "less bright
-   20%", "bớt sáng lại 20%"), the field of stars and the dark of the sky as they were. ?sky=real shows the sky as it stands over the visitor at this minute
+   20%", "bớt sáng lại 20%"), and with 30 % less light from it again (G, 17/10/2026: "cho dải ngân hà bớt sáng lại 30%"; its terms at 0.75 of what they were, as its fainter grain thins out too: measured 0.70 of the light it added), the field of stars and the dark of the sky as they were. ?sky=real shows the sky as it stands over the visitor at this minute
    instead (turning with the hours, dimmed low down by the full air).
    Drawn back to front: the Milky Way, the stars, the comet, then the moon over them (it hides what is behind it), and
    the shooting stars last (they burn in our own air, in front of the moon). The moon has the phase of the page's sky
@@ -4455,7 +4496,7 @@ function buildStars(sky) {
             float s1 = fract(sin(dot(ci, vec3(12.9898, 78.233, 37.719))) * 43758.5453), s2 = fract(s1 * 37.13 + 0.17), s3 = fract(s1 * 91.7 + 0.53), s4 = fract(s1 * 13.1 + 0.71);
             float sdd = length(cf - (vec3(s2, s3, s4) - 0.5) * 0.6);
             float grain = smoothstep(0.32, 0.0, sdd) * step(s1, clamp(I * 1.7, 0.0, 0.85)) * (0.3 + 0.7 * s3 * s3) * smoothstep(1.2, 2.4, cellPx);
-            c += uMW * grain * mix(vec3(0.76, 0.85, 1.0), vec3(1.0, 0.92, 0.8), s2 * 0.7) * 0.96; }
+            c += uMW * grain * mix(vec3(0.76, 0.85, 1.0), vec3(1.0, 0.92, 0.8), s2 * 0.7) * 0.719; }
           // its stars that a long exposure picks out one by one, as many and as bright as the band is there, so that it
           // sparkles (cells of ~0.1°; each a soft point a pixel or two across, its size in pixels whatever the view, kept
           // inside its cell)
@@ -4463,7 +4504,7 @@ function buildStars(sky) {
             float k1 = fract(sin(dot(bi, vec3(269.5, 183.3, 246.1))) * 43758.5453), k2 = fract(k1 * 29.71 + 0.43), k3 = fract(k1 * 67.13 + 0.29), k4 = fract(k1 * 11.37 + 0.77), k5 = fract(k1 * 83.91 + 0.59);
             float k53 = k5 * k5 * k5, rq = length(bf - (vec3(k2, k3, k4) - 0.5) * 0.3) * bPx, sq = 0.65 + 0.45 * k53;
             float sb = step(k1, clamp(I * 1.2, 0.0, 0.9)) * (0.1 + 0.8 * k53) * (0.5 + 0.7 * min(I, 1.5)) * exp(-rq * rq / (2.0 * sq * sq)) * smoothstep(2.5, 5.0, bPx);
-            c += uMW * sb * mix(vec3(0.8, 0.87, 1.0), vec3(1.0, 0.86, 0.66), max(kw, step(0.8, k4))) * 0.96; }
+            c += uMW * sb * mix(vec3(0.8, 0.87, 1.0), vec3(1.0, 0.86, 0.66), max(kw, step(0.8, k4))) * 0.719; }
           // the field: faint stars all over the sky, thicker toward the band and fewer behind its dust, as the photo is
           // crowded with them (cells of ~0.15°, a star in about a third of them, most faint, a few bright, the brighter the
           // wider; let go where the cells come under 3 pixels)
@@ -4503,7 +4544,7 @@ function stepStars() {
       _sY.crossVectors(_sZ, _sX);                                   // (longitude 90° along it toward b)
       _sM.set(_sX.x, _sY.x, _sZ.x, _sX.y, _sY.y, _sZ.y, _sX.z, _sY.z, _sZ.z);   // galactic → the room
       STARU.uEq.value.multiplyMatrices(_sM, GAL); STARU.uGal.value.copy(_sM).transpose();
-      STARU.uExtS.value = 0.07; STARU.uExtM.value = 0.07; STARU.uHz.value = 0.035; STARU.uBand.value = 3.4; STARU.uMWK.value = 1.98; STARU.uBandStars.value = 1; STARU.uGrain.value = 2.4; STARU.uBandMag.value = -1.9;   // (10 % brighter and clearer again: G, 16/10/2026)
+      STARU.uExtS.value = 0.07; STARU.uExtM.value = 0.07; STARU.uHz.value = 0.035; STARU.uBand.value = 3.4; STARU.uMWK.value = 1.483; STARU.uBandStars.value = 1; STARU.uGrain.value = 2.4; STARU.uBandMag.value = -1.59;   // (10 % brighter and clearer again: G, 16/10/2026; then 30 % less light from it, measured: G, 17/10/2026)
       STARU.uField.value = 1; STARU.uFaintMag.value = -1.0;   // (the sky crowded with faint stars, as G's photo of it is: 16/10/2026)
     }
   } else stepRealSky();
@@ -5418,7 +5459,7 @@ const PETS = { ok: false, cat: null, holder: null, chicken: null, layer: 1, last
 // where the cat stays (by day the floor between the stump table and the glass, by night the chaise: on the flat of its
 // cushion, back from the front edge where it rounds off), and where it jumps. sink: how far it presses into what it
 // lies on (a soft cushion gives ~1 cm under a cat; the floor none)
-const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12, sink: 0 }, night: { x: 1.62, z: -6.1, yaw: -1.83, sink: 0.012 } };   // (asleep on its side, its face and paws toward the room)
+const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12, sink: 0 }, night: { x: 1.62, z: -6.1, yaw: -1.83, sink: 0.022 } };   // (night: into the ~3 cm hollow it makes)   // (asleep on its side, its face and paws toward the room)
 const CAT_WAY = { floor: [1.22, -5.22], seat: [1.5, -6.02] };   // the floor left of the deck, the chaise's cushion
 // the chicken's patch of lawn outside the left glass (it wanders in it), and its height
 const HEN_AREA = { x0: -2.45, x1: -1.85, z0: -5.7, z1: -4.5, h: 0.42 };   // clear of the sill, so its legs show
@@ -5675,25 +5716,74 @@ const gauge = (p, dur) => ({ dur, run: (k, dt, st, t) => {   // it looks at wher
 } });
 const gather = (dur, depth) => ({ dur, run: k => { const e = ease(k); Object.assign(W, { pose: 'stalk', ik: true, dy: -depth * e, pitch: -0.08 * e, half: 0.2 }); W.ears = 1; } });
 const leap = (to, T) => ({ run: (k, dt, st, t) => {   // ballistic: up as much faster as it has to rise, g pulling it back down
-  const G = CAT.G; if (!st.s) { if (G.y > 0.2) DENT.v += 0.28; st.s = { x: G.x, y: G.y, z: G.z }; st.vy = (to[1] - G.y + 4.905 * T * T) / T; st.vh = Math.hypot(to[0] - G.x, to[2] - G.z) / T; G.yaw = Math.atan2(to[0] - G.x, to[2] - G.z); }
+  const G = CAT.G; if (!st.s) { if (G.y > 0.2) DENT.body.v += 0.28; st.s = { x: G.x, y: G.y, z: G.z }; st.vy = (to[1] - G.y + 4.905 * T * T) / T; st.vh = Math.hypot(to[0] - G.x, to[2] - G.z) / T; G.yaw = Math.atan2(to[0] - G.x, to[2] - G.z); }
   const u = Math.min(T, t), q = u / T; G.x = st.s.x + (to[0] - st.s.x) * q; G.z = st.s.z + (to[2] - st.s.z) * q; G.y = st.s.y + st.vy * u - 4.905 * u * u;
   Object.assign(W, { pose: 'air', half: 0.07, pitch: -Math.atan2(st.vy - 9.81 * u, st.vh) * 0.5 });
   W.look = _w.set(to[0], to[1], to[2]); W.lookK = 0.8;
-  if (t >= T) { G.y = to[1]; G.sink = 0; G.feet = null; if (to[1] > 0.2) DENT.v += 0.55; delete st.s; return true; }   // (landing on the cushion: it gives)
+  if (t >= T) { G.y = to[1]; G.sink = 0; G.feet = null; if (to[1] > 0.2) DENT.body.v += 0.55; delete st.s; return true; }   // (landing on the cushion: it gives)
 } });
-// the cushion under the cat (velvet.js SOFT): a hollow where it stands (smaller, ~1.3 cm) or lies (wider, ~2 cm: a
-// soft cushion under a 4 kg cat), deeper as it lands and springing back with a bounce or two as it leaves (a damped spring, ~0.28 s, damping
-// 0.3); the room is drawn again only while the hollow moves
-const DENT = { d: 0, v: 0, x: 0, z: 0, r: 0.13, last: [0, 0, 0, 0] };
+// the cushion under the cat (velvet.js SOFT), as a seat cushion gives (G, 17/10/2026: "do research và tăng độ lún mềm của
+// sofa khi mèo tương tác"). A seat cushion's foam is rated by the force (IFD, ASTM D3574) that presses 10 cm of it down by
+// a quarter under a 50 in² plate: some 20 to 40 lbf for a seat; the layers over the core softer, a feather wrap softest.
+// - Lying, a hollow the shape of its body (an ellipse along it, round as it curls), ~3 cm. A 4.5 kg cat over ~0.04 m²
+//   is ~1.1 kPa, a third of what takes an IFD 25 core down by a quarter (3.4 kPa): ~8 % of 10 cm. The feather wrap over
+//   it gives about half of its ~4 cm.
+// - Standing, walking, kneading: each paw its own deep, narrow print, a forepaw's ~3 cm and a hind paw's ~2.4. The
+//   forelimbs carry 48–62 % of a cat's weight (pressure walkways: Schnabl-Feichter et al. 2017); ~12 N on a few cm² of
+//   pad crushes the soft wrap. The body only sags the cover between them. A paw lifted lets its print go where it was,
+//   and the cat stands as deep as its paws are in (give).
+// - Sitting: the haunches' hollow and the forepaws'.
+// - Each a damped spring: the body's bounces a little as the cat lands, the paws' are quicker.
+// - Where it lay a while, a third of the hollow stays when it gets up, going over ~20 s: a feather wrap keeps to a
+//   favourite spot until it is plumped.
+// The room is drawn again only while a hollow moves.
+const FEET_D = ['lf', 'rf', 'lh', 'rh'];
+const DENT = { body: { x: 0, z: 0, ca: 1, sa: 0, ra: 0.16, rb: 0.12, d: 0, v: 0 }, imp: { x: 0, z: 0, ca: 1, sa: 0, ra: 0.16, rb: 0.12, d: 0 },
+  paws: FEET_D.map(f => ({ f, x: 0, z: 0, r: f.endsWith('f') ? 0.055 : 0.05, d: 0, v: 0 })), lyingT: 0, give: 0, sig: '' };
 PETS.dent = DENT; PETS.soft = SOFT;   // (for tests)
+const _dh = new THREE.Vector3(), _dc = new THREE.Vector3(), _dp = new THREE.Vector3(), _dt = new THREE.Vector3();
+function padAt(L, out) {   // where a paw's pad is (world): the hind's toe, a forepaw's ball (60 % of the way to the paw bone's tip, as cat.js has it)
+  if (L.toe) return L.toe.getWorldPosition(out);
+  L.end.getWorldPosition(out); _dt.set(0, L.end.userData.len, 0).applyMatrix4(L.end.matrixWorld);
+  return out.lerp(_dt, 0.6);
+}
+function spring(o, goal, w2, c, dt) { for (let n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n, i = 0; i < n; i++) { o.v += (w2 * (goal - o.d) - c * o.v) * h; o.d = Math.max(0, o.d + o.v * h); } if (Math.abs(o.d - goal) < 1e-5 && Math.abs(o.v) < 1e-4) { o.d = goal; o.v = 0; } }
 function stepDent(dt) {
-  const hp = PETS.holder.position, on = hp.y > 0.2 && W.pose !== 'air', lying = /curl|nest|side|sphinx|loaf/.test(W.pose || '');
-  const goal = on ? (lying ? 0.019 : 0.013) : 0, rr = lying ? 0.21 : 0.14;
-  if (on) { const k = Math.min(1, dt * 10); DENT.x += (hp.x - DENT.x) * (DENT.d < 1e-4 ? 1 : k); DENT.z += (hp.z - DENT.z) * (DENT.d < 1e-4 ? 1 : k); DENT.r += (rr - DENT.r) * Math.min(1, dt * 4); }
-  for (let n = Math.max(1, Math.ceil(dt / 0.008)), h = dt / n, i = 0; i < n; i++) { DENT.v += (504 * (goal - DENT.d) - 13.5 * DENT.v) * h; DENT.d = Math.max(0, DENT.d + DENT.v * h); }
-  if (Math.abs(DENT.d - goal) < 1e-5 && Math.abs(DENT.v) < 1e-4) { DENT.d = goal; DENT.v = 0; }
-  SOFT.u.uDent.value.set(DENT.x, DENT.z, DENT.r, Math.min(0.04, DENT.d));
-  const L = DENT.last; if (Math.abs(DENT.d - L[0]) > 4e-4 || Math.hypot(DENT.x - L[1], DENT.z - L[2]) > 0.004 || Math.abs(DENT.r - L[3]) > 0.004) { L[0] = DENT.d; L[1] = DENT.x; L[2] = DENT.z; L[3] = DENT.r; setNeeds(true); }
+  const hp = PETS.holder.position, pose = W.pose || '', on = PETS.holder.visible && hp.y > 0.2 && pose !== 'air';
+  const lying = /curl|nest|side|sphinx|loaf/.test(pose), sitting = /sit|lick|wipe/.test(pose), B = DENT.body, Bn = CATR.bones;
+  // the body: where its hips and chest are, and the hollow's shape for the pose
+  let goal = 0;
+  if (on && Bn.hips && Bn.chest) {
+    Bn.hips.getWorldPosition(_dh); Bn.chest.getWorldPosition(_dc);
+    const ax = _dc.x - _dh.x, az = _dc.z - _dh.z, len = Math.hypot(ax, az) || 1, k = B.d < 1e-4 ? 1 : 1 - Math.exp(-dt / 0.08);
+    let x = (_dh.x + _dc.x) / 2, z = (_dh.z + _dc.z) / 2, ra, rb;
+    if (lying) { goal = 0.03; if (/curl|nest/.test(pose)) ra = rb = 0.17; else if (pose === 'side') { ra = len / 2 + 0.13; rb = 0.13; } else { ra = len / 2 + 0.1; rb = 0.12; } }
+    else if (sitting) { goal = 0.026; x = _dh.x; z = _dh.z; ra = rb = 0.12; }
+    else { goal = 0.006; ra = len / 2 + 0.08; rb = 0.1; }
+    B.x += (x - B.x) * k; B.z += (z - B.z) * k; B.ca += (ax / len - B.ca) * k; B.sa += (az / len - B.sa) * k; B.ra += (ra - B.ra) * k; B.rb += (rb - B.rb) * k;
+    const n = Math.hypot(B.ca, B.sa) || 1; B.ca /= n; B.sa /= n;
+  }
+  spring(B, goal, 504, 13.5, dt);
+  // where it lay a while: an imprint stays as it gets up, going slowly
+  const I = DENT.imp;
+  if (on && lying) DENT.lyingT += dt;
+  else { if (DENT.lyingT > 5 && B.d > 0.01) { Object.assign(I, { x: B.x, z: B.z, ca: B.ca, sa: B.sa, ra: B.ra, rb: B.rb }); I.d = Math.max(I.d, 0.32 * B.d); } DENT.lyingT = 0; }
+  I.d = I.d > 1e-4 ? I.d * Math.exp(-dt / 18) : 0;
+  // the paws: each bearing on the cushion presses its own print (not while it lies: they are tucked under it)
+  const ground = CAT_WAY.seatY - DENT.give; let gs = 0, gw = 0; DENT.pose = pose;   // (pose, and each paw's h: its pad's height over the cushion, for tests)
+  for (const P of DENT.paws) {
+    const L = CATR.legs && CATR.legs[P.f]; let c = 0;
+    if (on && L && !lying && !(sitting && L.hind)) { padAt(L, _dp); P.h = _dp.y - ground; c = 1 - THREE.MathUtils.smoothstep(P.h, 0.015, 0.035); if (c > 0.25) { const kk = 1 - Math.exp(-dt / 0.03); P.x += (_dp.x - P.x) * (P.d < 1e-4 ? 1 : kk); P.z += (_dp.z - P.z) * (P.d < 1e-4 ? 1 : kk); } }
+    spring(P, c * (L && !L.hind ? (sitting ? 0.026 : 0.03) : 0.024), 900, 36, dt);
+    if (c > 0) { gs += P.d * c; gw += c; }
+  }
+  // how deep it stands: its paws in their prints (sitting: its haunches in theirs)
+  const giveT = !on || lying ? 0 : sitting ? 0.8 * B.d : gw > 0 ? 0.85 * gs / gw : DENT.give;
+  DENT.give += (giveT - DENT.give) * Math.min(1, dt / 0.05);
+  const U = SOFT.u; U.uDentB.value.set(B.x, B.z, B.d, 0); U.uDentA.value.set(B.ca, B.sa, B.ra, B.rb); U.uDentI.value.set(I.x, I.z, I.d, 0); U.uDentIA.value.set(I.ca, I.sa, I.ra, I.rb);
+  DENT.paws.forEach((P, i) => U.uPaw.value[i].set(P.x, P.z, P.r, P.d));
+  const sig = [B.d, B.x, B.z, B.ra, I.d, ...DENT.paws.flatMap(P => [P.d, P.x, P.z])].map(v => Math.round(v * 500)).join(',');   // (2 mm steps)
+  if (sig !== DENT.sig) { DENT.sig = sig; setNeeds(true); }
 }
 const touch = dur => ({ dur, run: k => {   // forepaws first, elbows giving, then the hind paws
   Object.assign(W, { pose: 'stand', half: 0.1, ik: true, pitch: 0.2 * (1 - ease(Math.min(1, k * 1.7))), dy: -0.028 * Math.sin(Math.PI * Math.min(1, k * 1.25)), hindUp: Math.max(0, 1 - k * 3.2) });
@@ -5796,7 +5886,7 @@ function moveCat(t, dt, night) {
   const G = CAT.G, P = CATR.poses[W.pose] || CATR.poses.stand, H = PETS.holder;
   catToward(P, dt, W.half); furComb(CATR.body);
   // the holder: where it is and which way it faces; the body over it, pitched and lowered as wished
-  H.position.set(G.x, G.y, G.z); H.rotation.set(0, G.yaw, 0);
+  H.position.set(G.x, G.y - DENT.give, G.z); H.rotation.set(0, G.yaw, 0);   // (as deep as its paws, or its haunches, are in the cushion)
   const sl = CAT.sigh > 0 ? 1 + 1.4 * Math.sin(Math.PI * CAT.sigh) : 1, br = Math.sin(t * Math.PI * 2 * (night ? 0.3 : 0.38)) * sl;   // breaths: ~23 a minute awake, 18 asleep
   const bk = 1 - CAT.ikW;   // (not while it stands or walks: the whole body swelling would thicken and thin its legs)
   H.scale.set(1 + (night ? 0.012 : 0.008) * br * bk, 1 + (night ? 0.016 : 0.01) * br * bk, 1); H.updateMatrixWorld(true);
@@ -5816,7 +5906,7 @@ function moveCat(t, dt, night) {
   if (!W.ik && W.pose !== 'air') {   // between poses no part of it may go into what it lies on (deeper than a cushion gives)
     const m = CATR.mesh, g = CATR.ground; let low = Infinity;
     for (let i = 0; i < g.length; i += 3) low = Math.min(low, m.getVertexPosition(g[i], _v).applyMatrix4(m.matrixWorld).y);
-    const floor = G.y - 0.004;   // (G.y is the surface less the cushion's give)
+    const floor = G.y - DENT.give - 0.004;   // (G.y is the surface less the cushion's give)
     if (low < floor) { body.position.y += floor - low; body.updateMatrixWorld(true); }
   }
   // the legs: by the gait on the ground, or as the pose has them (crossing between the two over a fifth of a second)
@@ -5832,7 +5922,7 @@ function moveCat(t, dt, night) {
       if (L.hind && W.hindUp > 0) { p.y += 0.03 * W.hindUp; p.addScaledVector(_v.set(Math.sin(G.yaw), 0, Math.cos(G.yaw)), -0.02 * W.hindUp); curl = Math.max(curl, 0.5 * W.hindUp); }
       if (!L.hind && W.knead >= 0) { const s = Math.sin(Math.PI * 2 * W.knead + (f === 'rf' ? Math.PI : 0)); if (s > 0) { p.y += 0.014 * s; curl = Math.max(curl, 0.35 * s); } }
       if (L.hind && M.wiggle) p.y += 0.006 * Math.max(0, (f === 'lh' ? 1 : -1) * M.wiggle);   // treading as it wiggles
-      catReach(f, p, curl, yawQ);
+      p.y -= DENT.give; catReach(f, p, curl, yawQ);   // (into its print)
       if (CAT.ikW < 1) for (const b of bones) { _q.copy(b.quaternion); b.quaternion.copy(_ikq.get(b)).slerp(_q, CAT.ikW); b.updateWorldMatrix(false, true); }
       catKeep(bones, dt);
     }
@@ -5883,7 +5973,7 @@ function idleLife(t, dt, night) {
 }
 function placeShadow(G, pose) {   // the contact shadow: its shape (lying, sitting, curled, standing) and where the cat is
   const sh = PETS.catShadow, S = { sphinx: [1, 1], sit: [0.62, 0.9], lick: [0.62, 0.9], wipe: [0.62, 0.9], curl: [0.75, 1.15], nest: [0.8, 0.9], air: [0.5, 0.5] }[pose] || [0.85, 0.65];
-  const y = pose === 'air' ? (G.y > 0.2 ? CAT_WAY.seatY : 0) : G.y + (G.sink || 0);   // on the surface, not where it is pressed in to
+  const y = pose === 'air' ? (G.y > 0.2 ? CAT_WAY.seatY : 0) : G.y + (G.sink || 0) - 0.9 * DENT.body.d;   // on the hollow's floor (only its middle shows: the cushion hides the rest)
   sh.position.set(G.x, y + 0.004, G.z); sh.rotation.z = G.yaw + Math.PI / 2; sh.scale.set(S[0], S[1], 1);
 }
 /* ---- the chicken: acts (walk, scratch, step back, peer, peck, stand, turn) over a gait that keeps its feet planted */
