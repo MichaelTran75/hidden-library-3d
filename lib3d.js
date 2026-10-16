@@ -3479,8 +3479,8 @@ function buildStars(sky) {
     uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, ...STARU },
     vertexShader: 'uniform vec3 uEye; varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * viewMatrix * vec4(uEye + position, 1.0); }',
     fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uMW, uMoonK, uExtM, uHz, uBand, uMWK, uGrain; uniform mat3 uGal; uniform vec3 uMoon; varying vec3 vD;
-      ${SKY_NOISE} ${AIRMASS}
-      void main() { ${SKY_DEPTH}
+      ${SKY_NOISE} ${AIRMASS} ${SKY_COVER}
+      void main() { float cov = skyCover(); if (cov < 0.01) discard;
         vec3 d = normalize(vD); float el = d.y; if (el < -0.02) discard;
         vec3 c = vec3(0.0);
         if (uMW > 0.003) {   // in galactic coordinates (x toward the centre, z toward the north galactic pole)
@@ -3510,7 +3510,7 @@ function buildStars(sky) {
         c += uMW * vec3(0.012, 0.022, 0.013) * smoothstep(0.0, 0.06, el) * exp(-el / 0.3);   // the airglow: the upper air's own faint green light, low in a dark sky
         float mn = max(dot(d, uMoon), 0.0);
         c += uMoonK * vec3(0.05, 0.065, 0.09) * (0.35 * pow(mn, 6.0) + 0.65 * pow(mn, 60.0));   // the moon's light in the air round it
-        c *= uNight; if (max(c.r, max(c.g, c.b)) < 0.002) discard;
+        c *= uNight * cov; if (max(c.r, max(c.g, c.b)) < 0.002) discard;
         gl_FragColor = vec4(c, 0.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
   mw.frustumCulled = false; mw.renderOrder = 0; sky.add(mw);
@@ -3558,6 +3558,13 @@ function skyLight() {   // how faint a star is still seen, and how bright the Mi
 const LUNAR = 29.530588853, NEW_MOON = Date.UTC(2025, 6, 25, 18, 2);   // the page's own reference new moon
 const moonAge = (t = Date.now()) => ((((t - NEW_MOON) / 864e5) % LUNAR) + LUNAR) % LUNAR / LUNAR;   // 0 new, 0.5 full
 const SKY_DEPTH = 'if (gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 1e-7) discard;';
+// how much of a pixel shows sky, softly: the room's depth is a coarser grid than the screen (80 % of CSS pixels against
+// the screen's two a pixel), so a test of its one nearest texel left the leaves' edges against a lit sky in steps (G,
+// 16/10/2026: the trees by night jagged where by day they were not); 3 × 3 taps across a texel and a third, averaged
+const SKY_COVER = `float skyCover() {
+  vec2 uv = gl_FragCoord.xy / uRes, tx = 0.66 / vec2(textureSize(uDepth, 0)); float s = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) s += step(gl_FragCoord.z, texture2D(uDepth, uv + vec2(float(i), float(j)) * tx).r + 1e-7);
+  return s / 9.0; }`;
 function buildNightSky() {
   const eye = REF.eye, far = 240, sky = new THREE.Group(); sky.visible = false; OVER.scene.add(sky); OVER.sky = sky;
   OVER.u.uTime = { value: 0 }; OVER.u.uPR = { value: 1 }; OVER.moonAge = { value: moonAge() };
@@ -3569,14 +3576,14 @@ function buildNightSky() {
   const moon = new THREE.Mesh(new THREE.PlaneGeometry(6 * rad, 6 * rad), new THREE.ShaderMaterial({
     uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, uAge: OVER.moonAge, uImg: OVER.moonImg },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform sampler2D uDepth, uImg; uniform vec2 uRes; uniform float uNight, uAge; varying vec2 vUv;
-      void main(){ ${SKY_DEPTH}
+    fragmentShader: `uniform sampler2D uDepth, uImg; uniform vec2 uRes; uniform float uNight, uAge; varying vec2 vUv; ${SKY_COVER}
+      void main(){ float cov = skyCover(); if (cov < 0.01) discard;
         vec2 p = (vUv - 0.5) * 6.0; float r = length(p), lit = 0.5 - 0.5 * cos(uAge * 6.2831853);
         vec4 c = vec4(0.0);
         if (r < 1.02) { vec4 m = texture2D(uImg, p * 0.5 + 0.5); c = vec4(m.rgb * m.a, m.a); }   // straight-alpha picture, made premultiplied
         float halo = 0.3 * exp(-max(r - 1.0, 0.0) * 1.7) * (0.45 + 0.55 * lit) * smoothstep(3.0, 2.2, r) * (1.0 - c.a);
         c += vec4(vec3(0.82, 0.86, 1.0) * halo, halo);
-        if (c.a < 0.004) discard; gl_FragColor = c * uNight; }`,
+        if (c.a < 0.004) discard; gl_FragColor = c * uNight * cov; }`,
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
   moon.visible = false;   // until its picture has loaded
   moon.renderOrder = 3;   // (over the Milky Way, the stars and the comet: it hides them)
@@ -3600,11 +3607,11 @@ function buildMeteors(sky) {
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MQ * 12), 3)); g.setAttribute('aC', new THREE.BufferAttribute(new Float32Array(MQ * 16), 4)); g.setAttribute('aT', new THREE.BufferAttribute(new Float32Array(MQ * 12), 3));
   METEOR.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN },
     vertexShader: 'attribute vec4 aC; attribute vec3 aT; varying vec4 vC; varying vec3 vT; void main(){ vC = aC; vT = aT; gl_Position = vec4(position, 1.0); }',
-    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec4 vC; varying vec3 vT;
-      void main(){ ${SKY_DEPTH}
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec4 vC; varying vec3 vT; ${SKY_COVER}
+      void main(){ float cov = skyCover(); if (cov < 0.01) discard;
         float u = clamp(vT.x, 0.0, 1.0), w = vT.y * vT.y;
         float k = pow(u, 2.6) * exp(-w * 5.0) + 1.6 * exp(-pow((1.0 - u) / 0.05, 2.0) - w * 1.5);   // the tail thinning out, the head bright
-        float a = vC.a * k * smoothstep(1.04, 0.995, vT.x) * uNight; if (a < 0.003) discard;      // (a round tip, not a square end)
+        float a = vC.a * k * smoothstep(1.04, 0.995, vT.x) * uNight * cov * 0.8; if (a < 0.003) discard;      // (a round tip, not a square end; 20 % fainter: G, 16/10/2026)
         gl_FragColor = vec4(vC.rgb * a, 0.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));   // (added as it is: ONE, ONE)
   METEOR.mesh.frustumCulled = false; METEOR.mesh.visible = false; METEOR.mesh.renderOrder = 4; sky.add(METEOR.mesh);   // (in our air: in front of the moon)
@@ -3711,8 +3718,8 @@ function buildComet(sky) {
   for (const [k, n] of [['position', 3], ['aT', 3], ['aC', 4]]) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(nv * n), n));
   COMET.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, uTime: OVER.u.uTime },
     vertexShader: 'attribute vec4 aC; attribute vec3 aT; varying vec4 vC; varying vec3 vT; void main(){ vC = aC; vT = aT; gl_Position = vec4(position, 1.0); }',
-    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uTime; varying vec4 vC; varying vec3 vT;
-      void main(){ ${SKY_DEPTH}
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uTime; varying vec4 vC; varying vec3 vT; ${SKY_COVER}
+      void main(){ float cov = skyCover(); if (cov < 0.01) discard;
         float u = clamp(vT.x, 0.0, 1.0), v = vT.y, k; vec3 col = vC.rgb;
         if (vT.z < 0.5) {   // the dust tail: striae fanning out and drifting away from the head, the density breathing as it flows
           float fl = u * 7.0 - uTime * 0.32;
@@ -3726,7 +3733,7 @@ function buildComet(sky) {
           k = (0.45 * exp(-v * v * 5.0) + 0.55 * r) * pow(1.0 - u, 1.25);
         }
         else { float r2 = dot(vT.xy, vT.xy); k = 0.42 * exp(-r2 * 3.0) + 0.62 * exp(-r2 * 18.0) * (0.95 + 0.05 * sin(uTime * 1.3)); col = mix(col, vec3(1.0, 1.0, 0.97), exp(-r2 * 14.0)); }   // the coma, a white point at its heart
-        float a = vC.a * k * uNight; if (a < 0.002) discard;
+        float a = vC.a * k * uNight * cov * 0.8; if (a < 0.002) discard;   // (20 % more see-through: G, 16/10/2026)
         gl_FragColor = vec4(col * a, 0.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
   COMET.mesh.frustumCulled = false; COMET.mesh.visible = false; COMET.mesh.renderOrder = 2; sky.add(COMET.mesh);   // (far beyond the moon: behind it)
