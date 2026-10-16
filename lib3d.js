@@ -343,7 +343,7 @@ function refitCell(cell, sizes, keep = new Set()) {
     if (s.out) { e.b.m.copy(ZERO_M); e.b.hidden = true; moved.push(e.idx); continue; }
     if (s.item === e) {   // an upright book: its frame in the cell is a translation and a scale
       const sz = sizes.get(e.idx); L.multiplyMatrices(inv, e.b.m); const z = L.elements[14], d = v.setFromMatrixColumn(L, 2).length();
-      e.b.m.multiplyMatrices(cell.B, new THREE.Matrix4().makeTranslation(s.nx0 + (e.x0 - s.x0) + sz.t / 2, 0, z).multiply(new THREE.Matrix4().makeScale(sz.t, sz.h, d)));
+      e.b.m.multiplyMatrices(cell.B, new THREE.Matrix4().makeTranslation(s.nx0 + (e.x0 - s.x0) + sz.t / 2, 0, z).multiply(new THREE.Matrix4().makeScale(sz.t, sz.h, sz.d || d)));   // (sz.d: a depth of its own, its spine where it was)
     } else {   // a book leaning on the resized one moves with its right side
       const dx = s.nx0 - s.x0 + (s.item && e.x0 > s.item.x0 ? s.grow : 0);
       e.b.m.premultiply(new THREE.Matrix4().makeTranslation(along.x * dx, along.y * dx, along.z * dx));
@@ -2655,6 +2655,10 @@ const byOf = it => { const b = bookInfo(it); return b && b.by && (!it.by || /^\d
 // the image itself in the one-file build)
 const BOOK_COVERS = (() => { try { return JSON.parse(document.getElementById('book-covers').textContent); } catch (e) { return {}; } })();
 const coverOf = it => { const b = bookInfo(it); return (b && b.cover && BOOK_COVERS[b.cover]) || null; };
+// the cover pictures' shapes (width over height, of src/covers): a book with a cover is made the shape of its cover (the
+// board as wide as the picture is for the book's height), so the picture covers its board (G, 17/10/2026)
+const COVER_AR = { '80-20-principle': 0.66, 'blind-watchmaker': 0.647, 'brief-history-of-time': 0.653, 'damn-right': 0.676, 'deep-simplicity': 0.662, 'encouragement-of-learning': 0.674, 'guns-germs-and-steel': 0.633, 'innovators-dilemma': 0.658, 'laws-of-human-nature': 0.662, 'money-masters': 0.651, 'motivation-and-personality': 0.629, 'nvidia-way': 0.66, 'paths-to-wealth': 0.649, 'poor-charlies-almanack': 0.968, 'power-game': 0.671, 'predictably-irrational': 0.658, 'prisoners-of-geography': 0.667, 'psychology-of-money': 0.638, 'quirkology': 0.622, 'rise-and-fall-of-nations': 0.664, 'think-again': 0.662, 'think-like-a-freak': 0.616, 'wealth-and-poverty-of-nations': 0.647, 'when-to-rob-a-bank': 0.658 };
+const coverAr = it => { const b = bookInfo(it); return b && b.cover && COVER_AR[b.cover] || 0; };
 // a book's thickness from its pages: ~0.06 mm a page (about 420 pages to the inch, common book paper) and ~4 mm of covers
 const spineOf = pages => 0.004 + pages * 0.00006;
 /* ---- categories and items, read from the page's own (hidden) cards */
@@ -2771,12 +2775,15 @@ function buildSections() {
     for (const bk of sec.books) {
       const info = bookInfo(bk.it), cl = BOOK.list[bk.idx].cell; if (!info || !(info.pages || info.t) || !cl || !cl.B) continue;
       // heights of trade books, 20.5 to 24.5 cm, in the order the shelf's random ones had (0.2 to 0.34 m)
-      const h = info.h || 0.205 + Math.min(1, Math.max(0, (bk.h - 0.2) / 0.14)) * 0.04;
-      (byCell.get(cl) || byCell.set(cl, new Map()).get(cl)).set(bk.idx, { t: info.pages ? spineOf(info.pages) : info.t, h });
+      const h = info.h || 0.205 + Math.min(1, Math.max(0, (bk.h - 0.2) / 0.14)) * 0.04, t = info.pages ? spineOf(info.pages) : info.t;
+      // a book with a cover: as wide (deep on the shelf) as its cover is for its height, the board's width being the
+      // book's less its rounded spine (hero-books.js: bz), within what its shelf holds
+      const ar = coverAr(bk.it), d = ar ? THREE.MathUtils.clamp(ar * h + Math.min(0.006, t * 0.2), 0.12, 0.26) : 0;
+      (byCell.get(cl) || byCell.set(cl, new Map()).get(cl)).set(bk.idx, d ? { t, h, d } : { t, h });
     }
     for (const [cl, sizes] of byCell) {
       for (const i of refitCell(cl, sizes, keep)) booksMesh.setMatrixAt(i, BOOK.list[i].m);
-      for (const [i, sz] of sizes) { const bk = sec.books.find(b => b.idx === i); bk.t = sz.t; bk.h = sz.h; }
+      for (const [i, sz] of sizes) { const bk = sec.books.find(b => b.idx === i); bk.t = sz.t; bk.h = sz.h; if (sz.d) bk.d = sz.d; }
     }
     if (byCell.size) {
       booksMesh.instanceMatrix.needsUpdate = true; setShadowsDirty(true);
@@ -3135,10 +3142,10 @@ function heroMaterials(bk, shape) {
   const bt = heroBand(bk); mats[5] = heroSharp(new THREE.MeshStandardMaterial({ ...base, map: bt, emissiveMap: bt, roughness: 0.55, metalness: 0 }), bk.flapU);
   const info = bookInfo(bk.it); mats[6] = info && info.map ? heroAtlasPage(bk, shape, base) : mats[3];   // (the first page: an atlas's map, else a flyleaf)
   mats[7] = bk.atlas ? bk.atlas.endMat : mats[3];   // (the front board's endpaper: an atlas's printed one)
-  if (img) { const im = new Image(); im.onload = () => {   // the jacket: filling the board (and its joint) if its shape is near the board's, else whole on the cloth
-    const W = FW, Hh = FH, a = im.width / im.height, b2 = W / Hh, g = front.col.getContext('2d'); let w, hh;
-    if (Math.abs(a / b2 - 1) < 0.14) { if (a > b2) { hh = Hh; w = Hh * a; } else { w = W; hh = W / a; } } else if (a > b2) { w = W - 60; hh = w / a; } else { hh = Hh - 60; w = hh * a; }
-    g.drawImage(im, (W - w) / 2, (Hh - hh) / 2, w, hh); front.flat((W - w) / 2, (Hh - hh) / 2, w, hh);   // (printed paper: smoother than the cloth, and flat)
+  if (img) { const im = new Image(); im.onload = () => {   // the jacket over the whole board (and its joint): the book was made the cover's shape
+    // (sections.js), so it fits; where the shelf held it to another shape, the picture still covers the board, its overflow cut
+    const W = FW, Hh = FH, a = im.width / im.height, b2 = W / Hh, g = front.col.getContext('2d'), w = a > b2 ? Hh * a : W, hh = a > b2 ? Hh : W / a;
+    g.drawImage(im, (W - w) / 2, (Hh - hh) / 2, w, hh); front.flat(0, 0, W, Hh);   // (printed paper: smoother than the cloth, and flat)
     front.tex.needsUpdate = true; setNeeds(true);
   }; im.src = img; }
   bk.heroFaces = { front: img ? null : front, spine };   // (a jacket's picture is not redrawn for another language)
@@ -5535,9 +5542,14 @@ function slidePose(bk, amount) {
   new THREE.Matrix4().makeTranslation(bk.normal.x * amount, 0, bk.normal.z * amount).multiply(bk.m0).decompose(p, q, s); return { p, q };
 }
 const pulledPose = bk => slidePose(bk, PULL);
+// how far in front of the camera a book is shown: as far as `want`, but never back in among its shelves (a section's
+// view may stand only ~1 m from them on a wide screen: the book shown 1.3 m off went in among the books there, cut by
+// them: G, 17/10/2026); 35 cm clear of the shelves' face, its own depth turned toward the camera within that
+function nearOf(v, want) { return Math.max(0.5, Math.min(want, v.tgt.distanceTo(v.pos) - 0.35)); }
 function presentPose(bk) {
   const v = focusView(bk.sec), fwd = v.tgt.clone().sub(v.pos).normalize(), up = new V3(0, 1, 0), right = fwd.clone().cross(up).normalize();
-  const p = v.pos.clone().addScaledVector(fwd, 1.3).addScaledVector(right, -0.1).addScaledVector(up, -0.03 - bk.h / 2);
+  const D = nearOf(v, 1.3), k = D / 1.3;   // (the offsets in the view kept as they were, nearer or not)
+  const p = v.pos.clone().addScaledVector(fwd, D).addScaledVector(right, -0.1 * k).addScaledVector(up, (-0.03 - bk.h / 2) * Math.max(k, 0.75));
   const x = fwd.clone().negate().applyAxisAngle(up, -0.52), z = x.clone().cross(up).normalize();   // front cover to the camera, fore-edge showing a little
   const th = 0.07, x2 = x.clone().multiplyScalar(Math.cos(th)).addScaledVector(up, Math.sin(th)), y2 = up.clone().multiplyScalar(Math.cos(th)).addScaledVector(x, -Math.sin(th));   // leaning back 4°, as on a stand
   const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x2, y2, z));
@@ -5547,7 +5559,7 @@ function presentPose(bk) {
 // the camera, its spread's middle (the spine, a little toward the map) where the closed book's middle was
 function openPose(bk) {
   const v = focusView(bk.sec), fwd = v.tgt.clone().sub(v.pos).normalize(), up = new V3(0, 1, 0), right = fwd.clone().cross(up).normalize();
-  const p = v.pos.clone().addScaledVector(fwd, 0.8).addScaledVector(right, -0.02).addScaledVector(up, -0.02 - bk.h / 2);
+  const D = nearOf(v, 0.8), p = v.pos.clone().addScaledVector(fwd, D).addScaledVector(right, -0.02).addScaledVector(up, -0.02 - bk.h / 2);
   const x = fwd.clone().negate().applyAxisAngle(up, -0.1), z = x.clone().cross(up).normalize();
   const th = 0.09, x2 = x.clone().multiplyScalar(Math.cos(th)).addScaledVector(up, Math.sin(th)), y2 = up.clone().multiplyScalar(Math.cos(th)).addScaledVector(x, -Math.sin(th));
   const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x2, y2, z));
