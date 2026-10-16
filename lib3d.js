@@ -1300,7 +1300,7 @@ function buildOutside(assets) {
   // sky dome
   const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: { uNight: NIGHT.u, uTime: WIND.t, ...SKYU },
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-    fragmentShader: `uniform float uNight, uTime, uDay, uGlow, uWarm; uniform vec3 uSunDir, uSunCol; varying vec3 vP;
+    fragmentShader: `uniform float uNight, uTime, uDay, uGlow, uWarm, uOv; uniform vec3 uSunDir, uSunCol; varying vec3 vP;
       float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
       float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
       float fb(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vn(p); p = p * 2.03 + 7.1; a *= 0.5; } return s; }
@@ -1317,12 +1317,18 @@ function buildOutside(assets) {
         day = mix(day, vec3(0.95, 0.74, 0.48), uWarm * exp(-h * 4.0) * (0.45 + 0.4 * toward));
         vec3 cloud = mix(vec3(0.75, 0.8, 0.92) * (1.0 - 0.25 * uWarm), vec3(1.4, 1.4, 1.36) * uSunCol, lit);
         day = mix(day, cloud, cl);
+        // an overcast (fx/rain.js): one grey layer, darker where it is thicker, paler toward the horizon, drifting
+        float ovn = fb(vP.xz / max(vP.y + 0.08, 0.08) * 0.5 + vec2(uTime * 0.012, uTime * 0.004));
+        vec3 ovc = mix(vec3(0.34, 0.37, 0.41), vec3(0.6, 0.63, 0.67), smoothstep(0.3, 0.72, ovn)) * mix(1.1, 0.9, h);
+        day = mix(day, ovc, uOv);
         // twilight: violet low down to deep blue overhead, an orange band on the sun's side, the clouds lit from below
         vec3 twi = mix(vec3(0.34, 0.24, 0.4), vec3(0.05, 0.09, 0.28), pow(h, 0.45));
         twi = mix(twi, mix(vec3(0.1, 0.1, 0.17), vec3(0.95, 0.45, 0.32), pow(toward, 2.0) * 0.8), cl * 0.8);
         vec3 band = mix(vec3(1.0, 0.36, 0.12), vec3(1.0, 0.7, 0.35), smoothstep(0.0, 0.25, h)) * exp(-h * 5.0) * pow(toward, 2.5);
-        vec3 col = mix(twi, day, uDay) + band * uGlow * 1.15;
+        twi = mix(twi, mix(vec3(0.12, 0.115, 0.15), vec3(0.2, 0.19, 0.23), smoothstep(0.3, 0.72, ovn)), uOv * 0.85);
+        vec3 col = mix(twi, day, uDay) + band * uGlow * 1.15 * (1.0 - 0.9 * uOv);
         vec3 night = mix(vec3(0.04, 0.06, 0.11), vec3(0.005, 0.011, 0.032), pow(h, 0.45));   // (a dark country sky overhead, the glow of the air low down)
+        night = mix(night, vec3(0.03, 0.033, 0.04) * (0.75 + 0.5 * smoothstep(0.3, 0.72, ovn)), uOv * 0.75);   // (under cloud: a dull dark grey)
         gl_FragColor = vec4(mix(col, night, uNight), 1.0); }` }));
   outside.add(sky); LIGHTS.sky = sky;
   if (!assets) return;
@@ -2336,11 +2342,15 @@ function buildNightLights() {
    - Twilight: civil (0 to −6°) brings an orange band on the sun's side under a sky turning violet, then deep blue
      (the blue hour, around −4°); in nautical twilight (−6 to −12°) the stars come out and the night look takes over.
    - The lamps come on as the daylight goes (sun from 6° to −4°), as someone reading there would switch them on.
+   - The weather (fx/rain.js WX.ov, from the live weather at Pleiku): under an overcast or in rain the sun goes behind
+     the cloud (no direct light, no shadows, no golden hour), the skylight dims a little and turns grey, the sky dome is
+     one grey layer and the rain's haze takes the far trees.
    The page's day/night switch still wins when it is used by hand: the room then goes to the painting's afternoon or
    to night (a 4 s time-lapse). `?at=17:40` in the address pins the room's clock (to preview an hour).            */
 const DEG = Math.PI / 180, smooth = (a, b, x) => { const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const SUN_REF = { e: 29.7, az: 245 };   // the painting's afternoon: the sun the room was lit by
-const SKYU = { uSunDir: { value: new THREE.Vector3(-0.68, 0.5, 0.54) }, uSunCol: { value: new THREE.Color(1, 1, 1) }, uDay: { value: 1 }, uGlow: { value: 0 }, uWarm: { value: 0 } };
+const SKYU = { uSunDir: { value: new THREE.Vector3(-0.68, 0.5, 0.54) }, uSunCol: { value: new THREE.Color(1, 1, 1) }, uDay: { value: 1 }, uGlow: { value: 0 }, uWarm: { value: 0 }, uOv: { value: 0 } };
+const OVC = { hemi: new THREE.Color(0xb7bdc4), win: new THREE.Color(0xc4cad0), fog: new THREE.Color(0x9da5ad) };   // an overcast's greys
 const TINT = { warm: { hemi: new THREE.Color(0xffcb92), win: new THREE.Color(0xffc489), fog: new THREE.Color(0xe8c6a2), ring: new THREE.Color(0xd0ae7e) },
   blue: { hemi: new THREE.Color(0x6c74b4), win: new THREE.Color(0x7880c4), fog: new THREE.Color(0x3c4664), ring: new THREE.Color(0x2c3548) } };
 const HOUR = { e: null, az: null, pin: null, moving: false, S: {}, dir: new THREE.Vector3(), refDots: null };
@@ -2374,7 +2384,9 @@ function hourState(e, S) {   // how the light stands for a sun e degrees up (0..
 }
 const tint3 = (out, day, warm, blue, night, S) => out.copy(day).lerp(warm, S.warm).lerp(blue, S.blue).lerp(night, S.n);
 function applyHour(e, az) {
-  const L = LIGHTS, D = NIGHT.day, U = POST.mat.uniforms, S = hourState(e, HOUR.S), n = S.n;
+  const L = LIGHTS, D = NIGHT.day, U = POST.mat.uniforms, S = hourState(e, HOUR.S), n = S.n, ov = WX.ov;
+  if (ov > 0.001) { S.sun *= 1 - 0.95 * ov; S.amb *= 1 - 0.36 * ov; S.warm *= 1 - 0.9 * ov; S.glow *= 1 - 0.85 * ov; S.tg = S.tg + (1 - S.tg) * ov; S.tb = S.tb + (1 - S.tb) * ov;
+    S.lamps = Math.max(S.lamps, 0.6 * ov); }   // (behind the cloud; on a dark rainy day the lamps are on)
   HOUR.e = e; HOUR.az = az; NIGHT.u.value = S.stars;
   FLY.u.value = smooth(3, -5, e);
   // the sun: where, what colour, how strong
@@ -2385,17 +2397,21 @@ function applyHour(e, az) {
   if (L.sun.visible && (!sunWas || moved)) setShadowsDirty(true);
   // skylight: the sky dome, the hemisphere and the windows (the one facing the sun brighter)
   SKYU.uSunDir.value.copy(dir); SKYU.uSunCol.value.setRGB(L.sun.color.r / D.sunC.r, L.sun.color.g / D.sunC.g, L.sun.color.b / D.sunC.b);
-  SKYU.uDay.value = S.skyDay; SKYU.uGlow.value = S.glow; SKYU.uWarm.value = S.warm;
+  SKYU.uDay.value = S.skyDay; SKYU.uGlow.value = S.glow; SKYU.uWarm.value = S.warm; SKYU.uOv.value = ov;
   const amb = S.amb, full = n >= 0.999;
   L.hemi.intensity = lerp(D.hemi * amb, 0.15, n); tint3(L.hemi.color, D.hemiC, TINT.warm.hemi, TINT.blue.hemi, NC.hemi, S); L.hemi.groundColor.lerpColors(D.hemiG, NC.hemiG, n);
+  if (ov > 0.001) L.hemi.color.lerp(OVC.hemi, 0.6 * ov * (1 - n));
   const NRM = [[-1, 0], [0, -1], [0, 1]], side = (k, x, z) => Math.max(0, NRM[k][0] * x + NRM[k][1] * z);   // left, back, front glass
   if (!HOUR.refDots) { const r = sunDirAt(SUN_REF.e, SUN_REF.az, new THREE.Vector3()); HOUR.refDots = NRM.map((_, k) => 1 + 0.35 * side(k, r.x, r.z)); }
   L.rects.forEach((r, k) => {
     const face = (1 + 0.35 * side(k, dir.x, dir.z) * S.sun) / HOUR.refDots[k];
     r.intensity = D.rects[k][0] * lerp(amb * face, 0.22, n); tint3(r.color, D.rects[k][1], TINT.warm.win, TINT.blue.win, NC.win, S); r.visible = !full;
+    if (ov > 0.001) r.color.lerp(OVC.win, 0.55 * ov * (1 - n));
   });
   scene.environmentIntensity = lerp(D.env * amb, 0.09, n) + (full ? 0.02 : 0);
   tint3(scene.fog.color, D.fog, TINT.warm.fog, TINT.blue.fog, NC.fog, S);
+  if (ov > 0.001) scene.fog.color.lerp(_ovf.copy(OVC.fog).multiplyScalar(lerp(1, 0.18, n)), 0.5 * ov);
+  scene.fog.density = 0.03 * (1 + 0.45 * WX.k);   // (the rain's haze)
   if (L.ring) { tint3(L.ring.material.color, D.ring, TINT.warm.ring, TINT.blue.ring, NC.ring, S); L.ring.material.color.multiplyScalar(lerp(0.55 + 0.45 * Math.min(amb, 1), 1, n)); }
   // the lamps
   const k = S.lamps;
@@ -2407,7 +2423,7 @@ function applyHour(e, az) {
   petsForHour(S);
   U.exposure.value = lerp(D.exposure * (1 + 0.25 * (1 - Math.min(amb, 1))), 1.0, n); U.lift.value = lerp(D.lift, 0.96, n); U.veil.value = lerp(D.veil, 0.07, n);
 }
-const TMPV = new THREE.Vector3();
+const TMPV = new THREE.Vector3(), _ovf = new THREE.Color();
 function hourTarget() {   // where the light should be: the sun of the clock, or the page's switch when it was used by hand
   if (HOUR.pin) return sunPlace(HOUR.pin);
   const d = new Date(), m = d.getHours() * 60 + d.getMinutes(), clockDark = m < 382 || m >= 1050;   // the page's own rule (6:22, 17:30)
@@ -3143,7 +3159,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   if (OVER.sky) { const night = NIGHT.u.value > 0.005; OVER.sky.visible = night; if (night) { any = true; OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); stepMeteors(clock.getElapsedTime(), camera); } }
   if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
-  drawDeck(); drawPets();
+  drawRain(); drawDeck(); drawPets();   // (the rain first: the deck and the animals stand in front of it)
   // the shelves' titles and the sky, then the book out of the shelf over them (sharp: it is not in the picture, so the
   // room's depth does not hide the titles behind it)
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
@@ -3367,6 +3383,8 @@ const STAR_BSC5 =
    the shooting stars last (they burn in our own air, in front of the moon). The moon has the phase of the page's sky
    clock and hangs in the left glass. */
 const SDEG = Math.PI / 180;
+// the sky's own dark (the night's, times how clear the sky is: under thick cloud and rain no stars, no moon: fx/rain.js)
+const SKYN = { value: 0 }, SKYCLEAR = { value: 1 };
 // equatorial (J2000) → galactic
 const GAL = new THREE.Matrix3().set(-0.0548755604, -0.8734370902, -0.4838350155, 0.4941094279, -0.4448296300, 0.7469822445, -0.8676661490, -0.1980763734, 0.4559837762);
 const STARU = { uEq: { value: new THREE.Matrix3() }, uGal: { value: new THREE.Matrix3() }, uLim: { value: 6.3 }, uMW: { value: 1 }, uMoon: { value: new THREE.Vector3(0, 1, 0) }, uMoonK: { value: 0 }, uEye: { value: new THREE.Vector3() },
@@ -3422,7 +3440,7 @@ function buildStars(sky) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(dir, 3)); g.setAttribute('aMag', new THREE.Float32BufferAttribute(mag, 1));
   g.setAttribute('aCol', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1)); g.setAttribute('aBand', new THREE.BufferAttribute(band, 1));
-  const stars = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: OVER.u.uTime, uNight: NIGHT.u, uPR: OVER.u.uPR, ...STARU },
+  const stars = new THREE.Points(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: OVER.u.uTime, uNight: SKYN, uPR: OVER.u.uPR, ...STARU },
     vertexShader: `attribute float aMag, aSeed, aBand; attribute vec3 aCol; uniform mat3 uEq; uniform vec3 uEye, uMoon; uniform float uTime, uLim, uPR, uMoonK, uExtS, uBandStars, uBandMag;
       varying vec3 vCol; varying float vHalo; ${AIRMASS}
       void main() {
@@ -3453,7 +3471,7 @@ function buildStars(sky) {
   stars.frustumCulled = false; stars.renderOrder = 1; sky.add(stars);
   // the Milky Way and the moonlight in the air: a shell just inside the stars
   const mw = new THREE.Mesh(new THREE.SphereGeometry(236, 64, 32), new THREE.ShaderMaterial({ side: THREE.BackSide,
-    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u, ...STARU },
+    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, ...STARU },
     vertexShader: 'uniform vec3 uEye; varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * viewMatrix * vec4(uEye + position, 1.0); }',
     fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uMW, uMoonK, uExtM, uHz, uBand, uMWK, uGrain; uniform mat3 uGal; uniform vec3 uMoon; varying vec3 vD;
       ${SKY_NOISE} ${AIRMASS}
@@ -3490,6 +3508,7 @@ const _E = new THREE.Vector3(), _N = new THREE.Vector3(), _Z = new THREE.Vector3
 const _sX = new THREE.Vector3(), _sP = new THREE.Vector3(), _sY = new THREE.Vector3(), _sZ = new THREE.Vector3(), _sM = new THREE.Matrix3();
 function skyDir(az, el, v) { const p = (az - 103.7) * SDEG, e = el * SDEG; return v.set(Math.cos(e) * Math.cos(p), Math.sin(e), Math.cos(e) * Math.sin(p)); }   // (the room's compass: fx/hour.js sunDirAt)
 function stepStars() {
+  SKYN.value = NIGHT.u.value * SKYCLEAR.value;
   if (!SKYSET.real) {   // the painter's sky: the galactic centre and the plane through it, set where SKYSET says
     const key = SKYSET.a.join() + '|' + SKYSET.b.join() + '|' + SKYSET.lc;
     if (key !== SKYSET.key) {
@@ -3536,7 +3555,7 @@ function buildNightSky() {
   const rad = far * Math.tan(0.8 * Math.PI / 180);
   OVER.moonImg = { value: null };
   const moon = new THREE.Mesh(new THREE.PlaneGeometry(6 * rad, 6 * rad), new THREE.ShaderMaterial({
-    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u, uAge: OVER.moonAge, uImg: OVER.moonImg },
+    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, uAge: OVER.moonAge, uImg: OVER.moonImg },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform sampler2D uDepth, uImg; uniform vec2 uRes; uniform float uNight, uAge; varying vec2 vUv;
       void main(){ ${SKY_DEPTH}
@@ -3567,7 +3586,7 @@ function buildMeteors(sky) {
   const MQ = 3, idx = []; for (let k = 0; k < MQ; k++) idx.push(4 * k, 4 * k + 1, 4 * k + 2, 4 * k + 2, 4 * k + 1, 4 * k + 3);
   const g = new THREE.BufferGeometry(); g.setIndex(idx);
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MQ * 12), 3)); g.setAttribute('aC', new THREE.BufferAttribute(new Float32Array(MQ * 16), 4)); g.setAttribute('aT', new THREE.BufferAttribute(new Float32Array(MQ * 12), 3));
-  METEOR.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u },
+  METEOR.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN },
     vertexShader: 'attribute vec4 aC; attribute vec3 aT; varying vec4 vC; varying vec3 vT; void main(){ vC = aC; vT = aT; gl_Position = vec4(position, 1.0); }',
     fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec4 vC; varying vec3 vT;
       void main(){ ${SKY_DEPTH}
@@ -3637,7 +3656,7 @@ function stepMeteors(t, camera) {
   stepStars();
   const dt = Math.min(0.1, Math.max(0, t - METEOR.last)); METEOR.last = t;
   const night = NIGHT.u.value, M = METEOR.list, mesh = METEOR.mesh; if (!mesh) return;
-  if (night > 0.6 && Math.random() < dt / 16) PROBE.left = 5;   // one due (tried until it finds sky, five times at most)
+  if (night > 0.6 && SKYCLEAR.value > 0.5 && Math.random() < dt / 16) PROBE.left = 5;   // one due (tried until it finds sky, five times at most)
   if (PROBE.left && M.length < 3 && t - PROBE.at > 1.5) { PROBE.at = t; spawnMeteor(camera); }
   const g = mesh.geometry, P = g.attributes.position.array, C = g.attributes.aC.array, T = g.attributes.aT.array, W = OVER.u.uRes.value.x / 2, H = OVER.u.uRes.value.y / 2;
   let nq = 0;
@@ -3678,7 +3697,7 @@ function buildComet(sky) {
   strip(0, NS); strip((NS + 1) * 2, NI); const c0 = (NS + 1) * 2 + (NI + 1) * 2; idx.push(c0, c0 + 1, c0 + 2, c0 + 2, c0 + 1, c0 + 3);
   const g = new THREE.BufferGeometry(); g.setIndex(idx);
   for (const [k, n] of [['position', 3], ['aT', 3], ['aC', 4]]) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(nv * n), n));
-  COMET.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: NIGHT.u, uTime: OVER.u.uTime },
+  COMET.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, uTime: OVER.u.uTime },
     vertexShader: 'attribute vec4 aC; attribute vec3 aT; varying vec4 vC; varying vec3 vT; void main(){ vC = aC; vT = aT; gl_Position = vec4(position, 1.0); }',
     fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uTime; varying vec4 vC; varying vec3 vT;
       void main(){ ${SKY_DEPTH}
@@ -3715,7 +3734,7 @@ function stepComet(t, dt, camera) {
   const C = COMET, mesh = C.mesh; if (!mesh) return;
   if (!C.e) {
     C.on = false; mesh.visible = false;
-    if (NIGHT.u.value <= 0.6) { C.next = Math.max(C.next, t + 15 + Math.random() * 20); return; }   // (the first a little after night falls)
+    if (NIGHT.u.value <= 0.6 || SKYCLEAR.value < 0.5) { C.next = Math.max(C.next, t + 15 + Math.random() * 20); return; }   // (the first a little after night falls)
     if (t > C.next && probeSky(camera, () => cometPath(camera), 0.25, 0.75, e => { C.e = e; })) C.next = t + 4;   // (no sky in view: tried again in a while)
     return;
   }
@@ -3780,7 +3799,7 @@ function placeMoon() {   // in the left glass, between the posts at z −6.6 and
    wanders slowly around its own spot (three unrelated sways, so no two paths repeat together) and flashes on its own
    beat: a ~0.7 s yellow-green pulse every 3 to 7 s, with a dimmer glow in between. They come out as the sun goes under
    the trees (3° to −5°). All the motion is in the vertex shader: nothing on the CPU per frame. */
-const FLY = { u: { value: 0 }, t: { value: 0 }, pts: null, on: false };
+const FLY = { u: { value: 0 }, t: { value: 0 }, rain: { value: 0 }, pts: null, on: false };   // (rain: how hard it rains; those outside keep in: fx/rain.js)
 function buildFireflies() {
   const n = 22, inside = 3, home = new Float32Array(n * 3), sway = new Float32Array(n * 4), beat = new Float32Array(n * 3), r = rng(77);
   for (let i = 0; i < n; i++) {
@@ -3806,13 +3825,13 @@ function buildFireflies() {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pick(home, 3), 3)); g.setAttribute('aSway', new THREE.BufferAttribute(pick(sway, 4), 4)); g.setAttribute('aBeat', new THREE.BufferAttribute(pick(beat, 3), 3));
   const pts = new THREE.Points(g, new THREE.ShaderMaterial({
-    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: FLY.t, uOn: FLY.u },
-    vertexShader: `attribute vec4 aSway; attribute vec3 aBeat; uniform float uTime, uOn; uniform vec2 uRes; varying float vB;
+    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: FLY.t, uOn: FLY.u, uRain: FLY.rain },
+    vertexShader: `attribute vec4 aSway; attribute vec3 aBeat; uniform float uTime, uOn, uRain; uniform vec2 uRes; varying float vB;
       void main(){ float t = uTime + aSway.w, k = 0.6 + 0.4 * fract(aSway.w * 7.13);
         vec3 p = position + vec3(sin(t * 0.23 * k) + 0.45 * sin(t * 0.61 + 1.3), sin(t * 0.37 * k + 2.0) + 0.35 * sin(t * 1.7), sin(t * 0.17 * k + 4.0) + 0.4 * cos(t * 0.53)) * aSway.xyz;
         vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
         float ph = fract((uTime + aBeat.y) / aBeat.x), flash = smoothstep(0.0, 0.05, ph) * (1.0 - smoothstep(0.05, 0.05 + 0.7 / aBeat.x, ph));
-        vB = (0.3 + 0.9 * flash) * uOn;
+        vB = (0.3 + 0.9 * flash) * uOn * (1.0 - uRain * (1.0 - step(-1.25, position.x) * step(-8.6, position.z)));   // (out in the rain: none)
         gl_PointSize = clamp(0.22 * aBeat.z * projectionMatrix[1][1] * 0.5 * uRes.y / -mv.z, 6.0, 90.0); }`,
     fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; varying float vB;
       void main(){ if (gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 4e-6) discard;
@@ -3821,6 +3840,198 @@ function buildFireflies() {
         gl_FragColor = vec4(mix(vec3(0.62, 0.95, 0.22), vec3(1.0, 1.0, 0.78), core) * a, 1.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
   pts.frustumCulled = false; pts.visible = false; OVER.scene.add(pts); FLY.pts = pts;
+}
+/* ---------------------------------------------------------------- rain
+   Rain outside the glass when it rains at Pleiku now (G, 16/10/2026: "làm mưa ngoài kính khi (local time) có mưa"): the
+   page's live weather (weather/sky-weather.js: Open-Meteo, the 3D garden's source and place; window.HL_WEATHER and its
+   'hl-weather' event), how hard from its WMO code and the last quarter hour's rain, as the garden reads it.
+   - The rain itself: thousands of drops falling past the glass at their terminal speed (6.5 to 9 m/s for 2 to 4 mm
+     drops: Gunn & Kinzer 1949), slanting with the wind (blowing as it does at Pleiku, turned into the room's compass),
+     each drawn as a camera sees a drop, a short streak (its fall in a 30th of a second) one or two pixels wide, nearer
+     ones wider and brighter, thicker near the glass; light ones against the dark garden by day, and by night lit warm by
+     the room's lamps where they pass close to the glass. Where one reaches the patio or the lawn it splashes, a small
+     ring opening and gone in a tenth of a second. They are drawn sharp over the picture (the watercolour pass would wipe
+     out lines this thin), before the deck and the animals, and only where the room shows what is out there (each pixel
+     tested against the room's depth, as the stars are: hidden by the posts, the frames and the trees in front of them).
+   - On the glass: drops beading on the panes and drops running down them in jerks (stick and slip), each leaving a trail
+     of droplets, more on the side the wind drives the rain against. Each drop is a little lens: it shows the picture
+     behind it bent and turned over (the painted view sampled through it, offset by its shape, as in the well-known
+     shader drops on glass), darker at its rim where light leaves it sideways, with a glint of the sky by day or of the
+     lamps by night. When the rain stops the running drops stop with it; the beaded ones stay a while, then dry.
+   - The day goes grey: an overcast takes the sun (and its shadows) and its warm light, the skylight dims and turns grey,
+     the sky becomes one grey layer, the far trees go into the haze of the rain (fx/hour.js applyHour reads WX.ov). By
+     night the cloud hides the stars, the moon, the Milky Way, the comet and the shooting stars (fx/sky.js SKYCLEAR); the
+     hen keeps in, the fireflies in the garden too.
+   - A thunderstorm: now and then the lightning, the sky and the garden flashing twice (a stroke and its return).
+   ?wx=rain (or drizzle, storm) shows it whatever the weather. */
+const RAIN = { on: false, scene: new THREE.Scene(), built: false, streaks: null, drops: null, flash: null };
+const WX = { k: 0, kT: 0, ov: 0, ovT: 0, ovSet: 0, wet: 0, storm: false, cover: 0, clear: 1, first: true, wind: new THREE.Vector2(), windT: new THREE.Vector2(), last: 0, bolt: -1e9, nextBolt: 0, fl: 0 };
+RAIN.wx = WX;   // (for tests)
+const RAIN_K = { 51: 0.22, 53: 0.32, 55: 0.42, 56: 0.32, 57: 0.42, 61: 0.45, 63: 0.66, 65: 0.92, 66: 0.5, 67: 0.75, 80: 0.5, 81: 0.75, 82: 1, 95: 0.85, 96: 0.92, 99: 1 };
+const RU = { uTime: { value: 0 }, uK: { value: 0 }, uWet: { value: 0 }, uWind: { value: new THREE.Vector2() }, uDay: { value: 1 }, uLamp: { value: 0 }, uFlash: { value: 0 },
+  uPic: { value: null }, uRoom: { value: new THREE.Vector4(R.xL - 0.06, R.zB - 0.02, R.xW, R.zF) }, uInvVP: { value: new THREE.Matrix4() } };
+
+// the weather now: how hard it rains (0 to 1), how overcast, the storm, the wind (m/s, the way it blows, in the room)
+function readWeather() {
+  const W = window.HL_WEATHER, c = W && W.cur; if (!c) return;
+  const code = c.weather_code, mmh = (c.precipitation || 0) * 4;   // (a quarter hour's rain: weather/sky-weather.js)
+  let k = RAIN_K[code] || 0; if (mmh > 0.05) k = Math.max(k, Math.min(1, 0.28 + mmh / 9));
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) k = 0;   // (snow: never at Pleiku)
+  WX.kT = k; WX.storm = code >= 95; WX.cover = (c.cloud_cover ?? 0) / 100;
+  WX.ovT = Math.max(k > 0 ? 0.82 + 0.18 * k : 0, THREE.MathUtils.smoothstep(WX.cover, 0.6, 1.0) * 0.6, code === 45 || code === 48 ? 0.7 : 0);
+  const to = ((c.wind_direction_10m || 0) + 180 - 103.7) * Math.PI / 180, v = (c.wind_speed_10m || 0) / 3.6;   // (the compass of fx/hour.js sunDirAt)
+  WX.windT.set(Math.cos(to), Math.sin(to)).multiplyScalar(Math.min(8, v * 0.55));   // (near the ground the wind is less; the drops take up most of it)
+  if (WX.first) { WX.first = false; WX.k = WX.kT; WX.ov = WX.ovT; WX.wind.copy(WX.windT); WX.wet = k > 0 ? 1 : 0; }   // (raining when the page opens: raining at once)
+  setNeeds(true);
+}
+addEventListener('hl-weather', readWeather);
+
+/* ---- the falling drops: one instance each (a quad: x across, y from its head to its tail), placed in the shader */
+const STREAK_VS = `attribute vec4 aDrop; uniform float uTime, uK, uDay, uLamp, uPR; uniform vec2 uWind, uRes; uniform vec4 uRoom;
+  varying vec2 vQ; varying float vA, vMode; varying vec3 vC;
+  void main() {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0;
+    if (fract(aDrop.w * 31.7) > uK) return;   // (as many as the rain is heavy)
+    float v = 6.5 + 2.6 * fract(aDrop.w * 7.3), G = -0.105, top = 6.6, sp = 0.11;   // its speed, the ground, where it comes into view, a splash's time
+    float T = (top - G) / v + sp, tau = fract(aDrop.z + uTime / T) * T;
+    vec3 p = vec3(aDrop.x + uWind.x * (tau - 0.5 * T), top - v * tau, aDrop.y + uWind.y * (tau - 0.5 * T));
+    if (p.x > uRoom.x - 0.1 && p.z > uRoom.y - 0.1 && p.x < uRoom.z + 0.2 && p.z < uRoom.w + 0.2) return;   // (blown over the house: under its roof)
+    float dist = length(p - cameraPosition);
+    float dL = uRoom.x - p.x, dB = uRoom.y - p.z, dG = dL > 0.0 && dB > 0.0 ? min(dL, dB) : max(dL, dB);   // how far out from the glass
+    vC = mix(vec3(0.3, 0.33, 0.38), vec3(0.93, 0.95, 0.98), uDay) + vec3(1.0, 0.8, 0.52) * uLamp * 0.85 * exp(-dG / 1.3);   // (by night lit by the lamps near the glass)
+    if (p.y > G) {   // falling: a streak, its head below, its tail up the way it came
+      vMode = 0.0;
+      vec3 vel = vec3(uWind.x, -v, uWind.y);
+      vec4 c0 = projectionMatrix * viewMatrix * vec4(p, 1.0), c1 = projectionMatrix * viewMatrix * vec4(p - vel * 0.03, 1.0);
+      if (c0.w < 0.1 || c1.w < 0.1) return;
+      vec2 d = (c1.xy / c1.w - c0.xy / c0.w) * uRes; float L = length(d); d = L > 1e-3 ? d / L : vec2(0.0, 1.0);
+      float w = uPR * clamp(2.2 / dist, 0.55, 1.5);   // (half its width, device pixels: nearer, wider)
+      vec4 c = mix(c0, c1, position.y); c.xy += vec2(-d.y, d.x) * position.x * w * 2.0 / uRes * c.w;
+      gl_Position = c; vQ = position.xy;
+      vA = (0.2 + 0.25 * uK) * clamp(2.8 / dist, 0.25, 1.0) * smoothstep(top, top - 0.8, p.y);
+    } else {   // landed: a ring on the ground, opening, gone
+      vMode = 1.0; float age = (G - p.y) / v, rr = 0.01 + 0.2 * age;
+      gl_Position = projectionMatrix * viewMatrix * vec4(p.x + position.x * rr, G + 0.006, p.z + (position.y * 2.0 - 1.0) * rr, 1.0);
+      vQ = vec2(position.x, position.y * 2.0 - 1.0);
+      vA = (0.3 + 0.3 * uK) * (1.0 - age / sp) * clamp(3.0 / dist, 0.2, 1.0) * step(dist, 10.0);
+    }
+  }`;
+const STREAK_FS = `uniform sampler2D uDepth; uniform vec2 uRes; varying vec2 vQ; varying float vA, vMode; varying vec3 vC;
+  void main() {
+    if (vA < 0.002 || gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 2e-6) discard;   // (behind a post, a frame, a tree)
+    float a;
+    if (vMode < 0.5) a = vA * (1.0 - vQ.x * vQ.x) * smoothstep(0.0, 0.2, vQ.y) * (1.0 - 0.6 * vQ.y);   // brightest at its head
+    else { float r = length(vQ); a = vA * smoothstep(1.0, 0.8, r) * smoothstep(0.4, 0.8, r); }
+    if (a < 0.003) discard;
+    gl_FragColor = vec4(vC * a, a); }`;
+
+/* ---- the drops on the glass: a lens each (see above); q is the place on the pane, in metres (across, up) */
+const DROPS_FS = `uniform sampler2D uDepth, uPic; uniform vec2 uRes, uWind; uniform float uTime, uK, uWet, uDay, uLamp; uniform vec4 uRoom;
+  varying vec3 vW;
+  float hr(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  vec2 hr2(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.103, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+  void main() {
+    if (gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 2e-6) discard;   // (a post, a frame, the shelves in front of the pane)
+    vec2 out2 = vW.x < uRoom.x + 0.02 ? vec2(-1.0, 0.0) : vW.z < uRoom.y + 0.02 ? vec2(0.0, -1.0) : vec2(0.0, 1.0);   // which way the pane faces out
+    vec2 q = vec2(abs(out2.x) > 0.5 ? vW.z : vW.x, vW.y);
+    vec2 jx = dFdx(q), jy = dFdy(q);   // (the place on the pane against the screen: for the lens's offset)
+    float ws = length(uWind), dens = clamp(0.55 + 0.45 * (ws > 0.01 ? dot(uWind / ws, -out2) * min(1.0, ws / 2.5) : 0.0), 0.3, 1.0);   // (more where the wind drives it)
+    float m = 0.0, r = 1.0; vec2 dv = vec2(0.0);   // the drop here: how much, its size (m), where in it
+    // beaded drops, one to a cell of 1.8 cm: each comes, stays a while, dries; another takes its place
+    { vec2 g = q / 0.018, id = floor(g), f = fract(g) - 0.5, rn = hr2(id); float rz = hr(id + 17.3);
+      vec2 c = (rn - 0.5) * 0.56; float rad = mix(0.07, 0.2, rz * rz), life = fract(uTime * 0.03 + rz * 13.0);
+      float show = step(hr(id + 3.1), uWet * dens * 0.85) * smoothstep(0.0, 0.04, life) * smoothstep(1.0, 0.85, life);
+      vec2 d = (f - c) / rad; float dd = dot(d, d), mm = show * smoothstep(1.0, 0.8, dd);
+      if (mm > m) { m = mm; r = rad * 0.018; dv = d; } }
+    // running drops, in columns 5.5 cm wide: sliding down in jerks, a trail of droplets above each
+    { float ci = floor(q.x / 0.055); vec2 cr = hr2(vec2(ci, 7.7)); float P = 0.85, s = uTime * (0.05 + 0.08 * cr.y) + cr.x * 9.0;
+      float st = 0.018, prog = (floor(s / st) + smoothstep(0.7, 1.0, fract(s / st))) * st;   // (stick, slip)
+      float idx = floor((q.y + prog) / P), u = mod(q.y + prog, P) - 0.5 * P;   // (along the column: the drop at u = 0, going down)
+      if (hr(vec2(ci, idx)) < uK * dens * 0.9) {
+        float cx = (ci + 0.5 + (hr(vec2(ci, idx + 0.5)) - 0.5) * 0.5) * 0.055 + 0.004 * sin(q.y * 23.0 + ci), rr = 0.0024 + 0.0016 * hr(vec2(idx, ci));
+        vec2 d = vec2((q.x - cx) / rr, u / (rr * 1.25)); float dd = dot(d, d), mm = smoothstep(1.0, 0.8, dd);
+        if (mm > m) { m = mm; r = rr; dv = d; }
+        if (u > 0.0 && u < 0.45 * P) {   // its trail: droplets left behind, every 1.1 cm, fewer further up
+          float bi = floor(u / 0.011), bu = u - (bi + 0.5) * 0.011, br = rr * (0.22 + 0.25 * hr(vec2(ci * 3.0 + bi, idx)));
+          vec2 bd = vec2((q.x - cx - 0.0015 * (hr(vec2(bi, ci)) - 0.5)) / br, bu / br);
+          float bm = smoothstep(1.0, 0.75, dot(bd, bd)) * step(hr(vec2(bi, idx + ci)), 0.75 - u / (0.45 * P));
+          if (bm > m) { m = bm; r = br; dv = bd; } }
+      } }
+    m *= smoothstep(0.7, 1.8, r / max(length(jx), length(jy)));   // (a drop smaller than a pixel or two, seen from across the room, is let go: not a speck)
+    if (m < 0.01) discard;
+    // the lens: the picture behind seen through the drop, turned over and drawn in
+    vec2 o = -dv * r * 1.25, sp = vec2(jy.y * o.x - jy.x * o.y, -jx.y * o.x + jx.x * o.y) / (jx.x * jy.y - jy.x * jx.y);   // (that offset on the screen, px)
+    vec3 pic = texture2D(uPic, clamp((gl_FragCoord.xy + sp) / uRes, 0.001, 0.999)).rgb;
+    float e = sqrt(dot(dv, dv)), rim = smoothstep(0.5, 1.0, e);
+    vec3 col = mix(pic * 1.06 + 0.035, pic * 0.42, rim * 0.65);
+    vec2 h = dv - vec2(-0.32, 0.42); col += (vec3(0.55, 0.57, 0.6) * uDay + vec3(0.6, 0.45, 0.26) * uLamp) * exp(-dot(h, h) * 16.0);   // a glint: the sky by day, the lamps by night
+    gl_FragColor = vec4(col * m, m); }`;
+
+/* ---- lightning: the sky and the garden flash (the room a little), a full-screen pass over the picture */
+const FLASH_FS = `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uFlash; uniform mat4 uInvVP; uniform vec4 uRoom;
+  void main() {
+    float z = texture2D(uDepth, gl_FragCoord.xy / uRes).r; vec4 w = uInvVP * vec4(gl_FragCoord.xy / uRes * 2.0 - 1.0, z * 2.0 - 1.0, 1.0); w.xyz /= w.w;
+    float outside = z > 0.99999 ? 1.0 : (w.x < uRoom.x || w.z < uRoom.y || w.z > uRoom.w) ? 0.5 : 0.09;
+    gl_FragColor = vec4(vec3(0.8, 0.85, 1.0) * uFlash * outside * 0.55, 0.0); }`;
+
+function buildRain() {
+  RAIN.built = true;
+  const N = 7000, a = new Float32Array(N * 4), r = rng(4417), xL = R.xL - 0.06, zB = R.zB - 0.02;
+  for (let i = 0; i < N; i++) {   // out from the left glass (and the back glass), thicker near it
+    const d = 0.22 + 9.0 * Math.pow(r(), 1.7);
+    let x, z; if (r() < 0.74) { z = R.zB - 9 + r() * (R.zF + 2 - R.zB + 9); x = xL - d; } else { x = xL - 0.3 + r() * (R.xW + 3 - xL + 0.3); z = zB - d; }
+    a.set([x, z, r(), r()], i * 4);
+  }
+  const g = new THREE.InstancedBufferGeometry(); g.setIndex([0, 1, 2, 2, 1, 3]);
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0], 3)); g.setAttribute('aDrop', new THREE.InstancedBufferAttribute(a, 4)); g.instanceCount = N;
+  const common = { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uPR: OVER.u.uPR, ...RU };
+  RAIN.streaks = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: common, vertexShader: STREAK_VS, fragmentShader: STREAK_FS,
+    transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));   // (built on the screen: either winding)
+  RAIN.streaks.frustumCulled = false; RAIN.streaks.renderOrder = 0; RAIN.scene.add(RAIN.streaks);
+  const pane = room.userData.glass;
+  if (pane) {
+    RAIN.drops = new THREE.Mesh(pane.geometry, new THREE.ShaderMaterial({ uniforms: common, fragmentShader: DROPS_FS,
+      vertexShader: 'varying vec3 vW; void main() { vW = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0); }',
+      transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+    RAIN.drops.matrixAutoUpdate = false; RAIN.drops.matrix.copy(pane.matrixWorld); RAIN.drops.frustumCulled = false; RAIN.drops.renderOrder = 1; RAIN.scene.add(RAIN.drops);
+  }
+  const tri = new THREE.BufferGeometry(); tri.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+  RAIN.flash = new THREE.Mesh(tri, new THREE.ShaderMaterial({ uniforms: common, fragmentShader: FLASH_FS, vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
+  RAIN.flash.frustumCulled = false; RAIN.flash.renderOrder = 2; RAIN.scene.add(RAIN.flash);
+  readWeather();
+}
+function stepRain(t) {
+  const dt = Math.min(0.25, Math.max(0, t - WX.last)); WX.last = t;
+  WX.k += (WX.kT - WX.k) * Math.min(1, dt / 10); if (Math.abs(WX.k - WX.kT) < 0.002) WX.k = WX.kT;   // (rain comes on and eases off over some seconds)
+  WX.ov += (WX.ovT - WX.ov) * Math.min(1, dt / 8); if (Math.abs(WX.ov - WX.ovT) < 0.002) WX.ov = WX.ovT;
+  WX.wind.lerp(WX.windT, Math.min(1, dt / 4));
+  WX.wet = WX.k > 0.02 ? Math.min(1, WX.wet + dt / 8) : Math.max(0, WX.wet - dt / 150);   // (the beaded drops dry over a few minutes)
+  if (Math.abs(WX.ov - WX.ovSet) > 0.012 && HOUR.e !== null) { WX.ovSet = WX.ov; applyHour(HOUR.e, HOUR.az); setNeeds(true); }   // (the light of an overcast)
+  WX.clear = (1 - 0.9 * THREE.MathUtils.smoothstep(WX.cover, 0.35, 1.0)) * (1 - 0.95 * THREE.MathUtils.smoothstep(WX.ov, 0.45, 0.85));
+  SKYCLEAR.value = WX.clear; FLY.rain.value = Math.min(1, WX.k * 3);
+  setHenAway(WX.k > 0.08);
+  // a storm's lightning: a stroke, then its return a fifth of a second later
+  WX.fl = 0;
+  if (WX.storm && WX.k > 0.2 && !reduceMotion) {
+    if (!WX.nextBolt) WX.nextBolt = t + 4 + Math.random() * 6;
+    if (t > WX.nextBolt) { WX.bolt = t; WX.nextBolt = t + 6 + Math.random() * 14; }
+    const age = t - WX.bolt; if (age < 1) WX.fl = Math.exp(-age * 22) + (age > 0.18 ? 0.75 * Math.exp(-(age - 0.18) * 12) : 0);
+  }
+  if (WX.hold !== undefined) WX.fl = WX.hold;   // (for tests: a flash held)
+  RAIN.on = WX.k > 0.003 || WX.wet > 0.003 || WX.fl > 0.01;
+}
+// before the deck and the animals: the rain, the drops on the glass, a flash
+function drawRain() {
+  if (!RAIN.built) buildRain();
+  stepRain(clock.getElapsedTime());
+  if (!RAIN.on) return;
+  const S = HOUR.S || {};
+  RU.uTime.value = reduceMotion ? 0 : clock.getElapsedTime(); RU.uK.value = WX.k; RU.uWet.value = WX.wet; RU.uWind.value.copy(WX.wind);
+  RU.uDay.value = (1 - NIGHT.u.value) * (1 - 0.35 * WX.ov); RU.uLamp.value = (S.lamps || 0) * 0.9; RU.uFlash.value = WX.fl; RU.uPic.value = POST.out.texture;
+  RU.uInvVP.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);
+  RAIN.streaks.visible = WX.k > 0.003 && !reduceMotion; if (RAIN.drops) RAIN.drops.visible = WX.k > 0.003 || WX.wet > 0.003; RAIN.flash.visible = WX.fl > 0.01;
+  renderer.autoClear = false; renderer.render(RAIN.scene, camera); renderer.autoClear = true;
 }
 /* ---------------------------------------------------------------- the cat's body
    "cat" by artofaria (Sketchfab, Free Standard licence): a black cat with a white bib, blaze and toes, modelled standing
@@ -4517,7 +4728,7 @@ function petsForHour(S) {
   if (!PETS.ok) return;
   const state = S.n > 0.5 ? 'night' : 'day'; if (state === PETS.state) return;
   const first = PETS.state === null; PETS.state = state;
-  if (PETS.chicken) PETS.chicken.visible = PETS.henShadow.visible = state === 'day';
+  if (PETS.chicken) PETS.chicken.visible = PETS.henShadow.visible = state === 'day' && !PETS.henAway;
   if (CAT.mode === 'trip') settle(state === 'night' ? 'day' : 'night');   // already on its way the other way: there at once, then off again
   if (first || reduceMotion || !on || document.hidden) settle(state); else startTrip(state);
   setShadowsDirty(true); setNeeds(true);
@@ -4792,6 +5003,12 @@ function drawSharpBooks() {
     bk.heroSeen = performance.now(); _bb.setFromObject(h); const c = _bb.getCenter(SHARP.v); heroKey(camera, c);
     crispPass(SHARP.book, [c.x, _bb.min.y, c.z, (_bb.max.x - _bb.min.x) / 2, _bb.max.y - _bb.min.y, (_bb.max.z - _bb.min.z) / 2]);
   }
+}
+
+// the hen keeps in out of the rain (fx/rain.js), and comes out again after it
+function setHenAway(away) {
+  if (!!PETS.henAway === away) return; PETS.henAway = away;
+  if (PETS.chicken) { PETS.chicken.visible = PETS.henShadow.visible = PETS.state === 'day' && !away; setShadowsDirty(true); setNeeds(true); }
 }
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
@@ -5351,7 +5568,7 @@ function loop(now) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
     // between the room's own frames too), which costs a blit and a few points
-    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok || METEOR.on || METEOR.comet.on);
+    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok || METEOR.on || METEOR.comet.on || RAIN.on);
     if (still || now - lastDraw < FRAME_MS - 2) {
       if (live && now - lastSharp >= (PETS.fast || METEOR.on ? 1000 / 60 : FLY.on || PETS.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }   // (animals on the move, a shooting star: 60 a second)
       return;
@@ -5427,7 +5644,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
+window.__lib3d = { PETS, RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
 // The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
 // the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page
 // opened with ?at= starts in the theme of that hour, as the room does (the page's own rule: dark before 6:22 and from
