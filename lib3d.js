@@ -3388,7 +3388,8 @@ const STAR_BSC5 =
    sreenshot này"): the sky's own dark laid over the sky dome (a deep navy, a touch of teal in it), the whole sky crowded
    with faint stars (a field of them, made in the shader, as many as the photo shows: some 35 a 100 × 100 px patch), the
    band clumped into star clouds that sparkle with the stars they are made of, cut by ragged dust lanes, and the moon
-   washing out less of it than it would the real one. ?sky=real shows the sky as it stands over Pleiku at this minute
+   washing out less of it than it would the real one; then the band 20 % fainter (G, 16/10/2026: "less bright 20%"),
+   the field of stars and the dark of the sky as they were. ?sky=real shows the sky as it stands over Pleiku at this minute
    instead (turning with the hours, dimmed low down by the full air).
    Drawn back to front: the Milky Way, the stars, the comet, then the moon over them (it hides what is behind it), and
    the shooting stars last (they burn in our own air, in front of the moon). The moon has the phase of the page's sky
@@ -3540,7 +3541,7 @@ function buildStars(sky) {
             float s1 = fract(sin(dot(ci, vec3(12.9898, 78.233, 37.719))) * 43758.5453), s2 = fract(s1 * 37.13 + 0.17), s3 = fract(s1 * 91.7 + 0.53), s4 = fract(s1 * 13.1 + 0.71);
             float sdd = length(cf - (vec3(s2, s3, s4) - 0.5) * 0.6);
             float grain = smoothstep(0.32, 0.0, sdd) * step(s1, clamp(I * 1.7, 0.0, 0.85)) * (0.3 + 0.7 * s3 * s3) * smoothstep(1.2, 2.4, cellPx);
-            c += uMW * grain * mix(vec3(0.76, 0.85, 1.0), vec3(1.0, 0.92, 0.8), s2 * 0.7) * 1.5; }
+            c += uMW * grain * mix(vec3(0.76, 0.85, 1.0), vec3(1.0, 0.92, 0.8), s2 * 0.7) * 1.2; }
           // its stars that a long exposure picks out one by one, as many and as bright as the band is there, so that it
           // sparkles (cells of ~0.1°; each a soft point a pixel or two across, its size in pixels whatever the view, kept
           // inside its cell)
@@ -3548,7 +3549,7 @@ function buildStars(sky) {
             float k1 = fract(sin(dot(bi, vec3(269.5, 183.3, 246.1))) * 43758.5453), k2 = fract(k1 * 29.71 + 0.43), k3 = fract(k1 * 67.13 + 0.29), k4 = fract(k1 * 11.37 + 0.77), k5 = fract(k1 * 83.91 + 0.59);
             float k53 = k5 * k5 * k5, rq = length(bf - (vec3(k2, k3, k4) - 0.5) * 0.3) * bPx, sq = 0.65 + 0.45 * k53;
             float sb = step(k1, clamp(I * 1.2, 0.0, 0.9)) * (0.1 + 0.8 * k53) * (0.5 + 0.7 * min(I, 1.5)) * exp(-rq * rq / (2.0 * sq * sq)) * smoothstep(2.5, 5.0, bPx);
-            c += uMW * sb * mix(vec3(0.8, 0.87, 1.0), vec3(1.0, 0.86, 0.66), max(kw, step(0.8, k4))) * 1.5; }
+            c += uMW * sb * mix(vec3(0.8, 0.87, 1.0), vec3(1.0, 0.86, 0.66), max(kw, step(0.8, k4))) * 1.2; }
           // the field: faint stars all over the sky, thicker toward the band and fewer behind its dust, as the photo is
           // crowded with them (cells of ~0.15°, a star in about a third of them, most faint, a few bright, the brighter the
           // wider; let go where the cells come under 3 pixels)
@@ -3588,7 +3589,7 @@ function stepStars() {
       _sY.crossVectors(_sZ, _sX);                                   // (longitude 90° along it toward b)
       _sM.set(_sX.x, _sY.x, _sZ.x, _sX.y, _sY.y, _sZ.y, _sX.z, _sY.z, _sZ.z);   // galactic → the room
       STARU.uEq.value.multiplyMatrices(_sM, GAL); STARU.uGal.value.copy(_sM).transpose();
-      STARU.uExtS.value = 0.07; STARU.uExtM.value = 0.07; STARU.uHz.value = 0.035; STARU.uBand.value = 3.4; STARU.uMWK.value = 3.1; STARU.uBandStars.value = 1; STARU.uGrain.value = 2.4; STARU.uBandMag.value = -1.9;   // (10 % brighter and clearer again: G, 16/10/2026)
+      STARU.uExtS.value = 0.07; STARU.uExtM.value = 0.07; STARU.uHz.value = 0.035; STARU.uBand.value = 3.4; STARU.uMWK.value = 2.48; STARU.uBandStars.value = 1; STARU.uGrain.value = 2.4; STARU.uBandMag.value = -1.9;   // (10 % brighter and clearer again: G, 16/10/2026)
       STARU.uField.value = 1; STARU.uFaintMag.value = -1.0;   // (the sky crowded with faint stars, as G's photo of it is: 16/10/2026)
     }
   } else stepRealSky();
