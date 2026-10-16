@@ -2516,7 +2516,7 @@ function stepGlass(force) {
    research topic is a shelf section with a brass plate, a label and a leader line; a click flies the camera there and
    opens its card; the book that is playing comes off the shelf (in front of the camera while its card is open, on the
    sofa otherwise). The record player stays the page's own, in the sidebar.                                     */
-const UIS = { secs: [], byId: new Map(), byCat: new Map(), hover: null, hovers: new Set(), hoverKey: '', open: null, mode: 'home', peek: null, active: null, touched: new Set(), bySrc: new Map() };
+const UIS = { secs: [], byId: new Map(), byCat: new Map(), hover: null, hovers: new Set(), hoverKey: '', open: null, mode: 'home', peek: null, active: null, mapBook: null, touched: new Set(), bySrc: new Map() };   // (mapBook: the atlas taken out and opened, flight.js)
 /* The room is organised in two parts. Books: every category is one whole row of the tall shelf on the right wall,
    top to bottom from the row under the 2.8 m board (rows 6, 5, 4, 3 for four categories: around eye level, where the
    rows run nearly level across the screen and each label sits in its own row: G, 15/10/2026; more categories go
@@ -2609,7 +2609,12 @@ const BOOK_INFO = [
   { page: 'Người thợ đồng hồ mù', en: 'The Blind Watchmaker', pages: 368, cover: 'blind-watchmaker' },
   { page: 'Lược Sử Thời Gian', en: 'A Brief History of Time', pages: 241, cover: 'brief-history-of-time' },
   { page: 'Deep Simplicity', en: 'Deep Simplicity', full: 'Deep Simplicity: Bringing Order to Chaos and Complexity', pages: 304, cover: 'deep-simplicity' },
+  // the Geography topic's two pages, as atlases of one format: taken out, one opens on its map (ui/atlas.js), and the
+  // map leads to the page (G, 16/10/2026)
+  { page: 'Việt Nam', en: 'Vietnam', map: 'vn', t: 0.034, h: 0.3 },
+  { page: 'Phú Quốc', en: 'Phú Quốc', map: 'phuquoc', t: 0.034, h: 0.3 },
 ];
+const isMapItem = it => { const b = bookInfo(it); return !!(b && b.map && it.href); };
 const bookKey = s => String(s || '').normalize('NFC').replace(/[‘’ʼ]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim().toLowerCase();
 const BOOK_BY_TITLE = new Map(BOOK_INFO.map(b => [bookKey(b.page), b]));
 const bookInfo = it => (it && BOOK_BY_TITLE.get(bookKey(it.title))) || null;
@@ -2773,9 +2778,18 @@ function buildSections() {
    is scaled by its size, as the shelf books are: origin at the foot of the spine, spine toward +z, front cover +x). */
 const HERO_LAYER = 3;
 const HERO = { list: [], keep: 5, env: null };   // the books made so far (past `keep`, the one longest unseen is let go: ~11 MB of pictures each)
-function heroSharp(mat) {   // (the room's depth, as the deck and the animals are tested against it)
+// the front board opening (the Geography books open on their map: G, 16/10/2026): each corner turned about the hinge
+// by uOpen times its flap (heroGeometry), in metres (the mesh is the unit box, scaled by the book's size), its normal
+// with it; nothing moves while uOpen is 0
+const HERO_FLAP = `attribute float aFlap; uniform float uOpen; uniform vec2 uHinge; uniform vec3 uSize;
+  vec2 heroTurn(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }\n`;
+function heroSharp(mat, U) {   // (the room's depth, as the deck and the animals are tested against it; and the cover's turn)
   mat.onBeforeCompile = sh => {
     sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
+    sh.uniforms.uOpen = U.uOpen; sh.uniforms.uHinge = U.uHinge; sh.uniforms.uSize = U.uSize;
+    sh.vertexShader = HERO_FLAP + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  if (aFlap * uOpen > 0.0) { vec3 fn = objectNormal / uSize; fn.xz = heroTurn(fn.xz, uOpen * aFlap); objectNormal = normalize(fn * uSize); }')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  if (aFlap * uOpen > 0.0) { vec3 fp = transformed * uSize; fp.xz = uHinge + heroTurn(fp.xz - uHinge, uOpen * aFlap); transformed = fp / uSize; }');
     sh.fragmentShader = 'uniform sampler2D uDepth; uniform vec2 uFull, uOff;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (gl_FragCoord.z > texture2D(uDepth, (gl_FragCoord.xy + uOff) / uFull).r + 2e-6) discard;');
   };
   return mat;
@@ -2811,8 +2825,8 @@ function heroGeometry(bk) {
   const b = Math.min(0.0024, t * 0.13), sq = Math.min(0.0026, h * 0.012), rb = b * 0.42, bz = Math.min(0.006, t * 0.2);
   const gw = Math.min(0.0045, d * 0.03), gd = Math.min(0.0007, b * 0.35), e = Math.min(0.0007, b * 0.3);
   const PT = T2 - b - 0.0002, cv = Math.min(0.004, t * 0.12), zc = -bz - 0.0004, rzp = Math.max(0.0005, bz - 0.0018);
-  const G = [[], [], [], [], [], []];   // per group: x, y, z, nx, ny, nz, u, v of each corner of each triangle
-  const vtx = (g, p, n, uv) => G[g].push(p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1]);
+  const G = [[], [], [], [], [], [], [], []];   // per group: x, y, z, nx, ny, nz, u, v, flap of each corner of each triangle
+  const vtx = (g, p, n, uv, w = 0) => G[g].push(p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1], w);
   const tri = (g, A, B, C) => {   // three [p, n, uv]: wound so the face looks the way its normals do
     const ux = B[0][0] - A[0][0], uy = B[0][1] - A[0][1], uz = B[0][2] - A[0][2], wx = C[0][0] - A[0][0], wy = C[0][1] - A[0][1], wz = C[0][2] - A[0][2];
     const fx = uy * wz - uz * wy, fy = uz * wx - ux * wz, fz = ux * wy - uy * wx, s = fx * (A[1][0] + B[1][0] + C[1][0]) + fy * (A[1][1] + B[1][1] + C[1][1]) + fz * (A[1][2] + B[1][2] + C[1][2]);
@@ -2833,13 +2847,18 @@ function heroGeometry(bk) {
   const arc = (cx, cz, rx, rz, a0, a1, n, part) => { for (let i = 0; i <= n; i++) { const a = a0 + (a1 - a0) * i / n; add(cx + rx * Math.cos(a), cz + rz * Math.sin(a), part); } };
   add(T2, -bz - gw, 'front'); add(T2, -d + rb, 'front');
   arc(T2 - rb, -d + rb, rb, rb, 0, -PI / 2, 4, 'edge'); add(T2 - b + rb, -d, 'edge'); arc(T2 - b + rb, -d + rb, rb, rb, -PI / 2, -PI, 4, 'edge');
-  add(T2 - b, -bz, 'inner'); arc(0, -bz, T2 - b, Math.max(0.0004, bz - 0.0012), 0, PI, 16, 'inner'); add(-T2 + b, -d + rb, 'inner');
+  add(T2 - b, -bz - gw, 'inner'); const iJin = P.length - 1;                                   // (the joint, inside)
+  for (let i = 1; i <= 6; i++) add(T2 - b, -bz - gw + gw * i / 6, 'inner'); const iSin = P.length - 1;   // (to the spine, in steps)
+  arc(0, -bz, T2 - b, Math.max(0.0004, bz - 0.0012), 0, PI, 16, 'inner'); add(-T2 + b, -d + rb, 'inner');
   arc(-T2 + b - rb, -d + rb, rb, rb, 0, -PI / 2, 4, 'edge'); add(-T2 + rb, -d, 'edge'); arc(-T2 + rb, -d + rb, rb, rb, -PI / 2, -PI, 4, 'edge');
   add(-T2, -bz - gw, 'back');
   for (let i = 1; i <= 6; i++) { const s = i / 6; add(-T2 + gd * Math.sin(PI * s), -bz - gw + gw * s, 'back'); }   // the back joint's groove
-  arc(0, -bz, T2, bz, PI, 0, 20, 'spine');
+  arc(0, -bz, T2, bz, PI, 0, 20, 'spine'); const iSout = P.length - 1;
   for (let i = 1; i < 6; i++) { const s = i / 6; add(T2 - gd * Math.sin(PI * s), -bz - gw * s, 'front'); }       // the front joint's groove
   section(P);
+  // how much of the front board's turn each point takes as the book opens: all of it beyond the joint, none from the
+  // spine on, a smooth share across the joint's groove (where the cloth and the endpaper bend)
+  const flap = (x, z) => x > T2 - b - 1e-6 ? THREE.MathUtils.smoothstep(-z, bz, bz + gw) : 0;
   const sp0 = P.find(p => p.part === 'spine'), spL = P.filter(p => p.part === 'spine').pop().s - sp0.s + Math.hypot(sp0.x + T2, sp0.z + bz);   // (from the back joint)
   const cm = (d - bz) / 3;   // the cloth's tile, as large as on the front (heroMaterials: 768 px across, 256 px a tile)
   const caseUV = (p, part, y) => part === 'front' ? [(-p.z - bz) / (d - bz), y / h] : part === 'spine' ? [Math.min(1, Math.max(0, (p.s - sp0.s + Math.hypot(sp0.x + T2, sp0.z + bz)) / spL)), y / h]
@@ -2848,11 +2867,14 @@ function heroGeometry(bk) {
   // its walls: rings at the foot, just above it, just below the head and at the head; the end rings' normals tipped
   // out (the edges look rounded)
   const rings = [[0, -0.9], [e, 0], [h - e, 0], [h, 0.9]];
+  // (the front board's inside, the endpaper pasted to it, a group of its own (7): what an open book shows on its left,
+  // its uv from the fore-edge (0) to the joint (1), up from its foot)
+  const zE0 = -d + rb, zE1 = -bz - gw;
   for (let i = 0; i < P.length; i++) {
-    const p = P[i], q = P[(i + 1) % P.length], part = q.part, g = GROUP[part];
+    const p = P[i], q = P[(i + 1) % P.length], part = q.part, end = i === iJin - 1, g = end ? 7 : GROUP[part];
     for (let r = 0; r < rings.length - 1; r++) {
       const [y0, k0] = rings[r], [y1, k1] = rings[r + 1];
-      const V = (pt, y, k) => [[pt.x, y, pt.z], [pt.nx, k, pt.nz], caseUV(pt, part, y)];
+      const V = (pt, y, k) => [[pt.x, y, pt.z], [pt.nx, k, pt.nz], end ? [(pt.z - zE0) / (zE1 - zE0), y / h] : caseUV(pt, part, y), flap(pt.x, pt.z)];
       const a = V(p, y0, k0), bb = V(q, y0, k0), c = V(q, y1, k1), dd = V(p, y1, k1);
       tri(g, a, bb, c); tri(g, a, c, dd);
     }
@@ -2860,9 +2882,10 @@ function heroGeometry(bk) {
   // its head and foot: the cross-section, its normals tipped out at the rim
   const flat = (pts, y, up, g, uv) => {
     const idx = THREE.ShapeUtils.triangulateShape(pts.map(p => new THREE.Vector2(p.x, p.z)), []);
-    for (const [i, j, k] of idx) tri(g, ...[pts[i], pts[j], pts[k]].map(p => [[p.x, y, p.z], [p.nx * 0.45 * (g === 4 ? 0 : 1), up, p.nz * 0.45 * (g === 4 ? 0 : 1)], uv(p)]));
+    for (const [i, j, k] of idx) tri(g, ...[pts[i], pts[j], pts[k]].map(p => [[p.x, y, p.z], [p.nx * 0.45 * (g === 4 ? 0 : 1), up, p.nz * 0.45 * (g === 4 ? 0 : 1)], uv(p), g === 4 ? 0 : flap(p.x, p.z)]));
   };
-  flat(P, h, 1, 2, p => [p.x / cm, p.z / cm]); flat(P, 0, -1, 2, p => [p.x / cm, p.z / cm]);
+  const capParts = [P.slice(0, iJin + 1), [...P.slice(iSout), P[0], ...P.slice(iJin, iSin + 1)], P.slice(iSin, iSout + 1)];
+  for (const part of capParts) { flat(part, h, 1, 2, p => [p.x / cm, p.z / cm]); flat(part, 0, -1, 2, p => [p.x / cm, p.z / cm]); }
   // the page block: its fore-edge hollowed, its back rounded into the spine
   const Q = [], addq = pusher(Q), zf = x => -d + sq + cv * (1 - (x / PT) ** 2);
   addq(PT, zc, 'back'); addq(PT, zf(PT), 'side');
@@ -2870,9 +2893,10 @@ function heroGeometry(bk) {
   addq(-PT, zc, 'side');
   for (let i = 1; i < 16; i++) { const a = PI - PI * i / 16; addq(PT * Math.cos(a), zc + rzp * Math.sin(a), 'back'); }
   section(Q);
+  const zfp = zf(PT);
   for (let i = 0; i < Q.length; i++) {
-    const p = Q[i], q = Q[(i + 1) % Q.length], g = q.part === 'fore' ? 4 : 3;
-    const V = (pt, y) => [[pt.x, y, pt.z], [pt.nx, 0, pt.nz], g === 4 ? [(pt.x + PT) / (2 * PT), (y - sq) / (h - 2 * sq)] : [pt.s / 0.1, y / 0.1]];
+    const p = Q[i], q = Q[(i + 1) % Q.length], g = q.part === 'fore' ? 4 : q.part === 'side' && p.x > 0 && q.x > 0 ? 6 : 3;
+    const V = (pt, y) => [[pt.x, y, pt.z], [pt.nx, 0, pt.nz], g === 4 ? [(pt.x + PT) / (2 * PT), (y - sq) / (h - 2 * sq)] : g === 6 ? [(zc - pt.z) / (zc - zfp), (y - sq) / (h - 2 * sq)] : [pt.s / 0.1, y / 0.1]];
     tri(g, V(p, sq), V(q, sq), V(q, h - sq)); tri(g, V(p, sq), V(q, h - sq), V(p, h - sq));
   }
   flat(Q, h - sq, 1, 4, p => [(p.x + PT) / (2 * PT), (p.z + d) / d]); flat(Q, sq, -1, 4, p => [(p.x + PT) / (2 * PT), (p.z + d) / d]);
@@ -2886,20 +2910,22 @@ function heroGeometry(bk) {
     tg.dispose();
   }
   // into the unit box: positions over the size, normals times it
-  const n = G.reduce((s, a) => s + a.length / 8, 0), pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), geo = new THREE.BufferGeometry();
+  const n = G.reduce((s, a) => s + a.length / 9, 0), pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), fl = new Float32Array(n), geo = new THREE.BufferGeometry();
   let o = 0;
   G.forEach((a, g) => {
     const start = o;
-    for (let i = 0; i < a.length; i += 8, o++) {
+    for (let i = 0; i < a.length; i += 9, o++) {
       pos[o * 3] = a[i] / t; pos[o * 3 + 1] = a[i + 1] / h; pos[o * 3 + 2] = a[i + 2] / d;
       const nx = a[i + 3] * t, ny = a[i + 4] * h, nz = a[i + 5] * d, l = Math.hypot(nx, ny, nz) || 1; nor[o * 3] = nx / l; nor[o * 3 + 1] = ny / l; nor[o * 3 + 2] = nz / l;
-      uv[o * 2] = a[i + 6]; uv[o * 2 + 1] = a[i + 7];
+      uv[o * 2] = a[i + 6]; uv[o * 2 + 1] = a[i + 7]; fl[o] = a[i + 8];
     }
     geo.addGroup(start, o - start, g);
   });
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute('aFlap', new THREE.BufferAttribute(fl, 1));
   geo.computeBoundingBox(); geo.computeBoundingSphere();
-  return { geo, frontU0: gw / (d - bz), frontW: d - bz, spineL: spL };
+  // (the hinge: the middle of the joint's groove, halfway through the board; the first page: its face and size)
+  return { geo, frontU0: gw / (d - bz), frontW: d - bz, spineL: spL, hinge: new THREE.Vector2(T2 - b / 2, -bz - gw / 2), page: { x: PT, z0: zc, z1: zfp, y0: sq, y1: h - sq }, endW: zE1 - zE0 };
 }
 
 /* ---- the cloth, the stamping, the pages */
@@ -3032,7 +3058,7 @@ const HERO_PAGE_MAIN = `
 `;
 function heroPagesMat(bk, base) {
   const info = bookInfo(bk.it), leaves = Math.max(40, Math.round((info && info.pages ? info.pages : (bk.t - 0.004) / 0.00006) / 2));
-  const m = heroSharp(new THREE.MeshStandardMaterial({ ...base, emissiveIntensity: 0.16, roughness: 0.9, metalness: 0 })), patch = m.onBeforeCompile;   // (paper lit through: a little more light of its own)
+  const m = heroSharp(new THREE.MeshStandardMaterial({ ...base, emissiveIntensity: 0.16, roughness: 0.9, metalness: 0 }), bk.flapU), patch = m.onBeforeCompile;   // (paper lit through: a little more light of its own)
   m.defines = { USE_UV: '' }; m.customProgramCacheKey = () => 'hero-pages';
   m.onBeforeCompile = sh => {
     patch(sh); sh.uniforms.uLeaves = { value: leaves }; sh.uniforms.uSeed = { value: (bk.idx * 0.137) % 1 };
@@ -3047,24 +3073,42 @@ function heroBand(bk) {   // the headband: silk wound on its core, two colours
   for (let x = -16; x < 80; x += 8) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 4, 0); g.lineTo(x + 8, 16); g.lineTo(x + 4, 16); g.fill(); }
   const t = heroCanvasTex(c, true, true); t.repeat.set(14, 1); return t;
 }
+// the first page of an atlas (the Geography books): its map, drawn when the browser is next idle after the book leaves the
+// shelf (some 50 to 150 ms), or as it starts to open if it has not been yet, and again in the other language
+function heroAtlasPage(bk, shape, base) {
+  const pg = shape.page, W = 1024, H = Math.round(W * (pg.y1 - pg.y0) / (pg.z0 - pg.z1)), c = canvas(W, H), g = c.getContext('2d'), info = bookInfo(bk.it);
+  g.fillStyle = '#f1e8d2'; g.fillRect(0, 0, W, H);
+  // and its endpaper, inside the front board: a printed pattern of compass roses, a bookplate, and a word on what the
+  // map does
+  const EW = 768, EH = Math.round(EW * bk.h / shape.endW), ce = canvas(EW, EH), ge = ce.getContext('2d'); ge.fillStyle = '#ece4d0'; ge.fillRect(0, 0, EW, EH);
+  const tex = heroCanvasTex(c, true), etex = heroCanvasTex(ce, true), page = { done: false, frame: null, tex, etex,
+    paint: () => { page.frame = drawAtlas(c, info.map, pageLang()); drawEndpaper(ce, info.map, pageLang(), titleIn(bk.it)); page.done = true; tex.needsUpdate = etex.needsUpdate = true; setNeeds(true); } };
+  (window.requestIdleCallback || (f => setTimeout(f, 200)))(() => { if (!page.done && bk.hero) page.paint(); }, { timeout: 700 });
+  bk.atlas = page;
+  page.endMat = heroSharp(new THREE.MeshStandardMaterial({ ...base, map: etex, emissiveMap: etex, emissiveIntensity: 0.1, roughness: 0.9, metalness: 0 }), bk.flapU);
+  return heroSharp(new THREE.MeshStandardMaterial({ ...base, map: tex, emissiveMap: tex, emissiveIntensity: 0.12, roughness: 0.86, metalness: 0 }), bk.flapU);
+}
 function heroMaterials(bk, shape) {
   const ink = inkFor(bk.color), cloth = heroCloth(bk), img = coverOf(bk.it), H = bk.h;
+  bk.flapU = { uOpen: { value: 0 }, uHinge: { value: shape.hinge.clone() }, uSize: { value: new THREE.Vector3(bk.t, bk.h, bk.d) } };   // (the cover's turn: shared by its materials)
   const FW = 768, FH = Math.round(FW * H / shape.frontW), SW = 160, SH = Math.max(160, Math.round(SW * H / shape.spineL));
   const front = heroFace(bk, FW, FH, cloth, g => heroCoverLayout(g, FW, FH, bk, FW * shape.frontU0, !!img), ink);
   const spine = heroFace(bk, SW, SH, cloth, g => heroSpineLayout(g, SW, SH, bk), ink);
   const env = heroEnv(), sheenColor = _hc.copy(bk.color).lerp(new THREE.Color(1, 1, 1), 0.2).clone();
   const base = { fog: false, envMap: env, envMapIntensity: 0.16, emissive: 0xffffff, emissiveIntensity: 0.09 };
   const clothMat = (face, o) => heroSharp(new THREE.MeshPhysicalMaterial({ ...base, map: face.tex, emissiveMap: face.tex, bumpMap: face.surfTex, bumpScale: 4.2,
-    roughness: 1, metalness: 1, roughnessMap: face.surfTex, metalnessMap: face.surfTex, sheen: 0.4, sheenRoughness: 0.72, sheenColor, ...o }));
+    roughness: 1, metalness: 1, roughnessMap: face.surfTex, metalnessMap: face.surfTex, sheen: 0.4, sheenRoughness: 0.72, sheenColor, ...o }), bk.flapU);
   const ct = heroCanvasTex(cloth, true, true);
   const mats = [
     clothMat(front, img ? { sheen: 0, clearcoat: 0.5, clearcoatRoughness: 0.26 } : {}),
     clothMat(spine),
-    heroSharp(new THREE.MeshPhysicalMaterial({ ...base, map: ct, emissiveMap: ct, bumpMap: ct, bumpScale: 1.6, roughness: 0.84, metalness: 0, sheen: 0.4, sheenRoughness: 0.72, sheenColor })),
-    heroSharp(new THREE.MeshStandardMaterial({ ...base, color: _hc.set(0xebe1c8).lerp(bk.color, 0.18).clone(), emissive: _hc.clone(), roughness: 0.92, metalness: 0 })),
-    null, null];
+    heroSharp(new THREE.MeshPhysicalMaterial({ ...base, map: ct, emissiveMap: ct, bumpMap: ct, bumpScale: 1.6, roughness: 0.84, metalness: 0, sheen: 0.4, sheenRoughness: 0.72, sheenColor }), bk.flapU),
+    heroSharp(new THREE.MeshStandardMaterial({ ...base, color: _hc.set(0xebe1c8).lerp(bk.color, 0.18).clone(), emissive: _hc.clone(), roughness: 0.92, metalness: 0 }), bk.flapU),
+    null, null, null, null];
   mats[4] = heroPagesMat(bk, base);
-  const bt = heroBand(bk); mats[5] = heroSharp(new THREE.MeshStandardMaterial({ ...base, map: bt, emissiveMap: bt, roughness: 0.55, metalness: 0 }));
+  const bt = heroBand(bk); mats[5] = heroSharp(new THREE.MeshStandardMaterial({ ...base, map: bt, emissiveMap: bt, roughness: 0.55, metalness: 0 }), bk.flapU);
+  const info = bookInfo(bk.it); mats[6] = info && info.map ? heroAtlasPage(bk, shape, base) : mats[3];   // (the first page: an atlas's map, else a flyleaf)
+  mats[7] = bk.atlas ? bk.atlas.endMat : mats[3];   // (the front board's endpaper: an atlas's printed one)
   if (img) { const im = new Image(); im.onload = () => {   // the jacket: filling the board (and its joint) if its shape is near the board's, else whole on the cloth
     const W = FW, Hh = FH, a = im.width / im.height, b2 = W / Hh, g = front.col.getContext('2d'); let w, hh;
     if (Math.abs(a / b2 - 1) < 0.14) { if (a > b2) { hh = Hh; w = Hh * a; } else { w = W; hh = W / a; } } else if (a > b2) { w = W - 60; hh = w / a; } else { hh = Hh - 60; w = hh * a; }
@@ -3072,6 +3116,7 @@ function heroMaterials(bk, shape) {
     front.tex.needsUpdate = true; setNeeds(true);
   }; im.src = img; }
   bk.heroFaces = { front: img ? null : front, spine };   // (a jacket's picture is not redrawn for another language)
+  bk.heroShape = { hinge: shape.hinge, page: shape.page };
   return mats;
 }
 function heroMesh(bk) {
@@ -3087,13 +3132,257 @@ function heroForget() {
   while (HERO.list.length > HERO.keep && idle.length) {
     const bk = idle.shift(), m = bk.hero; scene.remove(m); m.geometry.dispose();
     for (const mt of m.material) { for (const k of ['map', 'bumpMap', 'roughnessMap']) if (mt[k]) mt[k].dispose(); mt.dispose(); }
-    bk.hero = null; bk.heroFaces = null; HERO.list.splice(HERO.list.indexOf(bk), 1);
+    bk.hero = null; bk.heroFaces = null; bk.atlas = null; HERO.list.splice(HERO.list.indexOf(bk), 1);
   }
 }
 // the page's language switched: the title on a book already out drawn again
 function relabelHero(bk) {
   if (!bk.heroFaces) return;
   for (const f of [bk.heroFaces.front, bk.heroFaces.spine]) if (f) { f.paint(); f.tex.needsUpdate = f.surfTex.needsUpdate = true; }
+  if (bk.atlas && bk.atlas.done) bk.atlas.paint();
+}
+/* The map of Vietnam in the Geography books, drawn by ui/atlas.js. Made by src/tools/vnmap/make.py (do not edit by hand)
+   from G's own map of Vietnam (HTML MAP/Single VN map.html): the coastline and the border from OpenStreetMap
+   (© OpenStreetMap contributors, ODbL: openstreetmap.org/copyright), the depth and height bands from AWS Terrain Tiles
+   (terrarium); Hoang Sa's islands placed by hand. Rings as encoded polylines (lng, lat in 1/1000 degree), a layer's
+   rings joined by spaces; `dots`: the archipelagos' islands too small to draw, as points.
+   vn 79 rings / 2137 pts, border 878, pq 131, dots 65, foreign 34 / 1402, sea 200 31 / 424, sea 1000 32 / 459, sea 3000 25 / 394, relief 200 21 / 1424, relief 500 46 / 1657, relief 1000 42 / 860, relief 1500 11 / 188, rivers 62 / 671 */
+const VN_GEO = {"f":1000.0,"vn":"m~jEmjS[l@RdAmAYFXc@B_ApAEvAc@Yy@|@WrCc@f@Ll@wAJ_BeCqAo@_ALkAp@cDtEuEOeDjD{@xBJZv@[l@NvDpDlB@^p@nA~IjAr\\@dGU\\ZPFtFd@dD}@vAoDkACPr@tAhDpAPl@[pAhAL|@S^j@W`AqElAuImAqEiAqCoEiD{@cCaCgBqEYkBoEcE}UmIqOmCkBuACoA`@QkA_AIeAgAC{@aA]aB|@g@a@WwB|@w@r@Ij@{D[iCwA}@}A[eBZoBzAy@EiApAsAUWWTL]kAbASa@b@]WQqCzCgB_Be@sAj@yAt@_@Cw@iBiB_Bg@kBiC\\iBlAg@uAeA`AkAcAaAAeDqDcAE~@o@^_ADmAa@m@Vh@a@GeAvA{@[s@g@NSmAg@Wy@`BUUmAvAmAEIf@^j@~AXy@xBu@oAkBmA}AKw@r@a@AeCgCyAg@qC@y@}@sAEcCsCqEeByDi@iBuBqC]sDj@k@gAm@cEwA{CcHwAeBZEp@YB[sA}@@UeBk@s@qAHi@g@oAAe@}By@qAqAUm@g@}@L_Aa@_BTQ`@m@i@o@{Dk@OSo@g@XJQUE@TKk@kC_@}A|@eDcBRkAKaFKi@[GD}A}BMiAn@k@mB]GUmBu@{@Le@QVw@[Dg@R@MQpAgAOg@XGHw@[}@z@f@T`At@?TcBa@eAWCI\\e@WiAyCUFAj@THYVZtB}@@_@v@_Aw@l@uAs@_AVBBk@rAkA`A}CAs@w@m@r@q@We@l@g@}@Hf@iAIwAmAq@nA{@F{BbAMXi@q@}@eCfBi@x@DZ_A^]sAg@\\[s@fBw@OoBtBu@PgAYoAZOb@p@E\\b@c@OyA\\MGYk@YHc@g@w@s@MaBsBe@Eg@gAgAnDXj@ZCPt@\\BQTYWYj@G}@q@FEa@a@fAD^f@HsAbCGaDs@GRg@r@A^o@MUVDXc@dAiEoCyBQTb@j@aAWEiB~C}D~CcGDw@Yi@X{@]WHi@[IbAaCE][?Hy@fAJ\\}@v@I]c@TKc@S^c@i@{AcBfAbAv@Q^o@IKXYQI{A[EDU`@P`@c@EwAR`@jA_@_@w@SDH`@c@HTe@k@i@hAe@|@yAGaBf@_Cw@s@}A^QyFFa@NT\\St@wA@_@_@MR_@IiAtAuCAcAjA@^cA?[_@G{@~Aa@BMWxAgC?g@]Md@kAMU|BsDIm@X}@Se@pBaFEg@U?`@wCe@_@J_AzDyHhCwIf@{HoAu@Ks@~@MdAsAQiAb@OI]d@Dh@s@FwA^JVY`@Ls@PV\\HORXBQ@Pv@EdB_BJsAb@KIo@~@h@UMzAm@dJ{Nv@}DvEkDtAaDLmAUq@iAIWRI_@u@K\\m@TANd@tB_AhA~@aATHd@V_@h@TMNRGKTVRvAe@t@}A[ECk@YBEw@kAS?U|ASx@Nt@YdB}CJ}@^KGj@VJbAGh@s@pBo@tKmIxCgAbPuKrK}J|@mBI_CxQiLrHgHdHoLrBmFVoBSmA}@}A{@e@g@Jp@QFYUEj@IfA_BPgCCp@VJPYWMNDZeA[g@d@E`@r@pAUrEqEtDiBtBMfFiFtA}Cf@d@bEkH`B{H~AsAVgB~CwAh@gDY{Bs@qAg@Ya@`@}Ao@P_AQcDw@Q[sAs@GQeAWRBsATTZSRo@W@VEJw@[_A]E?_HiAwFq@{@m@FeAoBCsB}@iB^DEaAqC}AqAbBq@Qs@f@v@XUJuCcDYiAi@RJYiHsIqBs@}Eo@i@BBr@qA]?sA`@a@w@s@TMQQZeB}@eCPC?cBl@eAIeAoBeB?g@{@EKTi@SPUg@aAcAKB_@q@EK]MN^d@g@FKa@s@v@d@y@Wo@\\F[ItAgBc@I@We@b@qASTcArAOESwAGUp@u@[`@iAc@Gc@iA}BDRYXFGm@q@f@Ck@c@YUTA[wA^o@KCo@n@c@~@E?a@UVaA@S]q@FRtBqBVOQY\\UOJZUUTSgARWo@RHgAq@PUqF@aAaATe@Gs@TQk@URKUSVm@m@CH_Bj@@GsDyAc@U\\@{@IVs@Fj@k@gABn@o@gAz@W?R]_AXV]WNDUe@@Aw@u@dAODA]Wh@[CLLOQa@JRa@[EIg@WHCo@SGNi@y@VUi@XS_@JUe@oDl@h@[Du@}AgBl@u@d@F_@e@mAXo@m@@r@u@i@Gf@[FSCEm@QV]KMn@u@H~@x@g@TKSG^g@??`@yAqA{B[~BCsAk@^AJT`@[aASXi@~CRVaAd@e@n@@`@i@K_@|@{@^Zt@c@~@DtE|AdDH\\[fAx@tBS]]^uAb@M|An@bAxAh@IB_CtB}ChAZ^p@r@Gr@[Rq@zA_@v@}@lEcAHc@W_@_B_A\\eAp@_@~@MXr@b@LPWj@?ZyAvCOv@T~AoAt@HTt@fA`@LkAq@o@Tu@_@uAp@sAa@m@dAq@_AcAb@yAMYn@OL_BfE[s@{Ar@w@Me@Pc@u@a@DqAy@oDi@@_@t@uCUOY`@Y]_@F]aA}@Fk@s@U\\Q?o@m@WBY_AIc@cAx@]rARG_@vBkAQWVWhAG^v@dB_CfARnAy@^@XtAl@IT\\PUp@d@NQXPKTpAQh@v@p@c@pALx@UMK\\S]_@v@wAdA_AdABh@Wt@TdA_@`DNDdBxCG~@LZj@lAmCbAEn@aA|AWh@eAAPdAA`Ag@p@`@XUbAHV_@?oA[_A|@aAxASHy@dBgCTEVb@~AcA|AsCnAdB|@FKf@p@z@?t@zBw@\\j@xAh@~@g@lB|AzBf@\\~AfBy@VJN`Bd@E|@f@n@Ou@hF_Ah@G|@r@r@~Bf@d@tAz@NMt@vBHbBy@Bp@h@J@y@j@Qz@ZOFpAzAvDjBl@bAv@Zd@It@iAnBWZgA_@eBV_@nFjAn@GvCpDP~Dp@bBUTTt@M\\dA^l@Iv@w@VHp@eAVHvEyFd@@Tm@`EkDn@XNx@zAbB_@rAbBhCpAm@`AqAIg@dAeA[oAfCyAxA]L`A~@vAJnBz@Nn@p@tAFt@`Bo@jAzD|A^f@QlA`BNnAi@F]tBINo@~@y@MQb@Y@_A\\a@jAe@fA@Bc@j@GVg@b@@xAkAbA\\|AsAjAx@d@uAtBcA`AZDbAh@|@bB^_@lAc@P|AtAp@FOl@bAPtAvCx@f@g@jALRtCg@v@F\\z@u@x@Dh@w@Zb@|@oBj@MxA}@BM|@sAB[hA}@Dc@ZAf@cBVKtA{CvA|@l@c@`AuEjBOf@Tj@eAf@E`B[^`@vBy@zCuCQyCmC^sDo@i@c@FGlFk@h@_EuA]n@Tp@WVR`AW`C|CdDJp@h@B?r@`@h@eAAg@s@c@?zAjCA`DxAHvAfA_@b@oAU_Bv@P|BeANU`@P\\u@v@At@cCX_D`IgBg@yA^o@v@Nh@Sb@_ATi@]U`@aC\\o@j@eBSUu@]IuApCwDR_BxAc@?]fAiBKSUXgBsB_@TmBy@i@Lq@W_@g@Kc@T_BwA_BR{@g@kBTc@YEeAkBu@q@x@uBOgBl@Dj@c@XQe@q@KsArAHp@eEbCe@QQh@w@V[lBs@VaAe@s@b@Ur@yAFPjAv@r@xBNb@~Ar@Fl@z@hAL^`@`ABT|AmA^Vp@Sh@wBVgBq@Ce@aDQ_@mAgA[Gl@mBxAJPz@KbCrAFlF_@Z}@GM\\gB`@mBDmDnBaCa@H`@W^}@r@y@HvC|C\\~AtBrAKjBZd@[PZ`BnCd@Lt@`AKxBhBQd@r@v@Md@TZbA[bBr@XUb@Jh@U^{@fA?Pa@d@AX}@~BXx@p@Ce@b@UdCUxBf@XQHp@h@R~@?hAi@R|B}AbBF~Ae@f@VV`@Ov@vASFF`Ab@QhAn@jAFd@\\Hr@hC~@Nd@mAB{AdBoAh@iC_@_A`ASQ_@d@gBLe@dAq@JHjAkC@o@x@mD|@o@dBs@h@o@CWa@w@n@a@IeBhDaB\\aBbBeA@s@dAk@Ni@Oa@f@sAGa@TkBc@q@b@EbAqB@o@UA`@kALP^iBDy@UWZP^yB|ALdA|@Qp@l@Ix@p@l@TvDa@v@e@AU|@cAD@xBuBx@WpAwA?Ad@S{@e@@P~B_BnA_@Qq@^U{@g@BEk@eBFJl@YUUjAJr@y@NIbA}@CSjCa@V_@S{@f@fAdFiBh@k@l@LjAkBbBi@xC}@O}Ar@]l@c@?wL~NiBfAUr@oE`Cu@i@By@y@AAhAYRRPs@Hz@r@k@PCd@w@j@RRSZwBlBZr@kArBi@KUb@uATeAeAB`Dv@FJr@iA|@?tI]jBq@b@Hh@o@K_@HCf@c@Wi@RIn@n@d@@d@c@b@F|@YCCl@QIEb@kAZQ[Iv@_Ai@@gAs@MITy@iD_ANu@x@XhAUn@^l@u@B?hAcCdAMdB_AS[RWSe@ToAQgClBVrA[zAeAn@{@Le@Ug@TGb@a@?cB~BwAe@i@VYk@qAGO^Z~@g@\\fB`Fj@p@zAMdEnBt@BRRe@rA`@xAiAK@b@w@d@XbBYJAd@cCd@Sp@TXk@Ja@vCmDIQh@gAJYz@Jx@mAd@uAu@i@Jv@~@[~Aq@^f@~@GpA[^bBbAwAzAd@`@]t@p@b@o@hAv@?Rl@vAk@lAv@r@@LZ]nBm@j@o@@Qf@yA^Ob@lDnDiAdAd@x@aA@N|BWdAtAhA]nAp@jAMRp@tDx@@VYh@RYt@|@d@b@hA_@z@AvBpCpFk@t@s@Pb@\\L~Aw@r@oBO[b@DbBg@Xd@zAe@`@j@tBcDdBiDlLYpIvGdTYzA`@HDj@c@~@Td@Od@oBxBYhDNn@k@x@XfAi@fDv@nAe@l@lAhDYz@T|@fEpBP`Bb@HnC_Er@XRUnANlAx@j@GfBh@b@`Bt@Rd@lAb@KIp@f@@Pt@|Ad@SDX`@~C`A|Fi@|AzB@jAn@\\hAFv@q@Gn@`@SNZLY`EHVWt@XhAi@j@`@h@EoBvEv@PQ~@dArBmAxCBf@~Cs@hCb@zA}AnACz@k@~@ZtAObBmAvAZBvAzBjD`CkAbAZzA|BS~@wABe@f@G|BTj@y@ZBd@x@n@W|Ad@jCwADCvA{@`AqC^O~AkBxAYC[v@eB{@e@r@aAfEvBGMjAXt@_BxCE~At@k@xD?|FqEW`Ar@f@Kr@jDq@YgAjDiG`BLvBhAdGfAnAHl@c@j@Rr@c@b@rAjClCpCgAp@FpAe@dEQa@qAdAFDj@r@HLv@b@RgA~Ew@n@KbA~GhDjBlD~@v@dFDrEi@BR|AEZv@n@VLdAdAb@f@fAf@w@lAP edjEymRPE?d@YPFq@ gvpEsrg@EcAZF^YF^ZaAQbBq@CUV owpEwqg@[LOo@\\WLx@ qupE{vg@m@EHq@@TRWx@Lb@SAb@SWUt@c@A mypEgxg@k@]PMv@X]P s|pE}xg@k@@[g@fAd@ wrpEexg@V_AFb@_@Z gtpEmxg@KQ\\GQX wtpE{{g@zAHsAT}@m@Ca@x@n@ uaqEs}g@[QkBcHtAjBClA^RTfB ezpEi{g@{@k@Ki@fAtA evpEwyg@sAYaA_B`Af@\\x@zBZeAC e`qEqch@m@]d@Ow@FQiAr@Dp@|@Sj@ yaqE}fh@_@e@d@DE^ kgqEihh@WI[kCb@r@N`B qpqEoth@k@_@^GlEjBwAIiBy@ qmqEeqh@uAYz@AXZ kxqEuwh@~Dj@sBO^`@n@NASBb@qAc@uBBuBqA~CR w|pEmpg@KW`@NUF asqEg`h@m@a@N_@d@B~@bBa@Pe@w@ cnqEk}g@n@j@sAu@d@q@e@ZIQjA_A\\d@{@jA eoqEwah@@]^d@a@G szqE{nh@ZT{@HBa@Z@ kkqE}hf@]@Mg@j@d@ iutEwoWd@o@PwA`C_@\\RWr@_@GKb@yBpAYM mbiEmcQq@UEk@xANa@p@ ertEsqYp@o@Sj@]B eptEy|XYGVO@V cvpEcmh@Nn@WHB[UP@m@k@SBWr@IJr@ mvpEech@@f@Y@iBwAUDFQ[@iAcAOs@a@EE]Kj@e@YiB{BxCv@d@c@c@JNk@dCeBBn@e@CJX`@UGbAU@TP_Ab@ZASVr@CA]^TAr@V_@XFi@j@\\DKb@PWv@jAODf@Z?p@ mmqEcvh@KU\\FQL m{mE}xd@Uc@l@KWn@ uitE_eWYGRUD\\ mopEwug@GRk@WVDFWAXTC ofpEepg@C\\]CPKOe@^V ajpE_xg@g@^QOh@]NL sqtE{jWKIXMMV {mtEkkWi@WZCLZ mjtEqbVWAD_@RV`@[G^[D {ekE_qRFo@RT[X sxkEknRr@DF\\OLk@q@ qyjEuzQLiBN~@]h@ g|oEcwg@OJISb@OIV g~oEoxg@`@?A^a@BTQSQ aaqE_bh@^~@?aAt@nA@_@j@dAREKTQK@n@HMdBxAnA^@TuBs@SFXLY?eB]kAsCRMUkA s|pE_xg@UPp@hBSBe@eB}BeCP_@Oc@~AbDx@J uwkEonODYh@r@e@@I[ _~oEqog@O`@Di@g@@?h@c@LHWSBOb@UOFy@c@Nx@c@Vw@[p@WGZEKSq@Ad@@e@Kl@aAw@jAKS@Xa@En@u@{@f@AU~@s@VTHg@RNBS@h@V_Bt@?Ol@j@m@R^BYl@VL}@F~@p@A\\j@Qp@eAJm@v@PLk@h@GM ofpEasg@^IWjA[e@R[ odpEivg@VTMJKSWf@Xu@ }hpEwug@D^UINU k_pEawg@@YRHUN ofqEmoh@`Bb@k@MNLSDq@i@ {hqEoqh@r@j@aBy@l@L u}rEqd^h@e@b@\\g@FG`@_Ah@@aA^I sgjEseSIq@j@_AzBcBj@XJ|@f@Nd@lApD_@LXy@|BeBTgA~AuAjKg@dAWOy@Xj@u@YiAn@[c@iAHi@aBoELiE uikEicR{@@Qi@x@El@j@Y@ {foEkaPxBtB_@hAgAJ\\w@KU_Ai@o@Lh@s@KYc@ANi@]?ZMbAd@ }`oE}cREn@[GCYd@M mwsEapSi@\\UU^uAv@JW`A m}pE_bh@kAYAc@lA|@ kaqEybh@@a@P^S@ oypEwkh@Jd@WCJa@ ieoE{sf@d@x@[h@a@eAV] i~oEe{g@RWn@AFTe@f@U?N_@]ZA_@ kloEy|OZUFR~@Oc@j@GWw@A }coEg{Oj@g@VDc@z@_@Y mjtEizVyA~@UAJWWWDZq@C?PYQb@cAT\\Tc@z@IL`@p@YId@ ymoE_~OOH?_@NT mitEsxVUQTC?T oatEe`]o@Ro@]~@O^X mvoE}tg@t@\\gAGPU {xoEyrg@NSTNHa@pAHYp@sAY_@p@Jm@ sdnEwye@HZVOKTUa@ iwoE{ug@[?Pw@Xj@OJ q_qEiqh@?f@{@_@z@G qbqEyoh@WAf@]bA\\sA@ sbyE{|OONI]XL","border":"m~jEmjSmAQg@v@g@gAeAc@MeAo@W[w@}ADCSsEh@eFE_Aw@kBmD_HiDJcAv@o@fA_Fc@SMw@s@IEk@eAG`@pAeEPqAd@q@GqCfAkCmCc@sAs@b@k@Sm@b@oAIeGgAwBiAaBMkDhGXfAkDp@Js@s@g@VaA}FpEyD?u@j@D_B~AyCYu@LkAwBF`AgEd@s@dBz@Zw@XBjByAN_BpC_@z@aABwAvAEe@kCV}Ay@o@Ce@x@[Uk@F}Bd@g@vACR_A{A}BcA[aCjA{BkDCwAwA[cBlAuAN_A[{@j@oAB{A|AiCc@_Dr@Cg@lAyCeAsBP_Aw@QnBwEi@Dk@a@iAh@u@YWVaEIMXO[a@RFo@w@p@iAGo@]AkA}A{B}Fh@_DaAYa@RE}Ae@Qu@g@AHq@c@Je@mAu@Sc@aBgBi@k@FmAy@oAOSTs@YoC~Dc@IQaBgEqBU}@X{@mAiDd@m@w@oAh@gDYgAj@y@Oo@XiDnByBNe@Ue@b@_AEk@a@IX{AwGeTXqIhDmLbDeBk@uBd@a@e@{Af@YEcBZc@nBNv@s@M_Bc@]r@Qj@u@qCqF@wB^{@c@iA}@e@Xu@i@SWXy@Aq@uDLSq@kA\\oAuAiAVeAO}B`AAe@y@hAeAmDoDNc@xA_@Pg@n@Al@k@\\oBM[s@AmAw@wAj@Sm@w@?n@iAq@c@\\u@e@a@vA{AcBcAZ_@FqAg@_Ap@_@Z_Bw@_Ah@KtAt@lAe@Ky@X{@fAKPi@lDH`@wCj@KUYRq@bCe@@e@XKYcBv@e@Ac@hAJa@yAd@sASSu@CeEoB{ALk@q@gBaFf@][_AN_@pAFXj@h@WvAd@bB_C`@?Fc@f@Ud@Tz@MdAo@Z{AWsAfCmBnAPd@UVRZS~@RLeBbCeA?iAt@C_@m@To@YiAt@y@~@Ox@hDHUr@LAfA~@h@Hw@PZjA[Dc@PHBm@XBG}@b@c@Ae@o@e@Ho@h@Sb@VBg@^In@JIi@p@c@\\kB?uIhA}@Ks@w@GCaDdAdAtAUTc@h@JjAsB[s@vBmBR[SSv@k@Be@j@Q{@s@r@ISQXS@iAx@@Cx@t@h@nEaCTs@hBgAvL_Ob@?\\m@|As@|@Nh@yCjBcBMkAj@m@hBi@gAeFz@g@^R`@WRkC|@BHcAx@OKs@TkAXTKm@dBGDj@f@CTz@p@_@^P~AoAQ_Cd@ARz@@e@vA?VqAtBy@AyBbAET}@d@@`@w@UwDq@m@Hy@q@m@}@PMeAxB}AQ_@V[x@ThBEQ_@jAM@a@n@TpBADcAp@c@jBb@`@UrAF`@g@h@Nj@Or@eAdAA`BcB`B]dBiD`@Hv@o@V`@n@Br@i@n@eBlD}@n@y@jCAIkAp@Kd@eAfBM^e@RP~@aAhC^nAi@zAeBlACOe@iC_AIs@e@]kAGiAo@c@PGaARGw@wAa@NWWd@g@G_B|AcBS}BiAh@_A?i@SIq@YPyBg@eCTc@TBd@y@q@_CYY|@e@@Q`@gA?_@z@i@Tc@KYTcBs@cAZU[Le@s@w@Pe@yBiBaAJMu@oCe@[aBZQ[e@JkBuBsA]_BwC}Cx@I|@s@V_@Ia@`C`@lDoBlBEfBa@L]|@F^[GmFcCsA{@JKQlByAFm@fAZ^lA`DPBd@fBp@vBWRi@Wq@lA_@U}AaAC_@a@iAMm@{@s@Gc@_ByBOw@s@QkAxAGTs@r@c@`Ad@r@WZmBv@WPi@d@PdEcCIq@rAsAp@JPd@b@YEk@fBm@tBNp@y@jBt@DdAb@XjBUz@f@~AS~AvAb@Uf@JV^Mp@x@h@UlBrB^YfBRThBJ\\gAb@?~AyAvDStAqC\\HTt@dBRn@k@`C]Ta@h@\\~@URc@Oi@n@w@xA_@fBf@~CaIbCY@u@t@w@Q]Ta@dAOQ}B~Aw@nAT^c@wAgAyAI@aD{AkCb@?f@r@dA@a@i@?s@i@CKq@}CeDVaCSaAVWUq@\\o@~DtAj@i@FmFb@Gn@h@_@rDxClCtCPx@{Ca@wBZ_@DaBdAg@Uk@Ng@tEkBb@aA}@m@zCwAJuAbBW@g@b@[|@EZiArACL}@|@CLyAnBk@c@}@v@[Ei@r@eA[o@w@GuCf@MSf@kAy@g@uAwCcAQNm@q@G}AuAb@Q^mAcB_@i@}@EcAaA[uBbAe@tAkAy@}ArAcA]yAjAc@AWf@k@FCb@gAAkAd@]`@A~@c@XLP_Ax@On@uBHG\\oAh@aBOPmA_@g@{D}An@kAu@aBuAGo@q@{@OKoB_AwAMaAyA\\gCxAZnAeAdAHf@aApAqAl@cBiC^sA{AcBOy@o@YaEjDUl@e@AwExFWIq@dAWIw@v@m@HeA_@L]Uu@TUq@cBQ_EwCqDo@FoFkAW^^dB[fAoBVu@hAe@Hw@[m@cAwDkBqA{ANG{@[k@PAx@i@KCq@cBx@wBILu@{@Oe@uA_Cg@s@s@F}@~@i@t@iFo@N}@g@e@DOaBWKgBx@]_B{Bg@mB}A_Af@yAi@]k@{Bv@?u@q@{@Jg@}@GoAeB}ArC_BbAWc@UDeBfCIx@yAR}@`AZ~@?nAW^cAIYTq@a@aAf@eA@@Qi@dA}AVo@`AcADmAlC[k@_AMyCFEeBaDOeA^u@Ui@VeACeA~@w@vA\\^]RLJy@TqAMq@b@i@w@qAPJUYQOPq@e@QTU]m@HYuA_@AoAx@gASeB~B_@w@iAFWVPVwBjAF^sASy@\\b@bA~@HCXl@V?n@]Pr@TGj@`A|@G\\\\^a@XNXtCT^u@h@Ax@nDEpAt@`@Qb@Ld@s@v@r@zAgEZM~Ao@NLXc@xA~@bAeAp@`@l@q@rA^tAUt@p@n@MjAgAa@Uu@u@I_BnAw@UwCN[xAk@?QVc@MYs@_ALq@^]dA~A~@V^Ib@mEbAw@|@{A^Sp@s@Zs@F_@q@iA[uB|CC~Bi@HcAyA}Ao@c@L_@tA\\\\uBR_Aw@e@XeDIuGcBu@b@][[Lg@`BUVm@C{@fB}CS","pq":"sgjEseSCIKGBCC@HMCOHOTWJWJCTUHFHCNQ\\q@VIXHPNJ|@ZFJFJl@JRLJPBDC\\Ef@MJ@LETAHEFDPED?CNJHCFODCHMt@K\\@@INAGOCUHKLAFGBUACEMDSTO`@SLOXMj@@@EBD?GBEPM|@e@tDGnAUDB@CA?DARACCB?BBAGH?REDEACKMAQNCGICMNKDBMBCDBDCVc@EOI@ACDE@OEMIC?OLENM@F@CD?FKMQA]IIIO@IJOCABCCIC??CEABCOMKu@Mk@OQC?IGS{@?QJq@Iy@Lw@AS","dots":"_exEmy]wQgpASlf@uCmCk@QwBtQyAuL{@Uw@xXkH~mM?EEA_PmKA?A?EqyN{@rwNA?m@TC@?EQezNcB`@g@bGEuFSJCjtNsIk{L{@vaMsAUeC^A@oCkiNyJncPcRoJoByC?AyAo@u@uD?As]{kB?EUIE{CaC`nAA?gCN?AuB|AoFbDGXE}B?Ag@xAoB}aAsC{ECq_BkAbfBA?{Egd@gDl\\m@s^AAw@zXm@vfA","foreign":"qjfEcfKuDxBgAgAsGnBmJ`Rmd@t]yMxVuG?xH?wz@?|lE??wiB?n\\?iAcDt@x@|EqA`BzDfUsFfEsDgBiAqEiRwFwE`HyBg@qCzAaFmFk@uFyFaFYeI s{_FowH{Q?yEeCsA{HtC^vFeFdA`@w@sEgL}L?fF[_B}GxAmDiAcDuKoF}CuDmMfAiBiF}EiCFAuApBDuO{LcPg`@yB`C[nCpAt@_BxAtCbMyB?aGgFgDsGt@iDaFqCaFbCt@nFcCjJeInDuCqCo@`DiIbDMxJbGlCyBvDv@bCgAdCnKnEaRmAOuAkEGmF{EsFpKbClBrG?mArF{IEsAeFyJQiMfGx@vHkD{EoIzHgEl@[xBeBuAyLKiCbDL~HjQ`IrJnAfS?lDqAbNpA__@?zxP?c~I? yldF}eLkAzD~Hb@aEwAvAoAiCw@ uocFwjMMvCzHbDmH{H ezcF}iM}ETf@bGzJfENqIuEoC ipfEsxj@rBv@~EaBlE`@n@dBtHaF~ElLhD~@uDhP_HnHj@bEyC~EjCdAh@rNwE`E|Bv@MxApJq@C_BbCe@bO~BdBeCs@kF~BmA_@gGfCaMlF`B?tP?g~Egcc@?bxF?cxF?fyB?gyB?tg@?uH?T|BvDAuCvBnJYvC|A[qBzBgBEzCdEScC`F_CkA{BrB|CjDtAYe@pDjCzBdImEEiCr@xDpFP`CpBtBoHbBxEbCcALpBzBNeDhArBxAk@p@lMi@gFbDoGk@t@~CuC[eA|CdHfEdAeBhAt@}@n@vAjGlBFtDfFcBcFfALAmBlAfApBy@sAv@Z`DlEpLh@kIrHwAqCbFnBpBxHKCbHnA|@PoDT|BlG|C^gEhFnAbAgBxAnBHxHzDhErNkCcB|D_JCoBrDrGyA_BhAfC`DdAwClEH_En@lChEy@rDfC~CpPwAeCp@lHlFxAUmAyAbDkAcA`CrOrFHiCpF}B{AoBpIhDX{AzG{@yCl@\\hB_H]hD`Ey@hBcAm@\\hCpKs@fAmAqCmBbJ?mD}B^gBdGbDMfAdFU~CtEtAaC|CQoElDlC~Fz@kBrFMBwF}CsBzAq@xNzEj@hBsDP|DbDuF~AjExBnFaIhTtEtD}@rChDGgCnGoMjDJlB}GTtA_AwJpAhFg@iFpA~DMcDjBRiBmDoNe@|FqAbK~DvDeAiDxCb@~D|Od@qG\\_HdFjBfAzBw@yL~JhBpG_CfCj@fGnEdD~KqL|EwKHnDcNfRdEEnB`GrDx@nCmJt@lDhAII`JbFxDjD{EhJhFhArCpBBxFoC\\oBeDaClERKaFnApDyAdJfFvDnEwAUsDhIzAYmDnCvB|CiE[zE_EpAfG`E`AsDxH[eDlBZbDqAv@tCMpCrDrBaB[~AnFf@vAqDKhCtCMqAZpGnDcAwBxE_Af@~@kB?rGr@gAcA~DcA~A~DqDw@vC~A`Mt@hFrGu@qDdAt@L_BwFuCvF~B?lHxKlALaEmB\\bAeAqAw@fBt@EqD|CkA}@tExBMeDnEVlBfJhHl@uAhB|C[|GgL?oAbEhBd@ZsDpAhIu@i@ZpAiIhCmBrD|FxI|FfBnHHrDkB`F~BGoDbC_DqAq@{C|Cw@cD|CoCZxB|DoCs@}Ct@pAhCmFwEqApCn@t@gIh@|AdAcA[bApBoFeBsErAqDmEwDLyG{HMg@cGlE[t@`BpAwF?~DtFcAu@mEhC~AMuCjBi@aAuC`GbDwEbDrArDtEnAlEw@vC~AJkBn@hCbCk@RhAdE_BmEwBLyDrD?i@qAtGx@pCkCiCcDlBXM}AtCa@uApC~Bd@aDbDfFpAf@}GrApAbAw@w@cDdDtCl@qCaCyCvCIYqBbD~DXqDx@|CoBzCt@pDu@v@w@_BZ~A{AOzAdDjAZSqAf@xB`DYaD_EhDCxAiBt@~GlE`Du@}GzBfCpJv@cBzH`BwHjAN~DiFvRbCtBSd@aCjE~BxB}G|CdAhLoFmBcCnAeB|Br@xAqBnHiArC`BAsR|@oBfE[B}EiBcHiFTgEwLzQkG~EpC~FNbBmDtDsA|GDDdBtFp@hIsHtGACoDrNqMrDfGrHIfGdFfBy@f@lBrCP}BpIfGvFhGLl@kAzKjIjEkBRmE~GbAvCpDzBlLzRuPfDdCxA~FrC_C^}D`FwBxAhG`EhADlDlHbFjEqAdCwFzNwFjAx@zCyCtE|DcA~ArI|IY~AdE]x@_I}@dI eywEgme@o@rAhCJrD~DjBw@qAqApBGHjFdG`FrDdMhE[wCbDu@}BhCfNbDhD{Bv@SqD}@~D`CPbCbFfCSgC}@fGfAlJfIjBOaBbAtA~DlCOgByBrJhCpD[ZtFzB?iCZz@fB~@kAfFvC?sDbDbCw@wBdCgAhP@t@qC`HObRcHQyKjCaG_A}DpA{HgCkBnBmFwBmEcOcF}BqEiHiBkBuC_EZbAeDzEhCG_DoDyDoBk@sHjDiFk@zBs@iAeAz@cA_KwB@hBsDLOoAe@vBwEwB}AhDo@gByE_@u@aAbDj@qDcDwJPqClGdA{H_KbD}@vCnAeH_F{D{ErHeH\\wClR utyEshi@iAF?`A|JnBaAsALiA_G[ i_{Eali@IpCxFpA@w@wAcAVa@qDeA wk{E{oi@e@v@`CnAYhFzAL|@}AoA}BzBUcCkCcCA }m|Ew_j@]h@`Ea@sCcC{@Zj@~A sz|Eaok@fAt@bIwG_DEkFfF _tcFazl@kBSEfDrJ}@aGuA yldFqkm@sBXrEzDU|B~EPsCqEhBS_A{C_EZ g|vEyah@|@dEvCgCdKf@u@uC{BO~AImEk@w@lBwEqAk@xA q`wEmkh@rCjDxFqCmKY yseFw}n@oDh@xArEbC}@m@_E uw|Eklk@qDjDKjBhIkFkCk@ {~jE_kSfHaB~AqD~Qc@~C}ExAtHlFe@yAjBtFNrFgFaC{EsF[aAsH|AqIzGeE~BTdCvOxFaBjBlB~DEPwOvBoC{DaEnDaG{Eh@bAeDt@pA`BgAt@iELzBtC[_BLPkDaBTjB_Bf@dAa@aCeEq@lEZpDgFwCfFZ~GpAwC?oFzLwXkCcOfPaMG}SbImP\\sOyP_CnBaCyHwDuMmZwKmFe^uFkApBcLzAgQ_C{UvAeCuBcIi@sKtBqClIqGgGsHvMeKkBeLxCwHfIqIJ_DqGpGwIjAwGmKGqBoFwCxAaFi@yDwF_AzCoIjD}D`F}FMyDeFsCt@mFsDeCiE_GnBqEcIuKp@vIJzBtOzBCd@xIpCpF_BfAp@|BcEfAHpJcDdBiDlLYpIdHvXcExOjApS|F|EnC_ExJnBvHnJ|KVnCdFhRMoBvEjBdEiA`EhHO`NoEvE~GdEo@zA|BqCjBk@dEjA~H{MlLkCGaAfEvBGJ`CeBxFnFk@|FqEN|CjDq@pCqI~M~C|Ei@nD`F~NaEjB`CkCrI~GhDjDdFzOUfE`GtBe@i@aIZnH awhEu}Si@n@pAbA|CqD}A_@gB|A yfhE{dUKhDdAb@t@kHOi@eAPYtB kfhE{mUi@bAh@rAbAoDY]i@t@ {~pEmv[lEnI~FoBdChElFrDrCu@`D|EpH@`DmEnIkD~@{CjFjGfIcApBnFvK\\uA`GiGrHvCtHpIKvHgIdLyCpIvBtE{CpCgIoMcDwDoGd@{LoEyKhH}GoFuGJgB`Dw@}FkDiAeNhMkFbBuHwBmBvU}EtAwHrNsMp@w]kCqIKqK`FsHpPyI|Zmf@hE~AhSgGbNUpCjCyBfC|FjA`EvF`AlGpJd@fJtESlBnD}@IcFvJmA~M{KxD[|I`JbFiAxBbIlHvAzEfH~CQjNjOxGmC?uTgIoIR{OxFqEyKkMRqLiEcH`EuFpBoM_DkFJwCjNwA?fGEgwBwIcHFhH{B|@n@zFeBdCcO_CsJvEiEiCe@{@vEoEg@qMgCmBtCwDk@cE~GoHtDiPiD_A_FmLoCf@sBpDoH_CeGfCeHgGpFvFq@bDcOvJgDlDH~BeEzAyBpOoH_DO}EwA~G_EuAc@|HtFxHqCw@xAnHpDpAoEbAP~BaC|DcCX_D`IaEGs@dCqHbByCsAuApCwDRaD`DwEiDm@iFsLkAuCuCmH|CcAq@{KfL{GrAlObMaErCuJsEuBfClEzADjFoNhEaCa@eC~BjHpINdGxIxDh@~CdFLbFsDxDjAdDqAfEzAhCi@gBhJdBhDbK|E_RvEmA|CiJxBcBnCaD?cLrJsWdD_CxC|B`B|@~GaDxB@xBgFpDy@y@mAnE{FmAmDrJ}Bj@fAdFuCvAgChI}EpAwPzRoE`CkBeB?lDoGhLuCl@eAeAfA|EiArKeAxDaD`@QfG_CpAuFcGQ`FgExFiFOgCjBCpD}I`FmFaAjA~IbKvCR~CcC~AAtCcCd@kAnFmDIuDpE_Ci@QpJbBbAmA`HrHvAwFhGhD`DaBnCtBnHi@{G c_hE{vUh@wFfFiGRyE`IaL`BhAq@lGvEgEbJqA`AgEqCa@_@wBvB`BWyEbAbA?}A~BFeCzExABxGyGq@oC~BI_@y@lBJ_B`E~DiCTiCBvCjF}GzFeAzBpB~LlBrSiDnD~@?dB?k~@?deLgNyAuEr@tB}CmMzDqNnUyQdNXdIxF`Fj@tF`FlFpC{AxBf@vEaHhRvFdEfHjHuD{DgUpAaBy@}EbDu@?hA?awZ?d{@?gGkNvAKvC~CjFqBnMaEtFhEbHSpLxKjMyFpESzOfInI?tTyGlCkNkO_DP{EgHmHwAyBcIcFhA}IaJyDZ_NzKwJlAHbFoD|@RmBgJuEqJe@aAmGaEwF}FkAxBgCqCkCcNTiSfGiE_B}Zlf@qPxIaFrHJpKjCpIq@v]sNrMuAvHwU|EvBlBcBtHiMjFhAdN|FjDaDv@KfBhEfDd@zCiHnFnExKe@zLvDnGhObEvEfFpCmIrKuBbIh@dCtBzUwAfQ~BbL{Av@sBx^vFtLlG`BfI`EhDrCzIxHvDoB`CxP~B]rOcIlPT|RuP`NjCbO{LvX?nF gigEwzUsAl@NrFfCsAg@eH[vA __gEuoVqAvCzBgApDv@nAcJyDx@qB`D kb~Ew`k@h@~@{Au@_DxAnIrBsA`BeFaDo@pBWkAoAp@rAnElAqBxBt@mAnEpA_C`@nAvAgAl@x@dCaD~HN~A}AcKyFuGk@ oa~E{oj@oAbD`AeA\\`B|DcDmE[ kj}Eijj@}A_EcIuAlBnFrHd@ sofF{tLdAdAvC}AeDy@w@pA ytcFsvNCrJxCnClB{FMoGg@dAmE}@ ycdFegO{@f@IfDjCdAR}FyAW wkhFqrS?jJrFt@vDdDrDxKlZ|Gi@dJxCsAmBvEbObU~GdGpLfBnGzNjNtJxJx@hBrHnIfArHhGqC_PoW_[sEg@{GmJeEv@eG{EcMuRuIgFaNiUPzBaBRGcGkFi@_@oCuCw@QmArBOs@qAkCJ_B_E]fE}GoFt@_BgCcAs@kGrF}FeAoAdAeBiCPZrB{JzGTcEjE}AdAuFqA?r@kE_D|At@eGmEsMQfu@ sffFu{n@oB`@@rDhI\\BwCeEDYaB","sea":[[200,"gmhFg`k@f@~iSpLdL|a@xr@d@fT~P~By@lCxMvO?`EjLfJHdJjKhRri@zc@XxE`QdUpBfSyAlDdFtRaCdFx`Axs@|n@vp@hc@pUdBhL`UnSpR|HxNSfFvDmBaGbP_CjZkR~DmOw@wUdGnL|GIrHzIpi@|MnOqAbO|BtJ}@`AwEnE^pG_HvA~CzDQrOsPjE{Lbd@o]hGyThC|AzCmHqBmSlBk`@sOuS`F~@pEjIdEy@kFqX`Ej@oAwEfCcF_Ikh@jM}BbDrIzEgCbAtEhGaA}CkDt@aJuLsF}F`G_HwKu@{KuGaF_AeKbEaE_PiNpC_GeI{OzBmFmEuCzAkDoImP~AcFoBy|@pCImC_BIcUj@eClAzAbDwWUaR`Fsb@mB}EpBon@xByY`D}EcCsDf@gGcD}BdEkZsCyPaGqE{Po^{W_PsS{Z}H[oV}S}\\_MDyF_EeCbEeDWqDkJv@IbG}]}QyCmF}Z}LiC}E_J`CoDiHeKuB|B}EbHtBkEkEaTjEq@wF`IeBgDiEePpJJwIuIuCcCfDWiGuCcAqGpGiGl@wAmCcCjBmDkCcBfAqF{FsItAf@sMmGdEyEkH|FwFkGoDaI^zCuG{BcDgWoI{FiN_Hw@`@_FeFmEe^kLs_@}BwLqFwBlBmBkDsGj@_KiEePDeGcJoN}DuKvBqS_E{DfBqGmEoCrA_DaGuJaD mocFkyg@`BfDlAaBdPvAz@jFyIfHiIiA_EqNpAuB adzEwg`@lCrAu@zLkLRaBgF`BoFrIkA _d{Eut_@lOdK~GxMsO}BeJoG_@}KjBs@ kbyEwn_@`HrApDzGoSI_A}EzFgC oeyEi|^hJbBp@lDkQNqAmD`GsB kd_Fcz^rUhHxM?xO|Qj@xIrIM`AzBoOdIoPf@uB}IyW_E_NwT[qH`IuD {`{Eyp^jQrE{Jn@oEcG wocFmnVpNjDrAdG|HvDi@pHjHbHvCzU`C?~FxLOdKuVu[kHtApCdMwMwCcHwGcCgXmIaIiJKfIiS~HjFhJ_Aj@kB}Hj@cH}DzJ_B ccbFw~UzPj\\{ClHwMg`@v@qD qjdFqhUzAlB}CfN{AeI|CoG cf_FyyTf]bXG`DoMcBiBwKeKiM kl~EkwTvKx@lJ`KiEh@mC}FoI\\}AeG ucdFmbTbKj@x@lGiOu@jAcG kacFkzSrJdFzDrLuKy@iKgJnFwF iv~EclSdKjAbHnKgFnAqRiEmE_G|JaB _k~E{uRrHfReBnDySkJsDiIdMfBxDiE wv}E{pPrGhC?fD_K^{D~EgFgDzDyEzE~@vBoF ok`FooOpSlB}SzBJiF ck|EmgOfKtNaEC{FwFt@yF {}~E}bOnJdHaRRw@oHhHI _{vEg`O`FnDaFx@mChG}A{LjFw@ a{uEwwNlHnGw@nEiPnDcDiGdGPV}HxDyA uk~EytNj@`FzE}@vLbLhPlFgYtAyScUvFgE abyEktNfF|IW`P_L}HLgK`EyD ehuE{{MxGlAxJfLkb@oGUyClNkA ctxEmxc@kFjJjBlD~ByO c}gFcuR{BhHkKZ?dfHhIn@`@sT~K{I{E_Ck@`FwCJmAoCoDvAu@sDpSyFlBdCrCuAdAmPbOiLhAsK~DcElBqXdDcEw@yMlBqAzElDd@{GwGz@dC_IiKiNfWc@fHtHvH{WjH{H_HmCnBmEsAeJoFvEtA|FcDwDaLp@nDiRkPkR}PmEb@_TwEqM_NdA}DiIoEkA[wH u`hF{~HaClHfUhFeQwO emhFcaHElYpc@Ad@sLoFeCcCpDgGNuPsM eofFyhG{C`AdO?iJaA"],[1000,"kmhFkwj@?doRpBtP|KpJ~ImQdELfDbHiDlP`VdZ~Jl^pF?dAnPlGvDxBzNxKdKFxLf_@na@vOzI~[xk@lRtr@|RnGrAxEzM|D~TbRdJlZnKpMfg@l[hj@xl@fKyCK{D`XjAbEcHzJeEiDmG|GnB~FyKqCgMgF~B{FsLbDgBhIrErHeP`@bLxE`G~KdAnBtFrj@nK`MoM`M|AdD{EdF|@fV}LpCgKxDjEvWiCdQwTuEsDr@{GdHO^eD_TeS_AeI_ViDiEkIySiFmFuXlQqQjLfFvMiEp]rKdD_KlHmFkDeJ|DmEgCeKvCgNkDwGoD\\oAaC|DaDg@yG{L{NsDqNqXaYzAaHqFqVlCmGs@mIlFt@QcM|CzCdEeBrAwIcBqxBcH_SyYg\\wQsJiJmg@n@}FiE?o@sEqGsAmNvAaBaDvCkD}GgHuLj@qEpOuLoGqFbFcQ}Ar@kDpG{AiD_EeNgCuGgHbVgCcWqMsAwMdIuCrJzE_AoJkHyFrRmYbIvGgBjBkHkBn@jEtJrAzFiDdFjClAcJjW[qFiHxOlGi@gJjBkApTtToFbC{F}EBfScFpD`IlItIcLzJrEvDdI}NzA_MnWvDnAvLuClN`ClYlQFyE~F_AfB{J~DlBpCiKvD~@lA}Be@ePgLsWiUuUcKeDiBeJqFfAwEyDqAoQib@{YkKgBeg@|@ei@oKDuCiMoHyg@{AmJmG_BoGwX_I?eXyZmDuKuHoDzAyC}CqGtBgFuGub@QsH{EqGxFqQiByO|CeZaU]gImD_AeNoVwIo@rD}PbGkEkOoIz@kGuG{AiHiUoNaDcZdCkXeFcNuH sv~Eib_@r\\xQrMpNTdI|H\\zDrEaWlImNXeFyI}U_FsSsa@n\\}I o~zEg}YpC`JoBxEoCyKlBaD _kcF{oV`LlD|IlKnPvg@lLxL{FpSyIoNoKwFw@jGgHrAdJpG`GbMoBpD{RgCmImLhCmGoAmE_LlNcNoAcDiU}JoMlUwm@hFuDlNC edbFuaVfSf]yEzN_Oad@pAaH {}~EgsUrD`Br@nMoKyIBmDbDi@ }k_FyfU|d@`d@TbFcI|@_JqE}@qJsP}V`AaC mn~EizTdO~BvJzLwH^cE_F_JbBuFiKrEuA eu_F_yTbL|SoHaBeEoMpAkB gceFktTzHrPuAdEuIqHnBgM }daFcfT|AnLxFlHiEzCsJuP`AeGbD}@ iy_FixS_@dJnElGqGjBcBbFeEQiFsGxLg@l@yEoEcH|IwB }k_F{rStKdEdQUrLjKd@bDkHlGpHpP{@jCaKl@{P}MyDsKxPtCzCsEeO_EeMqLQwD gq}EyiSnHrOg@jHsJeSjByD iz`F{xRtJ~GfFjTkUmSlB}H cruEgxRhApL_B|AeB_IzBoE eu_FgqRk@dP{A}JfCgD kjbFsiRjDR[nCeQvELoDfLkE }y{E}bRjLnEz@bHeOyE\\yG s{|EefQjEdDsCrRoCdBeG{AqAbEaMnGfDjExCuDzG_@iA~Kor@d@_I_EnCgG|GtBdK_BwQgEyHkKd`@hC`LmK`NfIuBkPvPeE akbFwaQdAxD}QvEvOqK unzEgsPtMpDj@vCwCvAaL{AwNlCuLuE~@gDbOfB`L}D ceyEebPrQnFx@vCuDlB_KyDsEyFzBaA {_`FqsOpObH_SnEmBdDuHmQpOkA wi|EaiOzLrMsDpL_UcYvLaA ypyEufO~FbEwH`I_KkHvLyE c|~E_fOpOt@nCtPzc@`Rd@vDoDlC~AvHcJq@fCwHuWnAeP}UiRgG}CcFrAsGvLsA abyEwwNxIvQqAjN}PuK^sNtGyD kr{EusN`FvAGdGiMcFnFyB c~zEueLrCxD}B`K_HcNhGwA _ahFgdRkKB?`nFbNkG|H_UtIa@tNcM|Hmc@eIyd@nGuRhGqBtHeQ}DaWmYwJuAmRg]uU _mhFu|GK~Tn^At@}HiMh@oQiL"],[3000,"imhFmdi@A~j@zAmPbY{IgNKaAyCcDjBoE{L cmhFy`g@G`rCvF|@ZnFjEgAoCrP|DvJ`@|TeKTdHbKqD|BvGvOoE`XtBxOi@fp@oE|JtErGuBdc@tBjEsGrScDX?hr@rS}C`MtKtKqGbMPkBpGz[`SqAnRdQ`IoE~I|G\\fGpKxf@yY~Hs@xDlCnDaC|GpJ{A_FrFyCzP|MyAcGfDqB`KrNtAfTzEdGpHZpJ|YaClHfElEbFwCaBsU{DaIdMiYjLn@~IqHvd@hEbDzDgH~A~PnRcUBx[lRnA`EaClGnG|@vBvG|GyGvd@~Rh@uEjJwH|GTfGfCPnH~KnJrOtAr\\vXnG^|R~KfHmAlMjGxFcGDiT}De@gEwQqJcJsNk]~E_B`MnKcBqKyDgIeE[HwGoY^fIuEe@cI|ToEz@uNjDgA~ArD`F^fBcPtLuCLaFcNkHwBpHuSESjBjJFxBvCmKnDg@rEmKmE|BkJyGaGyBtA|@jFsBT{GmMnB_GyGa@oHkKzDkNiVoHkm@c@_K}EsAeErBcDtHO{LkKnLuBsHuFqFdBmBwMvMFe@iF|Bo@r^d^FuEwJiGoJg`@{E|FmMEwMlHHqJgD_E`LuDyFqBqGxC}DoGfSiI}@{G~Jh@zExD|HaCdEpCzEiA`BmBgCgIwFcB\\oCcGmGqR{B_JjDsTPoCrDmNwEw[xDjDoMgO_GaVgf@|@wDzFEeAgDbE}B?qGiQ|B`NiWe^}B~FaO_FqHn[i@lNzE{ArBzBpCbQhD|ElJiHfFJhChIxCdDsE|J~IIrF|Q_Eh@eGkMaEoByCxAqCiJqHnPGdRmI`AhLzDlBzAkDyLgZiSoKeGQpAwKjHIcH{EvCwHvQs@aNiCeRzC{BcSeNkKeSoEgcA@k@mB|Fy@mB}G_JnBqFxKePlBaBaG_LoIkAyGaa@k]yZuEyC_HmNyDmA|IySgFhIpC\\bIeQmBmMgI{DgKuEh@gBtFuK|@yFyC~Ms@_DsH_E~DoEgAIgImIiG ehhFwbf@zFxCxAxJ|IpFa@fEyCMeRwUlBgF wmgF_`f@|ElGArGmFmCwAsJhB_@ _igFm|`@|QjAbDxNyOyBgFkM __gFoc`@xOhFzBlLcL~@mBeQgHeBbDk@ gsbF_x_@z@rC_DhFiJhAuEkD|B_DdP{B a`bFge_@`LnAfAvCcSgAxC_D s~bFyo^VdMgEzBnDaQ wlgFua^z]lShA`HgMIcWeVs@sCxEk@ _zdFg_]`FhAuCdNiKrB}JeEtCoFdPmF axbFiv\\rIh@jKrOwKtAyOiPpEiB cj`FgwZbFtBgAtHwInEsEyHnKaI sc`Fq~YdEdGePeA~I_E szeFqlYbCzEyNp@_HrMkDr@q@}FlIiLdPmB qj_F{iYxDjAm@~BsLdBKeCrHkD ybxEu`StEfNiDzEyKuPlJmC kt|Egwb@yBtAlN\\sJsB q_{Eq}\\sA|A~MdNuBeLuG}C yvzEmz[oLpCeCjGnCd@dD}Gt@zHhTrDoCiNoIkD }q|E{vR}BbE~F|LaCaS acaFwpRpA`PfFvByHyS }l_FamRu@zIbF~D`AuBoFeL cmhF_gOGtm@tJkFtKlT|FPp@}GuKaRL{GkTmW amhFgpMIveAxR_RfCcVmAwJyDQ{EsJsGuC"]],"relief":[[200,"uulEcul@sNnMGzDiGEiIpHqFo@KgB_HCsG|FaNaDkR|G|FhMbEw@jAlEhJeB_J~CNxFiEZs@xFvBt@p@{Bv@nAtHwEkDjFd@tCk@oBeCx@[rH}A{@tG_KwFhCo@wA?fCiCp@j@fGeCaBsH|Ax@rAy@eB_BnBaCs@kAdBnB`CiLrFgDcAsBzGoFqBNlCtElCbB{@uB`DfDKbA{B@dFx@oCZtAnDsCsFzFr@nDhBQfBcItAxBLmICpBpB@{@nAbDRsEGRnBpAhAi@cC~D~@DzAb@_B`D`C`@kBoEgEdEvCXmB~AnA{CgElEdDkA_ChE`@BsEnC^iCoBfHfF_I_KfBjAR}AfIvJ|DmE|ArAfEgAg@oBr@hBfGiBmCuC~LfC_IoHzCg@a@_BbDhHnBiBIpAvBc@w@sBfBEeDGpDoAqGeNjBIVaFlE|HiBQaBdDlA}@z@jCUuCjC`@_C|C~AQ}Al@bAjCzAiExFj@c@jB|ExGi@hDnDwI{BRD{CrCbCbAw@q@`FXmBj@pA^sB`Ap@wAjDvDeBiAwA~Ct@\\oAcEkBnFN{Cc@CuBwCx@^eChB~@PgAkCyAy@hDCeBwAl@|EgFoCNN_BoCrDzAiCaAgBvBb@sAgBdCaAWyAmBb@EmD_CEbEAsAgFvAzArG_Gm@_D~AwBOxEhCs@oDvCr@fBjAcCkAxC`BbAaDd@Q_F}E`ENpBdDMwCfCjBpCeAv@pDZ~CuBgDn@bDqCUqE\\bEtAUsAhBhCCKcDhAj@?uB|C{@wCoGx@}Af@dHtCbA{A{IqEqAEcCvEqCgCz@bC}Eo@yBz@vBzA}@gCrCpDa@pFkN_EaCeBx@mGgFoHJqDgG wwkEgxk@wH`IdCf@sAtEnBwAMtEjE|C{@~AhLp@tDgEvBNmGvDzEZsKlHfBfBuAdDbLsFmBoBrC\\mAs@jA{DNdFzFcFvBd@`AaDtA?g@`D|KeJ]oHcDuDsG_ASlEkEjB_JoHcJf@oF}E yxhE{pk@cFtBiD|HmG}JgHjI|@p@sA_@gDlE|@hAkBcAiAlDoA[lAv@yDzAh@|AkFfAiAzE_BcA|@fDwAoByDpDtEIuCnCo@cBoAx@bI_NsNrLZpC{AiAwAdAvErEoHeBl@nDwAgAVrByBJ~A`Ac@nEbBQsChAYsHmCrG_DcApEtCWhC]qC}BbB]iCk@dDsBNbA|BhEs@UrGoFaADmEsDtEbB`@]bCyAwCYbEwCdAnBbB`H}C_B`CdAz@kBp@cA}AyAdB~BMkBf@hAbDiBbA?oEw@|D_CT|Ah@oBOn@hBwA{Am@z@|@{C}DjGm@kAoArCg@qAXrGbCoB|@jDnEDaBiEnCnBfJqLhIk@pDeEg@wFdDvCkFnH|Ii@VoEEtCvD{Ax@qC`L}D`IcLpDDgAmDzC{A{A~ChDbA`NwH~@_HbIoMoQf`@nAkCmAaBsFtFuOlEoFzJwHbBo@rCuEv@\\lAgCk@k@dCeEJaAiB?rDk@{CaGf@wElGhDIiKvDbB|BsLpAQiAfFc@qKLWaFoBm@kAnDhCwAFtAwBdBvCLyIfEYbDbDf@x@cB`AbC~IcIj@hBbAqAiEfIiMpFKxAvIeCuIxCnCa@o@dBzJiFnBr@l@iCmBNdDkB_@nInFiDjA_FoBD`CmAsBcFzAvCfEeDiD`FtJgANkBPpFvNd@mM@}AcD{CtBiDq@hAdDqB}@u@tGtMiB{EnBrBpAgLwBe@hAvAdBzCs@{@tAhEvCoK}HeErE]lCvFiBqErDoAxIdDa@cDhCjHRwA^v@dBmFyCc@jD|ChBuBfA~@`AeEYh@aCsBpCpGx@uHjFzDnBGkBdB\\{AyBzBxBEuBn@tArAsCNbCzDGkBuAj@gBlBnBz@{@gBq@d@cD~FlK_Q|@HvBkAi@\\rAeD|AxCtCxFqAeA|@rA|@wCNvB|@cDIhFjCqC`@uEeC}@hA_BeBl@fDlHz@dBfCZyBpBzAm@eCvCdDzC{@qA{AbElAkAwBjHdAdAsCuB@nB}AyHa@|Nk@iD~@JjCfMyDuI}DsBwEdAYrC\\qDHrC~DzBAHjC|D]{Ar@nAhCpHeG`Gg@qL`EfAzCiHiA}CrAxA|@sN~CdDdAaFi@jAzFcDwDs@|CkC?|Az@eDd@lEjEkFqDOnBeBWl@pEiAiCeAhCkC?r@`BsDaAh@bDcFAfC~@yC|BxFn@wHnAfDDiA|BlEeAgBfAHxDOuBqC?MvCkAmDy@xJ{@mDwAzB?gB}CJrA~CkEB|AlBgGpCtBn@qCr@~@rAkBkBb@fDgAuCkCdABpA~BqA{CfFjBzH{BmHaDdE^qE{E`HcDf@h@gBtCBsAo@t@sBeQ|FjK}@oLrCnHFmBt@xBx@wEz@jAjE_Bo@aAdBa@iDiBrB]}BsBh@e@hEb@_BjAfAcDhEdBl@rAcCn@~AsBj@zBf@kD@QdDtBkAf@~BwE`AIvBlCCuDl@tBpBqDkBiFhD_@oBlDsAaAi@rFLQsDvA?yDaDkAtBzAhBcCWUnC_EfApATqBbAd@vBuAd@FkB{D~C|E`AaIbA~AtArGu@qFtAdCzBsDjAvEbCmE^]~Bi@qAqBl@k@pCmAKbBiByBBvGiAbAaBqBa@yFpCgDu@x@vBgEm@xCjBaFy@fBpAyC?G~BC}B}AlCwCoAfAhDhF}@mGrCpB~BcDlDXuGkEAn@dBsA`@pBxAeDSKlBdC`@sBBCjByA_Ad@kJYzBmDVQ~AhCTsDDrBpEaDk@PnBgAeEi@nBwF{AxFa@@kE_CrBi@{CsBfCoGgBgAzBiFClCjCjCaAfApACsAbElAuHHLrDzAEwAxApBfAeGTlE`CnOPoIjAhNrBx@vCcEkEgEK`DxAeBF~@jB~DhABhCyE{CkBzBnBdEeAf@yAoFxDwCkMaHvA|DgDAlJjIwEJ|BdGcDeBwCfC|@eBoCdArAsCyBHqAfIfFo@{A|CyAZa@mBuGnAeAk@nCMIaBoFnA{AqApEq@sFD^mA_A|DgL}@tEfE|IWkLtBbDn@_Cz@zFvEEwAdDi@u@}AzCNuCzCvAhCcBvAIcCyBbCzAjFcDoC_@bO_JcDz@pBoBf@tC?sDbB\\yFcCkCIdC_BwB_DbEgE\\D`BbBKG`KhCsBS{JfHtBAlC}@mCqC`AhAzDuAOkAjFrAw@SpFbByB{@rBpAc@VzAwBNrBVe@~BiD?k@_DgC|AvE|C}AbCrC^L|B}AbAdBTxDyJZuJfB_AyBdPpCu@cDpCf@|FyBvCcDdCjA_DoBGS`CmC}@dBt@H~EqDoDlD`L{DdLdEwAAwDhDG{HrLd@pCwDS]mBwAlDiCuBp@|LhAkC^hBT}Dt@~BrDqCtAxAdAmDfAvD~BgB_AiBnCvBpCw@}FsCvKDh@}CmE_@x@eApJZaA{BzCgFaEmGzBUv@`G`ByEpBz@iAtE~CqDzDhDoFlCgEvHkBwBMtC_CK`BpDgBtCQiEsCnDtArB{DhAjFpCOzAgBwA}A~@DoCkDuAq@~BoDDb@lCeEaBm@nDiIkA_D~B}B_DiD`CpFlBVjCxCg@`@rCvDLDpDlB_AhF~CqCvF~CN{@gAxAc@RnIdEeAi@vEgGdBaA{BaB\\qApBbA|AyDlBlDnDaBlF`BhAwAx@lA`DhK{@cIcFxA_BbCfC`EoCdD|B}@zCbB`@sAxAzAlBgHXjB|AoCpBrDtCqEdFxD?`@gBrBpCfAmDxAn@oBrDrBvA|G_Dk@oFbDvAs@mBvAfBtCqBOdDvC|AoBaAF~BvHNyBxAtCEc@jCxFcAgCrA`CbGjDcApArBw@cCbEsAa@jE~KrBsAiBsBf@f@cC_FyDnBgBdA~Cd@yEnLwDoBmBbAsAuEV\\{AfBxAhC_CkEyA~AImCsDbCtBJcCjAf@zBlDHoEZdD|@g@{@_FnD|CrBoB]eCwEoA`Ef@dCzFqBnBhCpBgCS_CfDxDhFd@wCjD?_@cD~Co@[}B~DyDq@wCfGmDaAiCqAhDkBQCcDhCJG}HkJoMcKuBmC~D_G_FyA_Lr@kMpCsEo@_DeAjDgDPGyAcBxDqAoBOjCwBu@oCzAdAiAoAcAxIcCXsCtJ]q@yCaWhAjA{BqBaErBOoAcCnDb@t@uCeFoEtAu@bFxCgCiEfBd@hA}BFjCrE~@v@uFwCcGlE`BtB_FcAw@hCIaBgGhA~@LiByD_CdFpC?wLlAtIxBk@q@{B|Aw@uD{Q}B@kCoLjBkIiDgDtFiGqHyAjAkHgBiFVeEzBn@jDkEvD@lAmFbGyFDoDwJcCwBsJvFn@~IeFBmDfCmBhFPdFaNhFhG|BqARgGbDe@`AwDBqRxEXnGkLAiDnBbBjEaCxP}R`FsAbCgIvCwAgAeF|Bk@lDsJzFnAnAqEpCTlCmC~CqF{DcK`CyCrWeDzKmJzRsGdAwC`RyEiNgKdBiJqTk@cFrDgFMsBeFiGoBSiGkHqIxVeHEkFmEwAtBmCrJtEdCe@h@kEwFeAcGyGzGyAbLkLnJgBpCtCdGClDpAj@fFjEhD|LiIvCtAxHiBl@aCbEHxC}HhG{ES}BpEeAuDyAwAgHpCt@wF{Hf@{H~DtAnByGGvEnH~CtBmOjV}RbEcIwFe@b@wAuI}IdA_BsE{D_DvCiAy@}NvFgCxF_HfAwE{ECkDcEoAuAcG o_lEexj@mGjCvAFCnD}Ay@yDvE|BrAWdE`BmF_@vC|D_DiBa@v@{AbAnA`DyDoAQzAcCsAgC osjEiwj@eFdBnCrAeEw@w@pAbB`@mEPnCv@sCzCaB}@?rBUsBK`BqBIRtCcB_@p@lAuMzMv`@wWc@uAvAPhCeFkD`A`BuC {~kEchj@b@|DeCh@hDvCbCqIkAtA^_C_DC }~lE}ii@eFtBmHxLzDBk@cAz@l@fKmL_AoB qbqEefi@aIt@rHxDo@~AjCUCfBrDY~A`BL{GkAz@o@mDoF{A }apE_yh@eCxBvBF{@nBdBi@xCtDSyAhDwAiE{CkBbBUsC kjoE_sh@wC^fCxEcPw@cB~BGkDmBtC}@cDa@xCy@cHsCrDn@rCqEiAlGhE`Bm@RhB\\uBdFpAKoCjGy@JpC`Ko@xG{B}HEvAy@}BDxA}BgAaA _emEcug@wCrMtG}GaBl@WcB|Di@aEuA _emEmyf@_GpDKlCpIoEeAoB onlEuvf@wBdCt@nB{HZ}@vB`H{AwBpB`Dk@nBsJ sanEegb@oExCtCf@}Hr@l@nCpAqBz@~@rHmCbAcCkG|@nA_C itnE}db@kGp@EpC|@iA|BbAPqBhBxAv@wB}Am@ _jrEwy]xBdIzFLcBkC}CGtByBiFeA cfsEkp\\cC~BzBrHwD{Ab@~B}Ab@bBxAbDaByCpDvD]w@|AbEzAx@eI{AoAxAyAwBk@wBeH cftEi|YoBjEbB@OxEbBx@mBrEx@`C~ByK~BlAj@_D_BHK}CiAjBoA}CgAr@LyD o_tEahWcClDsBcArAfDjHqAn@sCwDk@ ydtEgaVwCjDvASrCbFnAwCcDcF kkpEoiTaDbB\\jHzDwDw@wE"],[500,"uulEcul@sNnMBjEpHcJ{EnEvAjFzCeDG|AfB{AHbBLwA`Mu@aDh@pA~@_BfAiCeA}@|B}Eq@v@hEu@iA]hAQ{C{AZrAnAmC]jA`FtBqAyB|A|@jApDuE~@n@}EhFpFw@XlAp@_Cd@bClBYgA}C|@~@fBoCq@pD`Cm@l@_EfCf@{@uD`CZ\\rCbCwFo@bCdBDaFhEnEqA~DmLwHwCiCbB~A}BcKgD}Bt@qDgG uimEwal@oGvBRdCzCA?gDpAhAd@mBvAdFzBgATeCaGgA yrmE{|k@kDnDiF[cCxFTpAbHyIx@tAaIbI|Cf@yDd@|EhAmIRhH`AoBRjD|BwFwBxAvEmBvAeFcBrBnBuArAk@sAgBjDv@lBp@wC`DdDi@qBjAj@ZsCdCo@wClD`EgA_@~BuCK`BViCrB~@zBuBa@jHrDyAhC`C~@a@~AzA[e@rD~EsAoE}DdB?WaBqB`@dBu@uCsEzB_CeAcGnBsAkAq@nBn@pB}C`DmLhD{@eCdF~CsAi@pBhD~@oFq@IrBmAcCcBxFhC}A~@r@yA`AlCj@OwDhC[qAxClAtAtAUe@_CzBfAk@eElEnAcDiChBuC~C|C_Ax@vBU_DzCnAjBrGyFcAiCnBqCcEHkAzCgCiAjBqAmBs@kFtAtD}Bm@iBaC~AbB_D_CqBeA`Cn@_DuBaAUzEkBr@n@}EoDbAo@mE cenEq|k@iFXyB~EkDf@kI{DsDh@gCdCvBGd@lBmGaASlD`Ce@sBnBtCXIvAfBoChBDkAdBpCAjCyCO`EjDPAzB|@aGnLaE`DiGkAeB mvkE{wk@gGdGjDdA}Bb@pBnBaApCnDuDiDnFxE|BmB`Av@`BjET_C}GtAsA`@lEtBkAKnBoBBv@zBlHcDaAiDbBbCxDk@uGpDzFjApAeAeBvGnFgCkAwBpB|Ay@sC~BtBh@mCdCBwA}BnAMJ_Jy@zA}DuAoArBcDcAThDy@yAy@dAf@oBmFmBmEpAOaBjEAi@cEwEn@}DoE _gkEmsk@O~EhNfByMgI }rjE{rk@h@dGfDaBo@vRbDsDQmKlCvEBaCmDkFwGcA yxhE{pk@cFtBiD|HqF{IsGhIfApC}@oBMdBmB{@yAjClA|AuB{@qB~EiD\\rDlDaIo@kDvHbDdC`AcA^vDnBu@}@x@eLqBuCjD[gBmDfLdBnBiDa@WcG_Et@`B~BkDRfCfAeDBJfCzEv@bFmBqC|AtAPgBdDdBb@yBjAvBtAqJuBm@xBmCDlApCuBiBcApG{AkByApDrF_Cb@dCC_DzBd@rBvGjCyAhEz@yCtASrCdE{BMsChFBH_D~BdAhDeHqAg@`ELQmDlA`BMeDbEWmB_EbCtBfEuDnAyDiBuE~AzAUwDhBi@oCiBxEzAc@sDnBiAy@tCtCf@qC?k@lEm@_BkAnAbAlFqGlMnEHW_F`C?lAuCEnAvAm@oGbHdEkElCFrB{Eo@cD~@b@hAoGrBBp@yEoCNxAyElJoMn@jWxEcAqBcEtA^aAyArATw@{BtA_AeA_JkEsCqFrB_A_AlD_A[cBz@`BdBi@mAxAfDwBoAg@|FE}EwCuAcG }glEwok@gHbGv@~A|CkB}BxJdCqDl@~CsClAlCi@e@pAdBPGiArB^kEqI`AkJ sdgEwnk@_DvCiAy@}NvFaCtFmEtAoHeFj@gAoDAWjDtBdAN}BnBxBgBFr@vFx@qAw@vCdFl@sEBt@zEuBrA|AnBdHuGVrCfBIGgFjC|BpA}@aAuC~ByBaGzAbCuA_Dq@pDZjA{A~BjAxLyKhI^aC{BfAaBsE{D u}fEuak@cGBbDfCyDiB}DvD|@z@_BK`CvAmCsAeDjA_E`FpAfBwFbAt@pEpD{EdBpDzFEiDdA_GsChEtF_BT`@aCaDeAaAfGtFbCiEyAkBrB_@{FzA}@_CaCkLrCR`D`E^wDONtCgBcJmElAf@rDdC_AuEzHdCzDnGt@GaDhEvJl@uH~DtArA_Hl@|FtG~BtBmOjV}RbEcIoF]Z_BeGwE clmEmyj@qEnBoA`JhE{@}@jBxBRkBj@zBh@DsDfDhBXsBbA`CbBsA_GkDvAKi@iCcHrCtFiFcBcA cbmE{wj@Z~D{BnArDRBlBrDwAmBm@pAkBoF_D k`lE{vj@gCnApAn@eAtDyBc@}BxFjLeFw@eH _}jEckj@wS|PxLmG|EoH iyhE{fj@yCbGaAo@LjC{DhBaBvNuG|H{NzCcAjECgDcHnAmAhIqAsBwC`B|BJeAlAaEs@|BnAqDI~@vB`CYq@zAjFyCu@rDySzIdMmJcF_CcAfAfBl@mU`LxCiIiAzA\\{BiALyAbDp@}C{BHkBvC`BjBmEt@fAjAbGq@mOpHrK[wEnFvGyAEqCdI_AgGdChD\\sArAtDeAkC~BiC}@ApBhDj@PwALdBnD@MeCzA`Cj@{ArCnA_HeGrGmAbLmLnJeBtEpCgAsDhB_AEnEjBcE|@jB`AoBDbCv@cD`FuBu@u@lF{@sAwAwEv@xCs@cAyArAtAfCqAcA`BfC`@jHsGdAwElAXsB~D~EpCqG_CKnCsDhAtA~@iKzB}@fBvBp@kFJt@xCaCw@c@xBcBeAcCpAfHdAl@hFjEhD|LiIvCtAxHiBl@aCbEHxC}HhG{ES}BdEeA}Gm@fC{AkBwFpCt@eFqHy@dBcCyHmGHiD}EgCd@HnC{CgB_AxAVgCrBz@BaBtCDdCsGuCaL ydhE}zh@xAtHsDnAxAeK yvnEyzi@cClClB|FTkK _bpEgwi@dEbEdFyAkLiB qlkEypi@yCzGlBG^~B}BxCnLeHiBs@mDhBM}H }ppE}mi@eC|GoFiAhGnDdBkA?pDv@uBhBhBdBiBgI_DjB^KgBaC^hEiAk@nAzB|@gAkBhCIsFyB _amEuhi@mJ|MfMaKyA{A }gqE{ei@gAfB|H~AqA~@jC\\U|AfDe@aCcBlCaAqBoBsCdA?}BgEO {qiEubi@iQ~DdHHbHiE mnkEwqh@aEH~CzAaO|D|@|CuDvAdDFg@lDzE}JHlArE}ByEzElF{@hC}Gy@cD gbkEomh@{JnIbFaASiApB`Aq@gCjB}B mllEw`h@MbDlEa@Y~F`B}CvAn@C_EyCH~@}AgDnCoBWTwB {flEuog@sPxSbOgH_DjK~GyETuBkCx@xCeC}CcDh@}D eykEifg@iAhDgBsB_Bv@`DdCmDUpM`AhApA}FJpBzEbBMi@{CdInCBgBmEwAtBmCrJtEdCe@_DOWcFaDKZzAuFaBG`CqAeCcA|BP_C}A|AyBsF ojkEksf@kDJOvBiGoAk@tBdDOuA`ChL{CG_C c}kEsmf@cD^AnCiHi@mBrB`BtA~AcBvGb@{EzAbCl@oGj@rGh@kEfBpAhBpHmBw@kA`Fb@iHwIfC}BbC\\kCsB exkE{{e@gDxAfD\\mEf@{@vBbClEhDaCwD`EpDr@]`B}Dd@`Ev@~A{Cy@hDfC`AiDy@iA`AvCh@uBNaI{ErHxFsCm@zBnCcEYyCnBbErCcBiCnCxB|@{@R~BEgDnEc@\\eB}@vDlDmBrBdB?wCaEo@vBy@vApApA}CyBv@k@qApB?AyCvDxApB]uCuAbFd@vAeDdAdBrBo@e@uC_Cc@oFrDgFMsBeFiGoBa@wF ellEu{e@yAlA`D`DsB|AdAjAgFlEz@_BzBdBm@cBtFg@iBcBtEs@_EO`AiC_DoD _qjEkne@}DvA~ErEeDoBaGbBpA`C_CeCcI|D~Ej@hCyBsBzCxEg@wGnBjArAtC}BRxAVmAtCh@m@kBhCxAcA{CpApBrDJqAwBtEnB|@uAqBaBtBgHgIcB }dlEcce@_JfDrEQbBrB`AsBiC[nByB _ejEw{d@eMfC~BbB{EaAUtAzCt@aAdEwCg@hAaBiBeAgAjCiAoCcAzBjEzBwC}@h@`CeDOfBwA_CuAwHtCbKfBqL^nEjBeGm@`FlCiBIWrBCqBeDjAtBaB{De@\\cCOlFoFC`Iz@JtBcB]|@jAsGZlBwA{Bl@n@{AeEKnBxCiB@XpA}BwB[xCwBiAjA`C}Bs@yAlCwBMr@rDvBPLxAmDG`Dx@iBvAhAzByBnBcBeBcEhJu@{CaHjCRpDcC`@}AdJ}FrAdFPwCj@s@bEdBQ{BjATfCnH_LgAeF|Bk@lDsJzFnAjAoEtCRfHoJw@qH}BaBzBsCxWkDzKmJzRsGdAwChLcBjDcCkCkAkA~Bv@uCoCqA eumE{xa@iGxLiBkBaDdA`C{AeChCmBmAbDjDcDcCsCfAtB`Fy@nD~CZ}BHQbC}Ag@h@}AqEYNmB}At@k@}AvD{@yFqCv@lDiBfEzBkBlC`D{BvBnBT}DbDx@lCwD~@bBXm@hCe@aAcCzAf@aDcHvFkBgDBlCoCp@fCFYzA~CtAqGnC?bEfF_DwB`E|HSx@qLgDh@~@k@oDsAlDj@X}B~AtBo@oEpFBvF_QnBbBjEaCrV{UsBeH u}oEil_@oI~Gi@_Bk@|EcFb@lBVyCp@jCbCmDAUrAlBAmDlEoAcCZ|AyC\\`AbDwCh@j@{B}B]FmBQjAy@aAt@fDmCm@n@jAoBpAyCwDgG?tBt@oAtDzBB~@mCvDbFaFnAzF|BcHAzF\\dBzDtAuB_D{AfGr@sBP|AnCsBIFpBhGuHRvGtFtBeEJt@nBeF{GtB|E_DdEwAsGh@tAsDtBXnD_D]TnHwBsC[vEkEwBfDsDiKzAh@vB_Eb@rDRn@|CcEkAHjL}AmC}AX`CeFgEzApCuB_DOjCyBoWxBnAzAcCn@dCXVvBjA}BnAj@gAaC~Ap@zByBc@bCdD{CpAj@uIpJfDIb@lCtA{AUtDqAeAu@dCPiE{FfAnCrESdGqFmIiAhH~AzCcD\\jBbBkEwE?rB_BG~@zAcCsBmBtFwA@OsD{BtAzBpCmDd@DvAfEXaBlD\\lHrAOr@qMR~DxEaEmEbF@xAfBiA_CnKpA}A|DjB|@iDrBOuDrJfAjAxAcBJzBzCcBx@nAwB|CdCq@}@`BpB?jAvGzBeBt@tBC{AdArAUuA~B?oA}DzBp@lCjIlAiANnD`DeErAnA|EmGB_JjA|@|@}Cr@nCdAiAe@sIuGeBhFT{@mCzB{@bCdLtBmCn@dGjAk@RcLsC}@A|EaB}JgAdFG_DwAAvA_Bg@mI`EnBU~CnB_Br@|ExAlALqBzB`DoAeEuBLkCoL^cHgEz@fDcBgAiBnChAeCgCxF_FwHcClAkH_Bw@LuJ|Bl@jDkEtDDrIkNOcEeK{CuAgIxFn@~IeFBmDfCmBjFNdE{FVaF}@zBsDXNpCl@oB`BtAaElAVpAaDCsA_Cr@mA~BdBjA}EcDtAYeAnEwByCYxBmA wlqE{v^uBbCiL{BMvA{Ej@pGYzAzA~AqBi@vB|EEfCmE unqEar]iBdB~Bt@MdDsBj@~AvA~BaIsBcC uasEq_]cBFlAxCz@oAVfBrLm@qNkC _gsE{l\\hAlMyCdBpDcAg@zBbBh@|@aF}Ay@tAUuCoA|Au@{C}E _hsEehZsKrHWpHgDy@tB~GLgEf@~DpB_B|A|@\\oK~@lEgBfFjBpDuBbAI_FwCnDAvJ~EuBzD_HnCrCgBiA?oClBpAu@_GvCxAa@iDqFaAy@tC{@}FdBy@qBuCfAuAn@vEfCp@~AaCiHoEzAsC iarE{`YaHdE`AuCuB]{@pB?}BgA~ByD{BChEiBuAeF`JnBlIlEdAm@nDvEKrAfLnMkAeBcBnBaAuDuDtCiF_DsGnBY_BmB~Aq@{Bo@|CoH ilsEgfXyHdBTpCpJ}AfAuAiABwCzBjAcE adtEueXp@jC_E}BCjBiGQRbAtC]DnCfDu@HxDxEi@InCfDhBbEg@oAlDpDMlA}BlAv@kEzExCEiCbAk@vE~Em@YrFsF`@i@xBwAuCuBN~@zEkCg@k@zCdBl@RpEjE[`A~AlBcCp@nBtAmCuCkCoIhB|@cCvGCdAwB_@|DxA{Bg@rBhDlBaCjBnDzAq@`DzEtFcCE`DtAqE`AwEuB~A`C_DbB`G|A{BzC|BrBd@aHbCaAeArAjD|CcCrArALm@|CxCqBk@mA~A|ARiB~@n@_DkGvF]j@bBK}A~F`AhByA}BlDtA~AlCoARtBcCQhAxAxCwBf@hFjAmCn@vDj@qBvCxBzAiClDhCV}AdBzCZwCzBNy@oDmCOzCS{AkCtD@q@gFfEbDcDsCu@}HhEtFe@kE`CjC|@}ByDiBrCYvBlCv@iA{GmBcFqG{DbCcDw@~Ch@tAsDhCxABaBtEfHdGPcBkA~A}AdBpATwCwDkAN_CzAHGiB~BnBwAqEhD`AmBoDfDpCkAcDbDpCiA_D|EvAKoBqDe@hBOCiCmH_BoDtDaF_Fa@qIqH{BwB|GkFJjA`CcBZ`Bx@yCpBmEU{ExEzKwKcFYg@dBiAyA{DjCwAwFtCo@eLaCoC~@UwA@hBuDLBpCsEwElDdAu@s@jIsDkFTOsCkGtAbAgDbDg@cDo@t@_AcHzD_BaAFtDoAWhAwByIuEwAn@r@oDiFkA"],[1000,"qulEqtl@u@tArA?oBd@vAx@gB]wAxBPfDu@qBeDpFvKgAxCjAnJeHoJa@mDuF k|lEmol@}GxGTnEfGiN m{kEygl@iFpAAtBfEo@iGnEhA|@tDyEv@`DhCoA?lAx@iFaD{@y@~ALeD qclEael@cN~ExFnAGhBmK`CnAHkApClBuBfAjAZsC\\bAjIwDTvAG}CyBOjDoH ismEm|k@sBv@OzBhBKeFpHnAhEjAi@qB`BfAtEiBlAlCk@k@{BrA?qASlCGiAiB|E_Fs@s@k@hBQkA_BlCrFaLeDbAIkG cvkEuwk@jBxDsDeBAhBaDx@bE`@qCpCbFYKzCkDvAnB`BjFwGcCaBdDg@EwAtAjAp@sBcE@mDgE acmEwtk@aChCwBs@\\bC|BBq@`GnC[eBcEdB_G }rjE{rk@r@~CbFy@pB`BiKgE cfkEwrk@dAlBgBYFjAtB~AjIr@gLsH yxhE{pk@cFtByCvH}DeGaGlDObCfDIVbEmIsBmArAbBzC}DmAt@hB}BKJlCuEF|CtB`D}@qCjBb@xAaAoAyC~Ak@{DcBz@XdDeDbB`G@YdCbEETtAsJlDzBoB_FC_AmBuBvA|AAa@rA}E\\uA~HtGaBhAlAuKnHxAxB}AdC~A`BjBgBBjBcBpB{CeDpA|BmBnAoA{FmA]E~DsAgE[pC{CItCzByCLH~AjDw@qBhBtDhATmCd@fDdEc@gB`BhHi@q@yAnCuA`BhAnD{EwCe@~Ao@cAeAfClBjBoAiGmHvEpAbCxE{A_EpCn@nAgBiDeD`GKK`CdDyCwCiC~EMa@sAqAx@VyBcM|@vKgBsAeI`GkCfA_FjE{B[oBxHKjDuGsC]f@wAjFMq@mD`DtBb@iBlC?aF}BhCPkAcF sdgEwnk@_DvCiAy@}NvFaCtFmEtAoHyEbExBgDbExFG_DTc@fD`C_AlDlAyBdCsCy@dAfBkApDnIcIhEj@gAqAxCgB{H~A]aAzDk@oEgBzGXReG^jF`AgDVzCpDuAQ{ArB^aA{CjBp@cDeE`Do@tAnEtB{CjGbB_F}CXwCzExBwEeE atjEokk@oBb@bA`DiHuBr@rEuAoBaAbBDyCyGqBkBzBdC|@{Bf@zAx@M~EhC{AQkFdAbCnJSExClBsCxD\\mBsI iljE{jk@cAdG~BdB{@kJ mwhEe~j@uDtChAgCgBVoBfDnDw@WvAaCDeKtJ?tIpQ{T`BcG mthEw|j@mBpT|B`DdCk@cCcCrBqHeCqJ {ofE}xj@kChDaHxAvCv@uBHnA~@qDzDsERs@p@vBPuFpBGjA~D?sF~FfKaN`O{Jd@yF smgEiwj@yDpAdDdBuBTqAeC}BpDpCJsA~BfDoCbCf@_D`GfJeGyCDzAwBiBAbAcBsBaA ayhEyej@mDtHOtCnBlAtAg@gAyArBn@fAuC{BqH idhEeej@yE~ArAh@_BlAlBu@PdBnAkBObC~A]RtCeCbChCpBnAsPgAwA{@lC]oC cohEg|i@eEjEfD[MxAoDt@bE\\k@bCpAqAfBzAuBkN ehhEa{i@_BhAxArAwBT|BlF?aL }{gE{yi@wAdKmBsAe@dBzFNOgL owhEepi@o@`I|A_BhCn@_DfA|H@AzCfEdA}AgImA\\i@cCmElAwB}E ybiE{li@uEjI`CjD`BeA{@tBxB_CnAnC\\sEaDl@eAq@nB{CqDNbCwAS{B {ahEabi@~BfM_BgGpCt@qDuF snhEm`i@w@nCoCeAx@|By@eAG|AoCGrA`JhBiJ|C`CgBxF|Cw@SiEjBaAmC_BjBw@gBoB _fiEa|h@gIhDNxAfDEeFj@bBd@_BlArJ_EoAtFjCy@WsCtBJlAuDcB}@eBjC_@iD otiEgrh@uWpOeAvA|ANsF`B_Ca@xAsA_DXw@~A~BYcAj@xAh@eC]^nBk@yA}FhAdFt@mHT~Bh@o@zCaLbBnMy@bLmLfJeBlBtAqBaBfBFcBoAlAsAzBtBmBiD~QwESqE kbhEeoh@m@vBrCHgCnDcBqDcBnEhBAqAjBoAsAM~InL{OCaD{BG gxhEylh@_H`Aj@dEeOEzEGyC`AjBl@[nBfJkAqDzB|Al@{CL|Ch@eCb@ZdB{BcBtApB{AaAXdCoAiCgBrEwAcAN`C{Aq@`AoCsBFlBhH`MmDtAqCdCvAtIwBjBsDmEp@e@sCh@lEyBx@MqCaBxA|DoIgGRrG}BwEXrE}Am@_D _siEyih@aMhGnRyEmDo@ s~jE}`h@cHhBeG|FtN}Er@iC klkEgtg@wM^gBnCzPkABcB qwkEqve@{DxBjK|AgChCVjAlDgA_ChClD{BxC|C?uAfBbAxIeC_A{BcFrDgFMe@_DeJcG {gjEkzd@_@`BwCk@OfBlClAeGtAgAxArAhB{B?SeBoBz@rA|AkIZlB^e@xBaIq@`CjA_Dd@nAdBsBMw@zByA_B|@~BuC|AeIb@nJ[zKmJzRsGdAwChLcBdCcC{HpA`Dy@Q{ByDc@ gmlEwzb@}CNmEzIoByC_DhB_C|F|CwFdD~AnCy@LaDtCRbCyE {jpEor^mHpFzJsEmA] m{pEyl^]lEfCnEmAx@|Bz@o@nDvBaFE`EpA{AVvBfB_@yEvBpA`AoElIq@eCaB?B|BqAi@u@~FjDkEvD@vIeOUeDeK{C}AcJ }eqEoi]iAhB`Bj@yA~@jA|BsBc@mBvHsAyDa@lLkAcDkEbC~FiHcFb@p@uBgCmAZ`HyBt@OyCkBlEpBbFuDXYtBFgF_D`@ZbBcCr@xAhEeA~Au@gDkBdDq@iAk@`CzBzAuC~BsFgGl@bCuAd@xBnBcCjCfDl@aGAzBjBgCbC~Dw@^bEzAwAB`JdBvBiFtCLzDfCUi@qEfC|A~CsFFtDfBK}CeLhDU\\{BmEaBc@tJgAuLpBqB~CbA@{BdAjAPsEnBEjBcEqBtGxA|AuBhAhEFtAyHqAkFpB_EkAdD|CxF`B@`@qJ~AvGzEmA}AyImBzCgAuARwBhCIr@}K|BrGjBa@iBzGzBJ\\gCh@vA`DkA{@zCtBuAHeCeH{@lAkH_Bw@rAyLuAyC ihsEwmWaEl@`Dv@Q|BuCn@hCpA]bHsGr@v@~AsC~@qAkBTnCuDbAx@dAtL_H`BRs@xBpBsB{AjExDdDcBf@fDrDqAxBnIlKaAwC~FtBx@oEU_B{ESbIYE}ErBxD|BuAeCeBtCyCYzCnEt@w@pD~@wAvBrALcBdB`ASgG{FWv@hE{BwKyFiCeAuEkE\\iBeEiBzDh@qC}DOpEEmAw@vC@IoB~DdEXmChAlCzFbAw@cCcDELyBbCa@k@iDsBI`@jB}AZc@yD}BEq@tBaBcAq@nBtBv@kF`EyBuBxCkBgFiF cfrEitUaBlAPnG`Cc@GvCnAaCIxBxAoCrC~DaA}H{Bf@w@eC}@|Bi@{E m_sEosUkHrAhJ`BrBm@_A}@yAvAWaD"],[1500,"{vkEmtk@CrB_D\\xDRcBhCdLmEkC{@y@xAqC_C yxhE{pk@cFtByCvH}Cg@SaDeGtCp@`BjEEgBbC`AlAqKvB]tCcD{Ba@vEbHyB}GrEzAhBcDDFsAmBnC}AcFcBfGbDUE~CdFGfB{CpAhAx@iBmAe@rCs@gAiA|FqByAwCxDxAzGoF{BsDxFa@_@yChEm@{A{@xBa@yAwAtBPS{B sdgEwnk@_DvCiAy@}NvFgCzFaL|AxNVzAyHJrBxCv@o@xBnBu@|AiBgCyFjHaC{@rB~Bb@hC{GfBlBaBaC {rhE_xj@_BpE`AlD\\_K ibiEsqj@mFdC}@pGnDkBzBkH k`jEi_j@aFpD{Ed@fBiC{Di@oFvBr@jCkCfC`IyBqA|AxBR}InFc@hD`C`@oCzBpE]gClGwE|@_BuFUrCgC{CkA`B`FhC?nDdEc@cA|AtAGlBsE|ErA|@oA}A]tCIuCsFjC_@dBbCCqF_IsBvByBjCpCkBeFrFwGdIkAM}D kejEcti@eIxF~EfFlB}@aD_DfJi@_BsBuDDlCy@eAq@ e`jEurd@cNr@wA`Dd@dAtAaD~LyB y{qE_s\\wB^lBvFqEn@e@rDnDl@c@}DxClArAeA_ApFrBg@x@{FfCDiAyFcDA?fE_CsG gurEyiWcCzAyB{@hEbFX_BxC|A_CaG sisEg`WS`GsBXvCXb@lIf@iB`DzCeEaNjCfFhDqBwAnExAgB`Cl@QxBqBMTpC~CFv@iGjLrD}HcKyMV{EeBS}D"]],"rivers":"ygoEqmRtIaD~GwKxELvCwAmL{B{W`D ugsEoxVtEfIu@vJzF|DvD[`ChE gsrEyiVdAvI|Bf@r@bEfCPzHyC`BuDrBRJ}BnFj@|BqC~AdAq@mF {wpE_jVbHvA`C|DpEf@lGeDXaEbEFPfBlDjA{@dSnDdMmFlFgCiAi@cArAqD{CkL isqEu}TzElFhGyAfAkCfCGjB|HbBbAw@X gbpEafUrFhCt@dCH|AyB`Bf@lDrCjAjCoAv@hBuEhKrAfDTcA kllEyvP{ClOxE|BhCu@nCr@jDfCzEcA clnEwmRcCiEtE}G`MwCxGGbBuDfG{@vBmFfEs@jD}IQtHyCf@ s}nEwbU{GbP`CFtA_E~BJpBcBxByHgEaK_CcAp@kF{CsA k`mE}oRdGfMy@`A~BlAoF[_ExAuCuB sqmEmpTsDjG`@xAeHrGmCYq@tAiEp@mCg@}ElF smqEcwUlEpClBpHpE_AdFdBnBvHbClBo@nEgFnA {gqE}eV|E~DpO`Cf@fCyAnEeAT]mAM`CoElArAjB menE}|TaBOQxCiDPsChNwFbF }slEslQeA{DfAyEgBxA}GReKcC cgsE}|VzJmBvAvBnEB|DlDvCgAxAj@|CaF`EkA|@oCqD{CbF_C{A}Ap@wHrD}BZiClAX[{AfCInCuCbDl@~BeA umsEcsYwAbFsE~Ao@vDuDbAgDo@iB~AeDcA wksE}~YzDhFlCuA|@~DpAPrBhIUrEgG~AwBvGsDfAj@r@kHvEgBoBsBzAeEo@yCvBsIcE swrEqqXjB|AY~EyGlF_E}CaEk@|AsCgDwE mlrEikZu@bAdBrAk@fBbD~Cc@tH_BRsAnEaDKwE`H qkrEqv\\yJvGOtBsCl@cCUDeCyB_@GcCoOd@ eesEqaWrDmAw@yDpDgElQrAfAlD~Ab@fEEKoC`AK smqEga]qDyCz@qAiA}EdDgCgD}FgNqA}GwHoAlB e_rEkwZgCgBjBcElAjAvFyAfCxHdGKlAtHzFdB|BtDXaC isqEig\\fAhA~@}@tBt@h@pJ}AnE_E|AaBhGRdF qarEoy[oFjRbCt@BzAmA|B}D^ }esEoe[yEdFHtGqCdM_FhBmDM cpqEcsY|DzMeB~@aPeFgDoG|AuA ojsE_z[aCeDn@qEgGuGpDvC~Ay@yCW iirEu}XdAo@]qC`Cy@dJpAfF`JvD{ChFw@ iyrEsb[qBzIuIpKnB~DpBHO~@lBg@jAbAwCzH qjsEwmWfDuGnCoAvEX~BhBi@{A~G{JHgC ahmEiib@qLhAxFkGtByHrEkDP{FhBfArG?rBzClIZ aglEu_e@|CBqBoE}KbBiCdIiDp@ZnEnB`AYfAzCj@X`CxC?pBxBdGeBnAd@UrA_E~BOu@gK`A[v@hANcAPf@lA_@dBkA?RxAoErCcCo@gApCoD|@?zBxBN wikEwsf@{Fa@}AzA}CwC_LkBqCdAq@nCeAaCwBEuClAw@fDkEd@{AhEqDbCn@r@{IlCDvCsDrEaDUrAV }fjEo|d@kL`CeFxDsAw@oMzCs@xB_OjF _wjEgle@]vCkKzD_EYtG|InC^WbA cmqEkl^GuBfCaArEgLzHbJ wgoEkc`@IoE`CgB`DHtAaFqE_EkDM`@uF imnE}ea@eBmCeFuAwAuEpPmDnNmJ|DrBi@pAhAtCxE_DlAb@ anmEmwf@sIjCaCaAgEnEwAiA]lAyAS_@|DfCfL {sjEklk@`AhA`AeAr@h@[pMcEdEuGlB}BpBP|AyJzCeDrGoIrFqDxGeJvE gimEqjj@mA~DwGiB_ELhFbMVzAoCrDfC|Dg@tCsDvAmBhEOnCzC`CmBfEsAZ_@qA_B|ByD_@gI~DEbAdHm@jIlCdHuA gvlEo_l@wHlAyBhC~F~JdK^aAfCl@rBcHvGc@fErFbLUtD|CxCBhC|AP^_F|EcBnEkGjAgC{@a@fAiEaAsArAoB {{fE_bk@iIF_FtFiHzCmApG{D|@}@hCaE?kN~DEmCsE}AqNh]}CPwEzE{PjF}B`FiTlN{AQsCnBwC}AeI~AyM`PaN}C|BoS_C_E~Dw@h@}EbBbCnAiEjN_Ky@_BtDwAtFaHbCId@tJdGd@SpFlFlCv@_B crpEugi@`F~@hFwEzHk@`FyD`LiBl@sFaAaB|FmIoBScDtBeB{@ ginEuyi@a@qBaDLSwCsCuCdFiEpDb@tBmB\\qE _goEg`h@[nAiGz@?`EfHiAn@wBrARbBgBnFRcEz@y@tH_KzE eunEcug@}@R`Ax@hBMtAeEyEw@zCcCgBsDiB~BqE_BsCbCmBa@pC_ABkAmHWOaA cxkEqxk@iGjEq@lCnAlBy@zAbF~GgAlD`AnAgAhEz@d@{GnK}EbBqCzLwCr@fAFh@~FzAj@iGzEg@pDaBCC~ByB~AO~FsC|@uDg@iLrDcC|Dr@nBuDzK ukjE_si@vJsB`DBrA`Bo@tFqDtETzC {zlE_~f@yDnAsAzH}FvFrAz@W~D {{hEcai@lAzByC~AZrB}CdFcMxG{ElGcIbC i}lE}vg@uHuAkCr@mAjC{AGzEcP oqnEkbi@wC~AHbC`Fg@vBpA|DcH iooEoai@x@~CiCbHrM_BdCz@wDbB q_nE_yk@yJlOcBScItGoB_@_GdE _liEcqj@`@r@{@Q}C~F?|GuEfEMpC ymmEssg@VfCqC`@t@`AwBfBr@`@iG`Dt@jCkB`H khjEwvj@of@p`@ cbmEkcj@}@lB`@vFdAbAbCS]vFhC|CwHjMz@zEtBnA i_nE}lg@_CtDwBEiBlBgBfHaCXr@fCcD{AgEbDqDi@iAhA"};
+/* ---- the atlas page of the Geography books (G, 16/10/2026: "khi select sách, thì sách mở ra có hình bản đồ việt nam,
+   khi click vào bản đồ ViệtNam thì mới vào page"): the first leaf of the book, printed as a page of a school atlas is.
+   Vietnam whole, its mainland and its islands, Hoàng Sa and Trường Sa among them, with the East Sea round them: the land
+   in the relief colours of G's own map (deltas green, hills cream, uplands ochre, mountains brown), the sea deepening in
+   blue bands, the neighbours' land pale, the border dash-dotted, the great rivers, the capital and the large cities, the
+   seas, the gulfs, the archipelagos and the neighbours named in the page's language; a graticule every 5°, a compass rose
+   and a scale; the title over it and the sources under it, on a cream paper a little darker toward the gutter. The
+   Phú Quốc book marks Phú Quốc and shows it again, larger, in an inset. Drawn once a book opens (and again in the other
+   language when the page's language is switched), from the outlines in vn-geo.js (OpenStreetMap). */
+const ATLAS = { geo: null };
+const KX = Math.cos(15 * Math.PI / 180);   // (longitude shrunk as at 15° N: a plain equirectangular map)
+function decodeRings(s) {   // a layer's rings: encoded polylines (lng, lat in 1/f degree) joined by spaces
+  const f = VN_GEO.f, out = [];
+  for (const str of s.split(' ')) {
+    if (!str) continue;
+    const pts = []; let i = 0, x = 0, y = 0;
+    while (i < str.length) {
+      for (let k = 0; k < 2; k++) {
+        let sh = 0, res = 0, b;
+        do { b = str.charCodeAt(i++) - 63; res |= (b & 0x1f) << sh; sh += 5; } while (b >= 0x20);
+        const v = res & 1 ? ~(res >> 1) : res >> 1; if (k) y += v; else x += v;
+      }
+      pts.push(x / f, y / f);
+    }
+    out.push(pts);
+  }
+  return out;
+}
+function atlasGeo() {
+  if (!ATLAS.geo) ATLAS.geo = { vn: decodeRings(VN_GEO.vn), border: decodeRings(VN_GEO.border)[0] || [], pq: decodeRings(VN_GEO.pq)[0] || [], dots: decodeRings(VN_GEO.dots)[0] || [], foreign: decodeRings(VN_GEO.foreign),
+    sea: VN_GEO.sea.map(([d, s]) => [d, decodeRings(s)]), relief: VN_GEO.relief.map(([d, s]) => [d, decodeRings(s)]), rivers: decodeRings(VN_GEO.rivers) };
+  return ATLAS.geo;
+}
+// names on the map: [lng, lat, Vietnamese, English, kind, where the name goes: l(eft), r(ight), t(op), b(elow)]
+const PLACES = [
+  [105.854, 21.028, 'Hà Nội', 'Hà Nội', 'capital', 'l'], [106.688, 20.845, 'Hải Phòng', 'Hải Phòng', 'city', 'r'], [107.59, 16.463, 'Huế', 'Huế', 'city', 'l'],
+  [108.202, 16.054, 'Đà Nẵng', 'Đà Nẵng', 'city', 'l'], [109.196, 12.238, 'Nha Trang', 'Nha Trang', 'city', 'l'],
+  [106.701, 10.776, 'TP. Hồ Chí Minh', 'Ho Chi Minh City', 'city', 'r'], [105.747, 10.045, 'Cần Thơ', 'Cần Thơ', 'city', 'b']];
+const SEAS = [   // (a gulf's name in two lines where it has little room)
+  [112.6, 13.2, 'BIỂN ĐÔNG', 'EAST SEA', 1], [107.35, 19.75, 'Vịnh Bắc Bộ', 'Gulf of Tonkin', 0], [103.05, 7.75, 'Vịnh\nThái Lan', 'Gulf of\nThailand', 0]];
+const LANDS = [[106.0, 23.9, 'TRUNG QUỐC', 'CHINA'], [103.25, 19.0, 'LÀO', 'LAOS'], [103.35, 15.6, 'THÁI LAN', 'THAILAND'], [104.6, 12.75, 'CAMPUCHIA', 'CAMBODIA']];
+const ISLES = [[112.05, 16.15, 'QĐ. Hoàng Sa', 'Hoàng Sa Is.'], [114.45, 9.35, 'QĐ. Trường Sa', 'Trường Sa Is.'], [103.97, 10.23, 'Phú Quốc', 'Phú Quốc'], [106.61, 8.69, 'Côn Đảo', 'Côn Đảo']];
+const RELIEF = { base: '#a7cf98', 200: '#d8d3a4', 500: '#d9bd88', 1000: '#c59a62', 1500: '#ac7b48' };   // (G's map's colours: its LAND_COLORS)
+const SEA = { base: '#d3e5e6', 200: '#bcd7dd', 1000: '#a3c6d3', 3000: '#8cb5c7' };
+const serif = `Georgia, 'Times New Roman', serif`, sans = `Inter, 'Helvetica Neue', Arial, sans-serif`;
+// a projection onto the frame: the box [lng0, lat0, lng1, lat1] fitted to it, centred
+function frameProj(x0, y0, x1, y1, box) {
+  const [l0, b0, l1, b1] = box, s = Math.min((x1 - x0) / ((l1 - l0) * KX), (y1 - y0) / (b1 - b0));
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, lc = (l0 + l1) / 2, bc = (b0 + b1) / 2;
+  return { s, x: lng => cx + (lng - lc) * KX * s, y: lat => cy - (lat - bc) * s };
+}
+function pathRings(g, rings, P) {
+  g.beginPath();
+  for (const r of rings) { g.moveTo(P.x(r[0]), P.y(r[1])); for (let i = 2; i < r.length; i += 2) g.lineTo(P.x(r[i]), P.y(r[i + 1])); g.closePath(); }
+}
+function strokeLines(g, lines, P) {
+  g.beginPath();
+  for (const r of lines) { g.moveTo(P.x(r[0]), P.y(r[1])); for (let i = 2; i < r.length; i += 2) g.lineTo(P.x(r[i]), P.y(r[i + 1])); }
+  g.stroke();
+}
+function spaced(g, text, x, y, sp) {   // a line of capitals with space between the letters, centred on x
+  const w = [...text].reduce((s, ch) => s + g.measureText(ch).width, 0) + sp * (text.length - 1); let cx = x - w / 2;
+  g.textAlign = 'left'; for (const ch of text) { g.fillText(ch, cx, y); cx += g.measureText(ch).width + sp; } g.textAlign = 'center';
+}
+function haloText(g, text, x, y, halo, ink, lw) { g.lineJoin = 'round'; g.strokeStyle = halo; g.lineWidth = lw; g.strokeText(text, x, y); g.fillStyle = ink; g.fillText(text, x, y); }
+// the whole map in a frame: the sea, the neighbours, Vietnam in relief, rivers, coasts, the border, the archipelagos
+function drawMap(g, P, k, lang, opts = {}) {
+  const G = atlasGeo(), vi = lang === 'vi', free = opts.free || (() => true);   // (free: whether a name may go there: not under an inset)
+  g.fillStyle = SEA.base; g.fillRect(-1e4, -1e4, 2e4, 2e4);
+  for (const [d, rings] of G.sea) { g.fillStyle = SEA[d] || SEA[3000]; pathRings(g, rings, P); g.fill('evenodd'); }
+  g.fillStyle = '#ebe2cb'; pathRings(g, G.foreign, P); g.fill('evenodd');
+  g.strokeStyle = 'rgba(120, 104, 78, 0.55)'; g.lineWidth = 0.9 * k; g.stroke();
+  // Vietnam: its land, the relief over it (inside it only), its rivers, its coast
+  g.save(); pathRings(g, G.vn, P); g.fillStyle = RELIEF.base; g.fill('evenodd'); g.clip('evenodd');
+  for (const [d, rings] of G.relief) { g.fillStyle = RELIEF[d] || RELIEF[1500]; pathRings(g, rings, P); g.fill('evenodd'); }
+  g.strokeStyle = 'rgba(48, 102, 150, 0.85)'; g.lineWidth = 1.15 * k; g.lineJoin = 'round'; g.lineCap = 'round'; strokeLines(g, G.rivers, P);
+  g.restore();
+  pathRings(g, G.vn, P); g.strokeStyle = '#3c5a66'; g.lineWidth = 1.1 * k; g.lineJoin = 'round'; g.stroke();
+  // the archipelagos' islands too small to draw: dots
+  g.fillStyle = '#a7cf98'; g.strokeStyle = '#3c5a66'; g.lineWidth = 0.8 * k;
+  for (let i = 0; i < G.dots.length; i += 2) { g.beginPath(); g.arc(P.x(G.dots[i]), P.y(G.dots[i + 1]), Math.max(1.6, 2.1 * k), 0, Math.PI * 2); g.fill(); g.stroke(); }
+  // the border on land, dash-dotted in red over a pale band (as an atlas draws a national border)
+  g.lineJoin = 'round'; g.lineCap = 'butt'; g.strokeStyle = 'rgba(214, 120, 96, 0.35)'; g.lineWidth = 5 * k; strokeLines(g, [G.border], P);
+  g.setLineDash([10 * k, 4 * k, 2.4 * k, 4 * k]); g.strokeStyle = 'rgba(160, 44, 34, 0.95)'; g.lineWidth = 2.2 * k; strokeLines(g, [G.border], P); g.setLineDash([]);
+  if (opts.after) opts.after(g, P);
+  // the graticule, every 5°
+  g.strokeStyle = 'rgba(70, 92, 104, 0.32)'; g.lineWidth = 0.9 * k;
+  for (let lng = 100; lng <= 120; lng += 5) { g.beginPath(); g.moveTo(P.x(lng), P.y(0)); g.lineTo(P.x(lng), P.y(30)); g.stroke(); }
+  for (let lat = 0; lat <= 30; lat += 5) { g.beginPath(); g.moveTo(P.x(95), P.y(lat)); g.lineTo(P.x(125), P.y(lat)); g.stroke(); }
+  // names: the neighbours, the seas, the archipelagos and islands, the cities
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(96, 84, 66, 0.72)'; g.font = `600 ${Math.round(24 * k)}px ${sans}`;
+  for (const [lng, lat, v, e] of LANDS) if (free(P.x(lng), P.y(lat))) spaced(g, vi ? v : e, P.x(lng), P.y(lat), 4.5 * k);
+  for (const [lng, lat, v, e, big] of SEAS) {
+    g.fillStyle = 'rgba(38, 86, 120, 0.85)'; if (!free(P.x(lng), P.y(lat))) continue;
+    if (big) { g.font = `italic 600 ${Math.round(40 * k)}px ${serif}`; spaced(g, vi ? v : e, P.x(lng), P.y(lat), 7 * k); }
+    else { g.font = `italic ${Math.round(23 * k)}px ${serif}`; const ls = (vi ? v : e).split('\n'); ls.forEach((l, i) => g.fillText(l, P.x(lng), P.y(lat) + (i - (ls.length - 1) / 2) * 26 * k)); }
+  }
+  const halo = 'rgba(246, 240, 224, 0.92)';
+  for (const [lng, lat, v, e] of ISLES) {
+    if (!free(P.x(lng), P.y(lat))) continue;
+    const arch = v.startsWith('QĐ'); g.font = `italic ${arch ? 600 : 500} ${Math.round((arch ? 26 : 21) * k)}px ${serif}`;
+    haloText(g, vi ? v : e, P.x(lng) + (arch ? 0 : (lng < 105 ? -12 : 12) * k), P.y(lat) + (arch ? 0 : 20 * k), halo, arch ? '#7a2c22' : '#3c4a40', 5 * k);
+  }
+  for (const [lng, lat, v, e, kind, at] of PLACES) {
+    const x = P.x(lng), y = P.y(lat), cap = kind === 'capital'; if (!free(x, y)) continue;
+    if (cap) star(g, x, y, 11 * k, '#b0302a'); else { g.beginPath(); g.arc(x, y, 5 * k, 0, Math.PI * 2); g.fillStyle = '#fbf6ea'; g.fill(); g.lineWidth = 2.4 * k; g.strokeStyle = '#3a2f26'; g.stroke(); }
+    g.font = `${cap ? 700 : 600} ${Math.round((cap ? 29 : 23) * k)}px ${sans}`;
+    const off = (cap ? 15 : 11) * k, [tx, ty, al] = at === 'l' ? [x - off, y, 'right'] : at === 'r' ? [x + off, y, 'left'] : at === 't' ? [x, y - 22 * k, 'center'] : [x, y + 22 * k, 'center'];
+    g.textAlign = al; haloText(g, vi ? v : e, tx, ty, halo, '#2b231c', 6 * k); g.textAlign = 'center';
+  }
+}
+function star(g, x, y, r, col) {
+  g.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; g.lineTo(x + rr * Math.cos(a), y + rr * Math.sin(a)); }
+  g.closePath(); g.fillStyle = col; g.fill(); g.lineWidth = r * 0.16; g.strokeStyle = 'rgba(255, 248, 230, 0.9)'; g.stroke();
+}
+function compass(g, x, y, r, lang, k) {   // an eight-point rose, its north point dark
+  g.save(); g.translate(x, y);
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4, long = i % 2 === 0, L = long ? r : r * 0.55, w = long ? r * 0.17 : r * 0.12;
+    g.save(); g.rotate(a);
+    g.beginPath(); g.moveTo(0, -L); g.lineTo(w, 0); g.lineTo(0, 0); g.closePath(); g.fillStyle = i === 0 ? '#3a2f26' : '#6b5c49'; g.fill();
+    g.beginPath(); g.moveTo(0, -L); g.lineTo(-w, 0); g.lineTo(0, 0); g.closePath(); g.fillStyle = i === 0 ? '#9a3326' : '#efe5cd'; g.fill();
+    g.lineWidth = 0.8 * k; g.strokeStyle = '#3a2f26'; g.beginPath(); g.moveTo(0, -L); g.lineTo(w, 0); g.lineTo(-w, 0); g.closePath(); g.stroke();
+    g.restore();
+  }
+  g.beginPath(); g.arc(0, 0, r * 0.62, 0, Math.PI * 2); g.lineWidth = 1 * k; g.strokeStyle = 'rgba(58, 47, 38, 0.6)'; g.stroke();
+  g.fillStyle = '#3a2f26'; g.font = `700 ${Math.round(r * 0.42)}px ${serif}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillText(lang === 'vi' ? 'B' : 'N', 0, -r - 6 * k);
+  g.restore();
+}
+function scaleBar(g, x, y, P, lang, k) {   // 0 to 300 km, in hundreds
+  const kmPx = P.s / 111.2, w = 300 * kmPx, h = 7 * k;
+  g.textBaseline = 'alphabetic'; g.textAlign = 'center';
+  for (let i = 0; i < 3; i++) { g.fillStyle = i % 2 ? '#fbf6ea' : '#3a2f26'; g.fillRect(x + i * w / 3, y, w / 3, h); }
+  g.lineWidth = 1.2 * k; g.strokeStyle = '#3a2f26'; g.strokeRect(x, y, w, h);
+  g.fillStyle = '#3a2f26'; g.font = `500 ${Math.round(17 * k)}px ${sans}`;
+  for (let i = 0; i <= 3; i++) g.fillText(String(i * 100), x + i * w / 3, y - 7 * k);
+  g.textAlign = 'left'; g.fillText('km', x + w + 26 * k, y - 7 * k);
+}
+function paper(g, W, H, seed) {   // cream paper: a little uneven, flecked, darker toward the gutter (the left: the spine)
+  g.fillStyle = '#f1e8d2'; g.fillRect(0, 0, W, H);
+  const r = rng(seed);
+  for (let i = 0; i < 26; i++) {
+    const x = r() * W, y = r() * H, rr = W * (0.1 + 0.25 * r()), m = g.createRadialGradient(x, y, 0, x, y, rr);
+    m.addColorStop(0, r() < 0.5 ? 'rgba(255, 252, 240, 0.18)' : 'rgba(170, 140, 90, 0.07)'); m.addColorStop(1, 'rgba(0, 0, 0, 0)'); g.fillStyle = m; g.fillRect(x - rr, y - rr, 2 * rr, 2 * rr);
+  }
+  for (let i = 0; i < W * H / 700; i++) { g.fillStyle = `rgba(${r() < 0.5 ? '120, 96, 60' : '255, 255, 250'}, ${r() * 0.06})`; g.fillRect(r() * W, r() * H, 1 + r() * 1.5, 1 + r()); }
+  const gut = g.createLinearGradient(0, 0, W * 0.12, 0);
+  gut.addColorStop(0, 'rgba(92, 70, 40, 0.22)'); gut.addColorStop(0.35, 'rgba(92, 70, 40, 0.07)'); gut.addColorStop(1, 'rgba(92, 70, 40, 0)'); g.fillStyle = gut; g.fillRect(0, 0, W * 0.12, H);
+}
+// the page, W × H (portrait): `which` is 'vn' (Việt Nam) or 'phuquoc' (the same map, Phú Quốc marked and shown again
+// in an inset); returns the frame of the map on the page, as fractions of the page, for the pointer
+function drawAtlas(c, which, lang) {
+  const W = c.width, H = c.height, g = c.getContext('2d'), k = W / 1024, vi = lang === 'vi', m = 58 * k;
+  paper(g, W, H, which === 'vn' ? 11 : 23);
+  // the title
+  g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillStyle = '#2f261d';
+  g.font = `700 ${Math.round(70 * k)}px ${serif}`; spaced(g, vi ? 'VIỆT NAM' : 'VIETNAM', W / 2, m + 70 * k, 9 * k);
+  g.font = `italic ${Math.round(26 * k)}px ${serif}`; g.fillStyle = '#5a4a38';
+  g.fillText(which === 'phuquoc' ? (vi ? 'Đảo Phú Quốc · Biển Đông' : 'Phú Quốc Island · the East Sea') : (vi ? 'Địa hình · Biển Đông · Hoàng Sa · Trường Sa' : 'Relief · the East Sea · Hoàng Sa · Trường Sa'), W / 2, m + 110 * k);
+  // the map
+  const x0 = m, x1 = W - m, y0 = m + 138 * k, y1 = H - m - 44 * k, P = frameProj(x0, y0, x1, y1, [101.8, 5.4, 118.2, 24.2]);
+  g.save(); g.beginPath(); g.rect(x0, y0, x1 - x0, y1 - y0); g.clip();
+  // (the Phú Quốc book's inset: over the open sea east of Hoàng Sa, between the compass and Trường Sa)
+  const pq = which === 'phuquoc', box = pq ? { x: P.x(114.2), y: P.y(19.7), w: x1 - 12 * k - P.x(114.2), h: P.y(13.95) - P.y(19.7) } : null;
+  const free = box ? (x, y) => x < box.x - 60 * k || x > box.x + box.w + 60 * k || y < box.y - 18 * k || y > box.y + box.h + 18 * k : null;
+  const after = pq ? (gg, PP) => {   // Phú Quốc marked with a red ring
+    gg.beginPath(); gg.arc(PP.x(103.97), PP.y(10.23), 24 * k, 0, Math.PI * 2); gg.lineWidth = 3.4 * k; gg.strokeStyle = '#b0302a'; gg.stroke();
+  } : null;
+  drawMap(g, P, k, lang, { after, free });
+  compass(g, x1 - 92 * k, y0 + 120 * k, 54 * k, lang, k);
+  scaleBar(g, P.x(111.2), P.y(6.25), P, lang, k);
+  if (pq) inset(g, box.x, box.y, box.w, box.h, k, lang);
+  g.restore();
+  // its frame: a heavy rule and a fine one, the degrees along it
+  g.lineWidth = 3.2 * k; g.strokeStyle = '#3a2f26'; g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+  g.lineWidth = 1 * k; g.strokeRect(x0 - 7 * k, y0 - 7 * k, x1 - x0 + 14 * k, y1 - y0 + 14 * k);
+  g.fillStyle = '#5a4a38'; g.font = `500 ${Math.round(15 * k)}px ${sans}`; g.textBaseline = 'alphabetic';
+  for (let lng = 105; lng <= 115; lng += 5) { const x = P.x(lng); if (x > x0 + 20 * k && x < x1 - 20 * k) { g.textAlign = 'center'; g.fillText(lng + '°E', x, y0 - 12 * k); g.fillText(lng + '°E', x, y1 + 24 * k); } }
+  for (let lat = 10; lat <= 20; lat += 5) { const y = P.y(lat); if (y > y0 + 20 * k && y < y1 - 20 * k) { g.save(); g.translate(x0 - 12 * k, y); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.fillText(lat + '°N', 0, 0); g.restore(); } }
+  // the sources
+  g.textAlign = 'center'; g.fillStyle = '#6b5a45'; g.font = `italic ${Math.round(16 * k)}px ${serif}`;
+  g.fillText(vi ? 'Dữ liệu: © OpenStreetMap contributors · độ cao, độ sâu: AWS Terrain Tiles' : 'Data: © OpenStreetMap contributors · heights, depths: AWS Terrain Tiles', W / 2, H - m + 6 * k);
+  return { x0: x0 / W, y0: y0 / H, x1: x1 / W, y1: y1 / H };
+}
+function inset(g, x, y, w, h, k, lang) {   // Phú Quốc, some 18 times larger: its coast (finer than the main map's), its towns
+  const G = atlasGeo(), vi = lang === 'vi';
+  g.save(); g.fillStyle = 'rgba(247, 242, 228, 0.97)'; g.fillRect(x, y, w, h); g.lineWidth = 2.6 * k; g.strokeStyle = '#3a2f26'; g.strokeRect(x, y, w, h);
+  const pad = 12 * k, top = 46 * k, P = frameProj(x + pad, y + top, x + w - pad, y + h - pad, [103.6, 9.99, 104.12, 10.47]);   // (sea to the west of it, for the towns' names)
+  g.beginPath(); g.rect(x + pad, y + top, w - 2 * pad, h - top - pad); g.clip();
+  g.fillStyle = SEA.base; g.fillRect(x, y, w, h);
+  pathRings(g, [G.pq], P); g.fillStyle = RELIEF.base; g.fill(); g.lineWidth = 1.8 * k; g.strokeStyle = '#3c5a66'; g.lineJoin = 'round'; g.stroke();
+  const halo = 'rgba(246, 240, 224, 0.92)';
+  for (const [lng, lat, name, at] of [[103.958, 10.214, 'Dương Đông', 'l'], [104.012, 10.024, 'An Thới', 'l']]) {
+    const px = P.x(lng), py = P.y(lat); g.beginPath(); g.arc(px, py, 4.5 * k, 0, Math.PI * 2); g.fillStyle = '#fbf6ea'; g.fill(); g.lineWidth = 2.2 * k; g.strokeStyle = '#3a2f26'; g.stroke();
+    g.font = `600 ${Math.round(17 * k)}px ${sans}`; g.textAlign = at === 'r' ? 'left' : 'right'; g.textBaseline = 'middle'; haloText(g, name, px + (at === 'r' ? 10 : -10) * k, py, halo, '#2b231c', 5 * k);
+  }
+  g.restore();
+  // its name over it, and a scale of 10 km
+  g.fillStyle = '#2f261d'; g.font = `italic 700 ${Math.round(24 * k)}px ${serif}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  g.fillText(vi ? 'Đảo Phú Quốc' : 'Phú Quốc Island', x + w / 2, y + 32 * k);
+  const kmPx = P.s / 111.2, bw = 10 * kmPx, bx = x + pad + 8 * k, by = y + top + 16 * k;   // (top left: over the sea, west of its north)
+  g.fillStyle = '#3a2f26'; g.fillRect(bx, by, bw, 5 * k); g.font = `500 ${Math.round(15 * k)}px ${sans}`; g.textAlign = 'left'; g.fillText('10 km', bx + bw + 6 * k, by + 6 * k);
+}
+
+// the endpaper pasted inside the front board (what an open atlas shows on its left): a printed pattern of small compass
+// stars in rows, a bookplate with the book's name, and under it a word on what the map beside it does; darker toward the
+// joint (the right, by the spine)
+function drawEndpaper(c, which, lang, title) {
+  const W = c.width, H = c.height, g = c.getContext('2d'), k = W / 768, vi = lang === 'vi';
+  g.fillStyle = '#ebe2cc'; g.fillRect(0, 0, W, H);
+  const r = rng(which === 'vn' ? 5 : 9), st = 64 * k;
+  for (let row = 0, y = st / 2; y < H + st; row++, y += st * 0.86) for (let x = (row % 2 ? st / 2 : 0); x < W + st; x += st) {
+    g.save(); g.translate(x, y); g.rotate(Math.PI / 4 * (row % 2)); g.fillStyle = 'rgba(92, 118, 128, 0.3)';
+    g.beginPath(); for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr = i % 2 ? 2.6 * k : 10 * k; g.lineTo(rr * Math.sin(a), -rr * Math.cos(a)); } g.closePath(); g.fill();
+    g.restore();
+    g.fillStyle = 'rgba(92, 118, 128, 0.22)'; g.beginPath(); g.arc(x + st / 2, y + st * 0.43, 1.8 * k, 0, Math.PI * 2); g.fill();
+  }
+  for (let i = 0; i < W * H / 900; i++) { g.fillStyle = `rgba(${r() < 0.5 ? '120, 96, 60' : '255, 255, 250'}, ${r() * 0.05})`; g.fillRect(r() * W, r() * H, 1 + r() * 1.5, 1 + r()); }
+  // the bookplate
+  const bw = 400 * k, bh = 330 * k, bx = (W - bw) / 2, by = H * 0.36 - bh / 2;
+  g.fillStyle = '#f6f0e0'; g.fillRect(bx, by, bw, bh); g.strokeStyle = '#4a3b2a'; g.lineWidth = 3 * k; g.strokeRect(bx + 10 * k, by + 10 * k, bw - 20 * k, bh - 20 * k);
+  g.lineWidth = 1.2 * k; g.strokeRect(bx + 18 * k, by + 18 * k, bw - 36 * k, bh - 36 * k);
+  g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillStyle = '#4a3b2a';
+  g.font = `600 ${Math.round(22 * k)}px ${serif}`; spaced(g, 'EX LIBRIS', W / 2, by + 66 * k, 6 * k);
+  compass(g, W / 2, by + 150 * k, 44 * k, lang, k * 0.8);
+  g.font = `italic ${Math.round(30 * k)}px ${serif}`; g.fillStyle = '#2f261d'; g.fillText('Hidden Library', W / 2, by + 238 * k);
+  g.fillRect(W / 2 - 50 * k, by + 256 * k, 100 * k, 1.6 * k);
+  g.font = `600 ${Math.round(24 * k)}px ${serif}`; g.fillText((vi ? 'Tập bản đồ · ' : 'Atlas · ') + title, W / 2, by + 292 * k);
+  // the word on the map
+  g.fillStyle = '#7a2c22'; g.font = `italic ${Math.round(29 * k)}px ${serif}`;
+  const lines = vi ? ['Bấm vào bản đồ bên cạnh', 'để mở trang →'] : ['Click the map beside it', 'to open its page →'];
+  lines.forEach((l, i) => g.fillText(l, W / 2, by + bh + 78 * k + i * 40 * k));
+  const gut = g.createLinearGradient(W, 0, W * 0.88, 0);
+  gut.addColorStop(0, 'rgba(92, 70, 40, 0.22)'); gut.addColorStop(0.4, 'rgba(92, 70, 40, 0.06)'); gut.addColorStop(1, 'rgba(92, 70, 40, 0)'); g.fillStyle = gut; g.fillRect(W * 0.88, 0, W * 0.12, H);
 }
 /* ---- the titles on the shelves' spines: drawn after the watercolour pass so they stay sharp, and hidden wherever the
    room stands in front of the book (each pixel is tested against the room's depth). (A book out of the shelf has its
@@ -5078,13 +5367,18 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
 }
 
 /* ---- the book out of the shelf (hero-books.js), sharp over the picture: one pass for each one showing */
-const _bb = new THREE.Box3();
+const _bb = new THREE.Box3(), _bv = new THREE.Vector3();
 function drawSharpBooks() {
   const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
   if (!SHARP.book.quad) sharpQuad(SHARP.book);
   for (const bk of HERO.list) {
     const h = bk.hero; if (!h || !h.visible) continue;
-    bk.heroSeen = performance.now(); _bb.setFromObject(h); const c = _bb.getCenter(SHARP.v); heroKey(camera, c);
+    bk.heroSeen = performance.now(); _bb.setFromObject(h);
+    if (bk.flapU && bk.flapU.uOpen.value > 0.01 && bk.heroShape) {   // an atlas opening: its cover turns out of the mesh's box (in the shader)
+      const a = bk.flapU.uOpen.value, H = bk.heroShape.hinge;
+      for (const y of [0, 1]) _bb.expandByPoint(h.localToWorld(_bv.set((H.x + Math.sin(a) * bk.d) / bk.t, y, (H.y - Math.cos(a) * bk.d) / bk.d)));
+    }
+    const c = _bb.getCenter(SHARP.v); heroKey(camera, c);
     crispPass(SHARP.book, [c.x, _bb.min.y, c.z, (_bb.max.x - _bb.min.x) / 2, _bb.max.y - _bb.min.y, (_bb.max.z - _bb.min.z) / 2]);
   }
 }
@@ -5113,6 +5407,17 @@ function presentPose(bk) {
   const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x2, y2, z));
   return { p: p.addScaledVector(z, bk.d / 2), q };
 }
+// an atlas open in front of the camera (the Geography books: G, 16/10/2026): nearer than a closed book is shown, facing
+// the camera, its spread's middle (the spine, a little toward the map) where the closed book's middle was
+function openPose(bk) {
+  const v = focusView(bk.sec), fwd = v.tgt.clone().sub(v.pos).normalize(), up = new V3(0, 1, 0), right = fwd.clone().cross(up).normalize();
+  const p = v.pos.clone().addScaledVector(fwd, 0.8).addScaledVector(right, -0.02).addScaledVector(up, -0.02 - bk.h / 2);
+  const x = fwd.clone().negate().applyAxisAngle(up, -0.1), z = x.clone().cross(up).normalize();
+  const th = 0.09, x2 = x.clone().multiplyScalar(Math.cos(th)).addScaledVector(up, Math.sin(th)), y2 = up.clone().multiplyScalar(Math.cos(th)).addScaledVector(x, -Math.sin(th));
+  const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x2, y2, z));
+  return { p: p.addScaledVector(z, bk.d * 0.16), q };
+}
+const OPEN_TURN = 2.7;   // (the cover turned 155°: open as far as a hardcover opens in the hand)
 let SEAT = null;
 function restPose(bk) {
   if (!SEAT) {   // the middle seat of the sofa, found by dropping a ray on it
@@ -5131,6 +5436,7 @@ function startFlight(bk, goal) {
   bk.fdur = reduceMotion ? 0.001 : goal === 'pulled' ? 0.9 : 1.05;
 }
 function wantOf(bk) {
+  if (bk === UIS.mapBook) return UIS.open === bk.sec && !offMode() ? 'present' : 'shelf';   // (an atlas goes back to its shelf)
   if (bk === UIS.active) return UIS.open === bk.sec && !offMode() ? 'present' : 'rest';
   return bk === UIS.peek ? 'peek' : 'shelf';
 }
@@ -5156,8 +5462,23 @@ function stepBooks(dt, t) {
         bk.pose = { p: bk.from.p.clone().lerp(bk.to.p, e).add(new V3(0, lift, 0)), q: bk.from.q.clone().slerp(bk.to.q, e) }; moving = true;
         if (bk.fk >= 1 && bk.goal === 'pulled') { bk.out = false; bk.slide = PULL; continue; }   // back at its place: it slides in on the shelf
       }
+      // an atlas, once in front of the camera, opens: it comes nearer and turns to face the camera as its cover turns
+      // open (that a little later, so it clears the camera's way); it closes again as it goes back (a closing cover
+      // flies back with it)
+      let ok = 0;
+      if (bk.flapU && isMapItem(bk.it)) {
+        const want = bk.goal === 'present' && bk.fk >= 1 ? 1 : 0, k0 = bk.openK || 0;
+        bk.openK = reduceMotion ? want : THREE.MathUtils.clamp(k0 + (want ? dt / 1.15 : -dt / 0.55), 0, 1); if (bk.openK !== k0) moving = true;
+        if (bk.openK > 0 && bk.atlas && !bk.atlas.done) bk.atlas.paint();
+        const k = bk.openK; ok = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+        const kc = THREE.MathUtils.smoothstep(k, 0.12, 1); bk.flapU.uOpen.value = OPEN_TURN * kc;
+        if (bk.goal === 'present' && bk.fk >= 1) {
+          if (!bk.openTo) bk.openTo = openPose(bk);
+          bk.pose = { p: bk.to.p.clone().lerp(bk.openTo.p, ok), q: bk.to.q.clone().slerp(bk.openTo.q, ok) };
+        } else bk.openTo = null;
+      }
       const h = bk.hero; h.position.copy(bk.pose.p); h.quaternion.copy(bk.pose.q); h.scale.set(bk.t, bk.h, bk.d);
-      if (bk.goal === 'present' && bk.fk >= 1 && !reduceMotion) { h.position.y += Math.sin(t * 1.4) * 0.006; h.rotateY(Math.sin(t * 0.9) * 0.04); }
+      if (bk.goal === 'present' && bk.fk >= 1 && !reduceMotion) { const b = 1 - 0.85 * ok; h.position.y += Math.sin(t * 1.4) * 0.006 * b; h.rotateY(Math.sin(t * 0.9) * 0.04 * b); }   // (an open atlas held steadier: its map is to be clicked)
     }
   }
   return moving;
@@ -5305,15 +5626,18 @@ function togglePlayer(open = !body.classList.contains('l3-player-open')) {   // 
 const UIEL = {};
 // the book under the pointer, named beside it: title, author · year and pages, in the page's language (a thin spine
 // cannot hold its title legibly, and a long title is cut short on any spine)
-let tipBook = null;
-function showTip(bk, x, y) {
+let tipBook = null, tipKey = '';
+function showTip(bk, x, y, map) {   // (map: the pointer is on an open atlas's map: the tip says a click opens its page)
   const t = UIEL.tip; if (!t) return;
-  if (!bk) { if (tipBook) { t.classList.remove('is-on'); tipBook = null; } return; }
-  if (tipBook !== bk) {
-    tipBook = bk; const it = bk.it, info = bookInfo(it), by = byOf(it), n = info && info.pages;
+  if (!bk) { if (tipBook) { t.classList.remove('is-on'); tipBook = null; tipKey = ''; } return; }
+  const key = map ? 'map' : isMapItem(bk.it) ? 'atlas' : '';
+  if (tipBook !== bk || tipKey !== key) {
+    tipBook = bk; tipKey = key; const it = bk.it, info = bookInfo(it), by = byOf(it), n = info && info.pages;
     const line = pages => esc([by, pages].filter(Boolean).join(' · '));
+    const hint = key === 'map' ? ['Click the map to open the page ↗', 'Bấm vào bản đồ để mở trang ↗'] : key === 'atlas' ? [bk.out ? 'Click to put it back' : 'Click to open the atlas', bk.out ? 'Bấm để cất sách' : 'Bấm để mở tập bản đồ'] : null;
     t.innerHTML = `<b><span class="en">${esc(titleIn(it, 'en'))}</span><span class="vi">${esc(it.title)}</span></b>`
-      + (by || n ? `<small><span class="en">${line(n && n + ' pages')}</span><span class="vi">${line(n && n + ' trang')}</span></small>` : '');
+      + (by || n ? `<small><span class="en">${line(n && n + ' pages')}</span><span class="vi">${line(n && n + ' trang')}</span></small>` : '')
+      + (hint ? `<small><span class="en">${esc(hint[0])}</span><span class="vi">${esc(hint[1])}</span></small>` : '');
     t.classList.add('is-on');
   }
   t.style.left = Math.max(8, Math.min(x + 16, innerWidth - t.offsetWidth - 8)) + 'px';
@@ -5344,12 +5668,19 @@ function buildOverlay() {
     const row = e.target.closest('.l3-item'); if (!row) return; const it = UIS.open && UIS.open.items[+row.dataset.k]; if (!it) return;
     const chip = e.target.closest('[data-chip]');
     if (chip) { const c = it.chips[+chip.dataset.chip]; if (c && !c.href) c.el.click(); return; }
+    if (isMapItem(it) && it.book) { e.preventDefault(); setMapBook(UIS.mapBook === it.book ? null : it.book); return; }
     if (e.target.closest('.l3-play') || (it.src && !e.target.closest('a'))) { const p = it.li.querySelector('.play'); if (p) p.click(); }
   });
   UIEL.items.addEventListener('pointerover', e => { const row = e.target.closest('.l3-item'); const it = row && UIS.open && UIS.open.items[+row.dataset.k]; setPeek(it && it.book ? it.book : null); });
   UIEL.items.addEventListener('pointerleave', () => setPeek(null));
 }
 function setPeek(bk) { if (UIS.peek === bk) return; if (UIS.peek) UIS.touched.add(UIS.peek); UIS.peek = bk; if (bk) UIS.touched.add(bk); setNeeds(true); }
+// the atlas taken out of its shelf and opened on its map (null: put back); its row in the card marked
+function setMapBook(bk) {
+  if (UIS.mapBook === bk) return; if (UIS.mapBook) UIS.touched.add(UIS.mapBook); UIS.mapBook = bk; if (bk) UIS.touched.add(bk);
+  if (UIEL.items) for (const row of UIEL.items.querySelectorAll('.l3-item')) { const it = UIS.open && UIS.open.items[+row.dataset.k]; row.classList.toggle('is-current', !!(bk && it && it.book === bk)); }
+  setNeeds(true);
+}
 function setHover(sec) {   // a section, or several (a group's title in the sidebar), or none
   const list = Array.isArray(sec) ? sec : sec ? [sec] : [], key = list.map(s => s.id).join('|');
   if (UIS.hoverKey === key) return; UIS.hoverKey = key; UIS.hover = list.length === 1 ? list[0] : null; UIS.hovers = new Set(list);
@@ -5365,11 +5696,13 @@ function renderCard(sec) {
     // the title in the page's language (English: the original title, its full form on hover), the author and the pages
     const info = bookInfo(it), en = titleIn(it, 'en'), name = en === it.title ? esc(it.title) : `<span class="en">${esc(en)}</span><span class="vi">${esc(it.title)}</span>`;
     const full = info && info.full ? ` title="${esc(info.full)}"` : '';
-    const title = it.href ? `<a href="${esc(it.href)}" target="_blank" rel="noopener noreferrer"${full}>${name}</a>` : full ? `<span${full}>${name}</span>` : name;
+    const atlas = isMapItem(it);   // (an atlas's row is no link: its page is reached through its map)
+    const title = it.href && !atlas ? `<a href="${esc(it.href)}" target="_blank" rel="noopener noreferrer"${full}>${name}</a>` : full ? `<span${full}>${name}</span>` : name;
     const by = byOf(it), pages = info && info.pages ? `<span class="en">${info.pages} pages</span><span class="vi">${info.pages} trang</span>` : '';
     const chips = it.chips.map((c, ci) => c.href ? `<a class="l3-chip" href="${esc(c.href)}" target="_blank" rel="noopener noreferrer">${esc(c.label)} ↗</a>` : `<button type="button" class="l3-chip" data-chip="${ci}">${esc(c.label)}</button>`).join('');
-    const play = it.src ? `<button type="button" class="l3-play" aria-label="Play / Phát: ${esc(it.title)}"><svg class="i ic-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="i ic-pause" aria-hidden="true"><use href="#i-pause"/></svg></button>` : '<span class="l3-noplay"></span>';
-    return `<li class="l3-item${it.src ? ' has-audio' : ''}" data-k="${k}">${play}<div class="l3-main"><span class="l3-t${it.bold ? ' is-bold' : ''}">${title}</span>${by || pages ? `<span class="l3-by">${esc(by)}${by && pages ? ' · ' : ''}${pages}</span>` : ''}${chips ? `<div class="l3-chips">${chips}</div>` : ''}</div><span class="l3-time"></span></li>`;
+    const play = it.src ? `<button type="button" class="l3-play" aria-label="Play / Phát: ${esc(it.title)}"><svg class="i ic-play" aria-hidden="true"><use href="#i-play"/></svg><svg class="i ic-pause" aria-hidden="true"><use href="#i-pause"/></svg></button>`
+      : atlas ? '<span class="l3-map" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 6.5 9 4.5l6 2 5.5-2v13l-5.5 2-6-2-5.5 2z M9 4.5v13 M15 6.5v13"/></svg></span>' : '<span class="l3-noplay"></span>';   // (an atlas: a folded map)
+    return `<li class="l3-item${it.src ? ' has-audio' : ''}${atlas ? ' is-atlas' : ''}${atlas && UIS.mapBook && UIS.mapBook.it === it ? ' is-current' : ''}" data-k="${k}">${play}<div class="l3-main"><span class="l3-t${it.bold ? ' is-bold' : ''}">${title}</span>${by || pages ? `<span class="l3-by">${esc(by)}${by && pages ? ' · ' : ''}${pages}</span>` : ''}${chips ? `<div class="l3-chips">${chips}</div>` : ''}</div><span class="l3-time"></span></li>`;
   }).join('');
   refreshCard();
 }
@@ -5377,12 +5710,13 @@ function refreshCard() {   // mirror play state and time from the page's hidden 
   if (!UIS.open) return;
   for (const row of UIEL.items.querySelectorAll('.l3-item')) {
     const it = UIS.open.items[+row.dataset.k]; if (!it || !it.li) continue; const cl = it.li.classList;
-    row.classList.toggle('is-current', cl.contains('is-current')); row.classList.toggle('is-playing', cl.contains('is-playing')); row.classList.toggle('is-loading', cl.contains('is-loading'));
+    row.classList.toggle('is-current', isMapItem(it) ? !!(UIS.mapBook && UIS.mapBook.it === it) : cl.contains('is-current')); row.classList.toggle('is-playing', cl.contains('is-playing')); row.classList.toggle('is-loading', cl.contains('is-loading'));
     const tm = it.li.querySelector('.time'); const txt = tm ? tm.textContent : ''; const el = row.querySelector('.l3-time'); if (el.textContent !== txt) el.textContent = txt;
   }
 }
 function openSection(sec, cat) {
   if (offMode()) return;
+  if (UIS.mapBook && UIS.mapBook.sec !== sec) setMapBook(null);
   UIS.open = sec; UIS.mode = 'focus'; renderCard(sec); UIEL.card.hidden = false; UIEL.card.classList.remove('is-in'); requestAnimationFrame(() => UIEL.card.classList.add('is-in'));
   const sub = cat && UIEL.items.querySelector(`.l3-sub[data-cat="${CSS.escape(cat)}"]`);   // a research category: scroll its heading to the top
   UIEL.items.scrollTop = sub ? sub.offsetTop - UIEL.items.offsetTop - 4 : 0;
@@ -5393,7 +5727,7 @@ function openSection(sec, cat) {
 function closeCard(home = true) {
   if (!UIS.open && !home) return;
   const was = UIS.open; UIS.open = null; UIEL.card.classList.remove('is-in'); setTimeout(() => { if (!UIS.open) UIEL.card.hidden = true; }, 260);
-  for (const s of UIS.secs) s.glowT = 0; setSpine(null); setPeek(null);
+  for (const s of UIS.secs) s.glowT = 0; setSpine(null); setPeek(null); setMapBook(null);
   if (home) { UIS.mode = 'home'; goView(homeView()); }
   if (UIS.active) UIS.touched.add(UIS.active); setNeeds(true); return was;
 }
@@ -5403,7 +5737,7 @@ function stepGlow(dt) {
   for (const s of UIS.secs) {
     const tgt = Math.max(s.glowT, UIS.hovers.has(s) ? 0.6 : 0);
     if (Math.abs(s.glow - tgt) > 1e-3) { s.glow += THREE.MathUtils.clamp(tgt - s.glow, -dt * 3, dt * 3); moving = true; }
-    const showing = UIS.active && UIS.active.sec === s && UIS.active.goal === 'present';   // the book in front reads better on a calm shelf
+    const showing = [UIS.active, UIS.mapBook].some(b => b && b.sec === s && b.goal === 'present');   // the book in front reads better on a calm shelf
     s.glowMesh.material.opacity = s.glow * (NIGHT.u.value > 0.5 ? 0.42 : 0.5) * (showing ? 0.6 : 1); s.glowMesh.visible = s.glow > 0.001;
   }
   return moving;
@@ -5534,9 +5868,27 @@ function layoutOverlay() {
 }
 /* ---- picking in the room */
 const RAY = new THREE.Raycaster(), NDC = new THREE.Vector2(); RAY.layers.enable(3);   // (the book out of the shelf is on its own layer: hero-books.js)
+// where the pointer's ray meets an open atlas: its map page, or its cover turned open (which the ray cannot find in the
+// mesh: it turns in the shader); worked out in the book's own frame, in metres. Its distance along the ray, for the order
+const _mi = new THREE.Matrix4(), _mo = new THREE.Vector3(), _md = new THREE.Vector3();
+function mapHit(bk) {
+  const h = bk && bk.hero, S = bk && bk.heroShape; if (!h || !h.visible || !S || !bk.flapU || bk.flapU.uOpen.value < 1.2) return null;
+  _mi.copy(h.matrixWorld).invert();
+  const o = _mo.copy(RAY.ray.origin).applyMatrix4(_mi), d = _md.copy(RAY.ray.origin).add(RAY.ray.direction).applyMatrix4(_mi).sub(o);
+  o.multiply(h.scale); d.multiply(h.scale);   // (the unit box back into metres)
+  const pg = S.page, hits = [];
+  if (Math.abs(d.x) > 1e-9) { const t = (pg.x - o.x) / d.x, y = o.y + d.y * t, z = o.z + d.z * t; if (t > 0 && y > pg.y0 && y < pg.y1 && z < pg.z0 && z > pg.z1) hits.push({ at: 'page', t }); }
+  const a = bk.flapU.uOpen.value, H = S.hinge, ax = Math.sin(a), az = -Math.cos(a), nx = Math.cos(a), nz = Math.sin(a), den = d.x * nx + d.z * nz;
+  if (Math.abs(den) > 1e-9) {
+    const t = ((H.x - o.x) * nx + (H.y - o.z) * nz) / den, x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t, L = (x - H.x) * ax + (z - H.y) * az;
+    if (t > 0 && L > 0 && L < bk.d && y > 0 && y < bk.h) hits.push({ at: 'cover', t });
+  }
+  return hits.sort((p, q) => p.t - q.t)[0] || null;
+}
 function pickAt(e) {
   const r = CANVAS.getBoundingClientRect(); NDC.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   RAY.setFromCamera(NDC, camera);
+  const mh = UIS.mapBook && UIS.mapBook.out ? mapHit(UIS.mapBook) : null; if (mh) return { book: UIS.mapBook, map: mh.at === 'page' };
   // books first (they stand just behind their section's face): those of the open section, and the one out of the shelf
   const books = UIS.open ? UIS.open.books.map(b => b.hit) : [];
   for (const b of [UIS.active, UIS.peek]) if (b && b.hero && b.hero.visible) books.push(b.hero);
@@ -5545,8 +5897,9 @@ function pickAt(e) {
   if (hd && (!hs || hd.distance < hs.distance)) return { deck: true };
   return hs ? { sec: hs.object.userData.sec } : null;
 }
-function activateItem(it) {   // what a click on its book does: play it, else open its link, else its first extra (a note, a chart…)
+function activateItem(it) {   // what a click on its book does: play it, else (an atlas) take it out to open on its map, else open its link, else its first extra (a note, a chart…)
   const pl = it.li && it.li.querySelector('.play'); if (pl) { pl.click(); return; }
+  if (isMapItem(it) && it.book) { setMapBook(it.book); return; }
   if (it.href) { window.open(it.href, '_blank', 'noopener'); return; }
   const c = it.chips[0]; if (c) { if (c.href) window.open(c.href, '_blank', 'noopener'); else c.el.click(); }
 }
@@ -5565,7 +5918,7 @@ function bindPicking() {
   CANVAS.addEventListener('pointermove', e => {
     if (!ready || offMode()) return;
     const p = pickAt(e), bk = p && p.book && p.book.sec === UIS.open ? p.book : null;
-    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY); setHover(!p || p.book || p.deck || UIS.open === p.sec ? null : p.sec);
+    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map)); setHover(!p || p.book || p.deck || UIS.open === p.sec ? null : p.sec);
     CANVAS.style.cursor = p && (p.book || p.deck || UIS.open !== p.sec) ? 'pointer' : '';
     const dh = !!(p && p.deck); if (dh !== DECK.hover) { DECK.hover = dh; CANVAS.title = dh ? (document.documentElement.lang === 'vi' ? 'Máy hát' : 'Record player') : ''; setNeeds(true); }
   });
@@ -5574,7 +5927,8 @@ function bindPicking() {
   CANVAS.addEventListener('pointerup', e => {
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || performance.now() - down.t > 600 || offMode()) { down = null; return; }
     down = null; const p = pickAt(e);
-    if (p && p.book && p.book === UIS.active && p.book.out) { const x = document.getElementById('np-close'); if (x) x.click(); }   // the book out of the shelf: back to its place (the player closes)
+    if (p && p.book && p.book === UIS.mapBook && p.book.out) { if (p.map) window.open(p.book.it.href, '_blank', 'noopener'); else setMapBook(null); }   // an open atlas: its map opens its page, the rest of it puts it back
+    else if (p && p.book && p.book === UIS.active && p.book.out) { const x = document.getElementById('np-close'); if (x) x.click(); }   // the book out of the shelf: back to its place (the player closes)
     else if (p && p.book) activateItem(p.book.it);
     else if (p && p.deck) togglePlayer();   // the record player on the floor: the page's player comes out (or goes away)
     else if (p && p.sec) openSection(p.sec);
@@ -5586,6 +5940,7 @@ function bindPicking() {
   const toc = document.getElementById('toc-groups');
   if (toc) {
     const secsOf = el => {
+      const lk = el && el.closest ? el.closest('.toc-link[href]') : null, bk = lk && toc.contains(lk) ? atlasOf(lk) : null; if (bk) return bk.sec;
       const a = el && el.closest ? el.closest('.toc-link[data-nav], [data-goto]') : null; if (!a || !toc.contains(a)) return null;
       if (a.dataset.nav) return UIS.byCat.get(a.dataset.nav) || null;
       const g = a.dataset.goto; return UIS.byId.get(g) || (g === 'books' || g === 'research' ? UIS.secs.filter(s => s.group === g) : null);
@@ -5596,12 +5951,19 @@ function bindPicking() {
   // the sidebar and the now-playing bar steer the room (the page's own handlers still run on the hidden pages)
   document.addEventListener('click', e => {
     if (!ready) return;
+    const lk = e.target.closest('.toc .toc-link[href]'), atlas = lk && !lk.dataset.nav && !offMode() ? atlasOf(lk) : null;
+    if (atlas) { e.preventDefault(); openSection(atlas.sec); setMapBook(atlas); return; }   // (an atlas's page: through its map)
     const nav = e.target.closest('.toc-link[data-nav]');
     if (nav) { const s = UIS.byCat.get(nav.dataset.nav); if (s) { e.preventDefault(); openSection(s, s.group === 'research' ? nav.dataset.nav : null); } return; }
     const go = e.target.closest('.toc [data-goto]');   // Books: the whole room; Research: the back bookcase; a research topic: its bay
     if (go) { e.preventDefault(); const g = go.dataset.goto, s = UIS.byId.get(g); if (g === 'books') closeCard(); else if (s && s.group === 'research') openSection(s); else showResearch(); return; }
     if (e.target.closest('#np-info')) { const cur = document.querySelector('#pages .item.is-current') || null; const bk = cur && UIS.bySrc.get(cur.dataset.src); if (bk) openSection(bk.sec); }
   }, true);
+}
+function atlasOf(a) {   // the atlas whose page a link goes to
+  const href = a.getAttribute('href'); if (!href) return null;
+  for (const s of UIS.secs) for (const bk of s.books) if (bk.it.href === href && isMapItem(bk.it)) return bk;
+  return null;
 }
 function buildInterface() {
   buildSections(); buildRecordPlayer(); buildOverlay(); bindPicking(); syncActive();
@@ -5728,7 +6090,8 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
+window.__lib3d = { PETS, RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
+  atlas: (which, lang, w = 1024, h = 1371) => { const c = canvas(w, h), t0 = performance.now(); drawAtlas(c, which, lang); return { url: c.toDataURL('image/png'), ms: performance.now() - t0 }; } };   // (tests: the Geography books' page on its own)
 // The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
 // the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page
 // opened with ?at= starts in the theme of that hour, as the room does (the page's own rule: dark before 6:22 and from

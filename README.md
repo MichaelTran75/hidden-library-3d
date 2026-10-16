@@ -1,6 +1,6 @@
 # Hidden Library 3D
 
-The Hidden Library audiobook page as a 3D reading room: shelf sections with labels, a card per section, books that come off the shelf while they play, day and night with stars, the moon and now and then a shooting star.
+The Hidden Library audiobook page as a 3D reading room: shelf sections with labels, a card per section, books that come off the shelf while they play, atlases that open on a map of Vietnam (the map leads to the page), day and night with stars, the Milky Way, the moon and now and then a shooting star.
 
 **Live:** https://michaeltran75.github.io/hidden-library-3d/
 
@@ -34,3 +34,5 @@ The cat and the chicken:
 Book covers (`covers/`, shown on a book as it leaves the shelf): the original English editions' covers from Open Library, https://openlibrary.org; The Nvidia Way's from its publisher, W. W. Norton; Trò chơi quyền lực's (Omega+, 2024) from Goodreads. The covers are their publishers'; resized.
 
 The stars: the Yale Bright Star Catalogue, 5th ed. (Hoffleit & Warren, Yale University Observatory / NASA ADC), via https://github.com/brettonw/YaleBrightStarCatalog (MIT licence); placed for the sidereal time at Pleiku.
+
+The Geography atlases' map of Vietnam (the page a Geography book opens on): the coastline and the border from OpenStreetMap, © OpenStreetMap contributors (ODbL, https://www.openstreetmap.org/copyright), and the bands of height and depth from AWS Terrain Tiles (terrarium), as G's own map of Vietnam has them, simplified; Hoàng Sa's islands placed by hand.
