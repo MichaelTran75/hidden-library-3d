@@ -3424,11 +3424,11 @@ function buildStars(sky) {
       const u = r(); kelvinRGB(u < 0.55 ? 4200 + r() * 1800 : u < 0.88 ? 6000 + r() * 3500 : 9500 + r() * 12000, col); seed.push(r()); n++;
     }
   }
-  // the band's own grain (the painter's sky only): faint stars, 5.8 to 7.6, packed into a band ±1.2° wide along the plane,
+  // the band's own grain (the painter's sky only): 20,000 faint stars, 5.8 to 8, packed into a band ±1.2° wide along the plane,
   // thicker where the band is bright; set in galactic coordinates and turned back to equatorial ones (GAL is orthonormal)
-  const band = new Float32Array(dir.length / 3 + 9000);
-  { const v = new THREE.Vector3(), Gt = GAL.clone().transpose(), a = 0.4, A0 = Math.pow(10, a * 5.8), A1 = Math.pow(10, a * 7.6), i0 = dir.length / 3;
-    for (let n = 0; n < 9000;) {
+  const band = new Float32Array(dir.length / 3 + 20000);
+  { const v = new THREE.Vector3(), Gt = GAL.clone().transpose(), a = 0.4, A0 = Math.pow(10, a * 5.8), A1 = Math.pow(10, a * 8.0), i0 = dir.length / 3;
+    for (let n = 0; n < 20000;) {
       const l = (r() * 2 - 1) * Math.PI, bright = 0.25 + 0.75 * Math.pow(0.5 + 0.5 * Math.cos(l), 1.6) + 0.4 * Math.exp(-Math.pow((l - 0.47) / 0.1, 2)) + 0.35 * Math.exp(-Math.pow((l - 1.33) / 0.17, 2));
       if (r() * 1.6 > bright) continue;
       const g1 = r(), g2 = r(), b = Math.sqrt(-2 * Math.log(g1 + 1e-9)) * Math.cos(2 * Math.PI * g2) * 0.021 * (1 + 0.8 * Math.exp(-l * l / 0.5));   // (wider toward the centre)
@@ -3480,19 +3480,26 @@ function buildStars(sky) {
         vec3 c = vec3(0.0);
         if (uMW > 0.003) {   // in galactic coordinates (x toward the centre, z toward the north galactic pole)
           vec3 g = uGal * d; float b = asin(clamp(g.z, -1.0, 1.0)) * uBand, l = atan(g.y, g.x), cl = cos(l);
-          vec3 gn = vec3(g.xy, g.z * sqrt(uBand)) * uGrain;   // (its clouds a little drawn out along it as it is narrowed; finer in a small window)
+          vec3 gn = vec3(g.xy, g.z * sqrt(uBand)) * mix(1.0, uGrain, 0.6);   // (its clouds a little drawn out along it as it is narrowed; a little finer in a small window)
           float sg = 0.07 + 0.05 * exp(-l * l / 0.5), disk = exp(-b * b / (2.0 * sg * sg));   // the thin disk: ±4° far out, ±7° toward the centre
           float glow = exp(-b * b / 0.16) * 0.12 / uBand;                                      // the faint wide glow round it
           float bul = exp(-l * l / 0.12 - b * b / 0.035);                                      // the bulge in Sagittarius
           float lon = 0.18 + 0.82 * pow(0.5 + 0.5 * cl, 1.6)                                   // brightest toward the centre, faintest toward Auriga
             + 0.35 * exp(-pow((l - 0.47) / 0.1, 2.0)) + 0.3 * exp(-pow((l - 1.33) / 0.17, 2.0)) + 0.22 * exp(-pow((l + 1.38) / 0.22, 2.0));   // Scutum, Cygnus, Carina
           float n1 = sfbm(gn * 6.0), n2 = sfbm(gn * 19.0 + 3.0), n3 = sfbm(gn * 10.0 + 7.0), n4 = sfbm(gn * 40.0 + 11.0);
-          float clouds = pow(0.25 + 0.95 * n1, 2.2) * (0.65 + 0.7 * n2) * (0.82 + 0.36 * n4);   // star clouds, mottled finer and finer
-          float dark = smoothstep(0.52, 0.7, n3);                                                // dark nebulae
+          float clouds = pow(0.35 + 0.8 * n1, 1.7) * (0.74 + 0.52 * n2) * (0.86 + 0.28 * n4);   // star clouds, softly mottled (the band's grain is its stars: below)
+          float dark = smoothstep(0.5, 0.68, n3);                                                // dark nebulae
           float rb = b - 0.03 + 0.05 * (n1 - 0.5), rift = exp(-rb * rb / 0.0011) * smoothstep(-0.25, 0.0, l) * smoothstep(1.5, 1.2, l);   // the Great Rift, Cygnus to Ophiuchus
           float I = disk * lon * clouds * (1.0 - 0.85 * rift) * (1.0 - 0.6 * dark) + glow * lon + 1.1 * bul * clouds * (1.0 - 0.5 * rift);
           vec3 tint = mix(vec3(0.62, 0.68, 0.86), vec3(1.0, 0.85, 0.64), clamp(1.4 * bul + 0.35 * smoothstep(0.4, 1.0, 0.5 + 0.5 * cl), 0.0, 1.0));
-          c += uMW * I * tint * uMWK;
+          c += uMW * I * tint * uMWK * 0.62;
+          // its grain: the faint stars it is made of, as thick as the band is bright (a cell of the sky ~0.06° across holds
+          // one or none, where it falls in the cell, how bright), let go where cells come smaller than two pixels
+          vec3 sd = d * 900.0 * uGrain, ci = floor(sd), cf = fract(sd) - 0.5;
+          float s1 = fract(sin(dot(ci, vec3(12.9898, 78.233, 37.719))) * 43758.5453), s2 = fract(s1 * 37.13 + 0.17), s3 = fract(s1 * 91.7 + 0.53), s4 = fract(s1 * 13.1 + 0.71);
+          float cellPx = 1.0 / max(length(fwidth(sd)), 1e-5), sdd = length(cf - (vec3(s2, s3, s4) - 0.5) * 0.6);
+          float grain = smoothstep(0.32, 0.0, sdd) * step(s1, clamp(I * 1.7, 0.0, 0.85)) * (0.3 + 0.7 * s3 * s3) * smoothstep(1.2, 2.4, cellPx);
+          c += uMW * grain * mix(vec3(0.85, 0.9, 1.0), vec3(1.0, 0.9, 0.75), s2) * 1.05;
         }
         c *= exp(-uExtM * (airmass(el) - 1.0)) * smoothstep(-0.01, uHz, el);   // dimmed by the air and lost in the haze low down
         c += uMW * vec3(0.012, 0.022, 0.013) * smoothstep(0.0, 0.06, el) * exp(-el / 0.3);   // the airglow: the upper air's own faint green light, low in a dark sky
@@ -3519,7 +3526,7 @@ function stepStars() {
       _sY.crossVectors(_sZ, _sX);                                   // (longitude 90° along it toward b)
       _sM.set(_sX.x, _sY.x, _sZ.x, _sX.y, _sY.y, _sZ.y, _sX.z, _sY.z, _sZ.z);   // galactic → the room
       STARU.uEq.value.multiplyMatrices(_sM, GAL); STARU.uGal.value.copy(_sM).transpose();
-      STARU.uExtS.value = 0.07; STARU.uExtM.value = 0.07; STARU.uHz.value = 0.035; STARU.uBand.value = 3.0; STARU.uMWK.value = 1.4; STARU.uBandStars.value = 1; STARU.uGrain.value = 2.4; STARU.uBandMag.value = -1.1;
+      STARU.uExtS.value = 0.07; STARU.uExtM.value = 0.07; STARU.uHz.value = 0.035; STARU.uBand.value = 3.4; STARU.uMWK.value = 1.55; STARU.uBandStars.value = 1; STARU.uGrain.value = 2.4; STARU.uBandMag.value = -1.7;
     }
   } else stepRealSky();
   skyLight();
@@ -3859,13 +3866,14 @@ function buildFireflies() {
      shader drops on glass), darker at its rim where light leaves it sideways, with a glint of the sky by day or of the
      lamps by night. When the rain stops the running drops stop with it; the beaded ones stay a while, then dry.
    - The day goes grey: an overcast takes the sun (and its shadows) and its warm light, the skylight dims and turns grey,
-     the sky becomes one grey layer, the far trees go into the haze of the rain (fx/hour.js applyHour reads WX.ov). By
-     night the cloud hides the stars, the moon, the Milky Way, the comet and the shooting stars (fx/sky.js SKYCLEAR); the
-     hen keeps in, the fireflies in the garden too.
+     the sky becomes one grey layer, the far trees go into the haze of the rain (fx/hour.js applyHour reads WX.ov); a day
+     under thick cloud without rain goes grey too. By night only the rain hides the stars, the moon, the Milky Way, the
+     comet and the shooting stars (fx/sky.js SKYCLEAR): under mere cloud they stay out (G, 16/10/2026); the hen keeps in,
+     the fireflies in the garden too.
    - A thunderstorm: now and then the lightning, the sky and the garden flashing twice (a stroke and its return).
    ?wx=rain (or drizzle, storm) shows it whatever the weather. */
 const RAIN = { on: false, scene: new THREE.Scene(), built: false, streaks: null, drops: null, flash: null };
-const WX = { k: 0, kT: 0, ov: 0, ovT: 0, ovSet: 0, wet: 0, storm: false, cover: 0, clear: 1, first: true, wind: new THREE.Vector2(), windT: new THREE.Vector2(), last: 0, bolt: -1e9, nextBolt: 0, fl: 0 };
+const WX = { k: 0, kT: 0, ov: 0, ovT: 0, ovRain: 0, ovCloud: 0, ovSet: 0, wet: 0, storm: false, cover: 0, clear: 1, first: true, wind: new THREE.Vector2(), windT: new THREE.Vector2(), last: 0, bolt: -1e9, nextBolt: 0, fl: 0 };
 RAIN.wx = WX;   // (for tests)
 const RAIN_K = { 51: 0.22, 53: 0.32, 55: 0.42, 56: 0.32, 57: 0.42, 61: 0.45, 63: 0.66, 65: 0.92, 66: 0.5, 67: 0.75, 80: 0.5, 81: 0.75, 82: 1, 95: 0.85, 96: 0.92, 99: 1 };
 const RU = { uTime: { value: 0 }, uK: { value: 0 }, uWet: { value: 0 }, uWind: { value: new THREE.Vector2() }, uDay: { value: 1 }, uLamp: { value: 0 }, uFlash: { value: 0 },
@@ -3878,7 +3886,8 @@ function readWeather() {
   let k = RAIN_K[code] || 0; if (mmh > 0.05) k = Math.max(k, Math.min(1, 0.28 + mmh / 9));
   if ((code >= 71 && code <= 77) || code === 85 || code === 86) k = 0;   // (snow: never at Pleiku)
   WX.kT = k; WX.storm = code >= 95; WX.cover = (c.cloud_cover ?? 0) / 100;
-  WX.ovT = Math.max(k > 0 ? 0.82 + 0.18 * k : 0, THREE.MathUtils.smoothstep(WX.cover, 0.6, 1.0) * 0.6, code === 45 || code === 48 ? 0.7 : 0);
+  WX.ovRain = k > 0 ? 0.82 + 0.18 * k : 0; WX.ovCloud = Math.max(THREE.MathUtils.smoothstep(WX.cover, 0.6, 1.0) * 0.6, code === 45 || code === 48 ? 0.7 : 0);
+  WX.ovT = Math.max(WX.ovRain, WX.ovCloud * (1 - NIGHT.u.value));
   const to = ((c.wind_direction_10m || 0) + 180 - 103.7) * Math.PI / 180, v = (c.wind_speed_10m || 0) / 3.6;   // (the compass of fx/hour.js sunDirAt)
   WX.windT.set(Math.cos(to), Math.sin(to)).multiplyScalar(Math.min(8, v * 0.55));   // (near the ground the wind is less; the drops take up most of it)
   if (WX.first) { WX.first = false; WX.k = WX.kT; WX.ov = WX.ovT; WX.wind.copy(WX.windT); WX.wet = k > 0 ? 1 : 0; }   // (raining when the page opens: raining at once)
@@ -4004,11 +4013,12 @@ function buildRain() {
 function stepRain(t) {
   const dt = Math.min(0.25, Math.max(0, t - WX.last)); WX.last = t;
   WX.k += (WX.kT - WX.k) * Math.min(1, dt / 10); if (Math.abs(WX.k - WX.kT) < 0.002) WX.k = WX.kT;   // (rain comes on and eases off over some seconds)
+  WX.ovT = Math.max(WX.ovRain, WX.ovCloud * (1 - NIGHT.u.value));   // (a cloudy day goes grey; a cloudy night keeps its stars: G, 16/10/2026)
   WX.ov += (WX.ovT - WX.ov) * Math.min(1, dt / 8); if (Math.abs(WX.ov - WX.ovT) < 0.002) WX.ov = WX.ovT;
   WX.wind.lerp(WX.windT, Math.min(1, dt / 4));
   WX.wet = WX.k > 0.02 ? Math.min(1, WX.wet + dt / 8) : Math.max(0, WX.wet - dt / 150);   // (the beaded drops dry over a few minutes)
   if (Math.abs(WX.ov - WX.ovSet) > 0.012 && HOUR.e !== null) { WX.ovSet = WX.ov; applyHour(HOUR.e, HOUR.az); setNeeds(true); }   // (the light of an overcast)
-  WX.clear = (1 - 0.9 * THREE.MathUtils.smoothstep(WX.cover, 0.35, 1.0)) * (1 - 0.95 * THREE.MathUtils.smoothstep(WX.ov, 0.45, 0.85));
+  WX.clear = 1 - 0.97 * THREE.MathUtils.smoothstep(WX.k, 0.04, 0.3);   // (the stars, the moon and the Milky Way always out, but when it rains: G, 16/10/2026)
   SKYCLEAR.value = WX.clear; FLY.rain.value = Math.min(1, WX.k * 3);
   setHenAway(WX.k > 0.08);
   // a storm's lightning: a stroke, then its return a fifth of a second later
