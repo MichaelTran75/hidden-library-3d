@@ -3495,7 +3495,7 @@ function buildStars(sky) {
           float clouds = pow(0.35 + 0.8 * n1, 1.7) * (0.74 + 0.52 * n2) * (0.86 + 0.28 * n4);   // star clouds, softly mottled (the band's grain is its stars: below)
           float dark = smoothstep(0.5, 0.68, n3);                                                // dark nebulae
           float rb = b - 0.03 + 0.05 * (n1 - 0.5), rift = exp(-rb * rb / 0.0011) * smoothstep(-0.25, 0.0, l) * smoothstep(1.5, 1.2, l);   // the Great Rift, Cygnus to Ophiuchus
-          float I = disk * lon * clouds * (1.0 - 0.85 * rift) * (1.0 - 0.6 * dark) + glow * lon + 1.1 * bul * clouds * (1.0 - 0.5 * rift);
+          float I = disk * lon * clouds * (1.0 - 0.88 * rift) * (1.0 - 0.66 * dark) + glow * lon + 1.1 * bul * clouds * (1.0 - 0.5 * rift);   // (its dark lanes a little deeper: clearer)
           vec3 tint = mix(vec3(0.62, 0.68, 0.86), vec3(1.0, 0.85, 0.64), clamp(1.4 * bul + 0.35 * smoothstep(0.4, 1.0, 0.5 + 0.5 * cl), 0.0, 1.0));
           c += uMW * I * tint * uMWK * 0.62;
           // its grain: the faint stars it is made of, as thick as the band is bright (a cell of the sky ~0.06° across holds
@@ -3504,7 +3504,7 @@ function buildStars(sky) {
           float s1 = fract(sin(dot(ci, vec3(12.9898, 78.233, 37.719))) * 43758.5453), s2 = fract(s1 * 37.13 + 0.17), s3 = fract(s1 * 91.7 + 0.53), s4 = fract(s1 * 13.1 + 0.71);
           float cellPx = 1.0 / max(length(fwidth(sd)), 1e-5), sdd = length(cf - (vec3(s2, s3, s4) - 0.5) * 0.6);
           float grain = smoothstep(0.32, 0.0, sdd) * step(s1, clamp(I * 1.7, 0.0, 0.85)) * (0.3 + 0.7 * s3 * s3) * smoothstep(1.2, 2.4, cellPx);
-          c += uMW * grain * mix(vec3(0.85, 0.9, 1.0), vec3(1.0, 0.9, 0.75), s2) * 1.05;
+          c += uMW * grain * mix(vec3(0.85, 0.9, 1.0), vec3(1.0, 0.9, 0.75), s2) * 1.19;
         }
         c *= exp(-uExtM * (airmass(el) - 1.0)) * smoothstep(-0.01, uHz, el);   // dimmed by the air and lost in the haze low down
         c += uMW * vec3(0.012, 0.022, 0.013) * smoothstep(0.0, 0.06, el) * exp(-el / 0.3);   // the airglow: the upper air's own faint green light, low in a dark sky
@@ -3531,13 +3531,13 @@ function stepStars() {
       _sY.crossVectors(_sZ, _sX);                                   // (longitude 90° along it toward b)
       _sM.set(_sX.x, _sY.x, _sZ.x, _sX.y, _sY.y, _sZ.y, _sX.z, _sY.z, _sZ.z);   // galactic → the room
       STARU.uEq.value.multiplyMatrices(_sM, GAL); STARU.uGal.value.copy(_sM).transpose();
-      STARU.uExtS.value = 0.07; STARU.uExtM.value = 0.07; STARU.uHz.value = 0.035; STARU.uBand.value = 3.4; STARU.uMWK.value = 1.55; STARU.uBandStars.value = 1; STARU.uGrain.value = 2.4; STARU.uBandMag.value = -1.7;
+      STARU.uExtS.value = 0.07; STARU.uExtM.value = 0.07; STARU.uHz.value = 0.035; STARU.uBand.value = 3.4; STARU.uMWK.value = 1.75; STARU.uBandStars.value = 1; STARU.uGrain.value = 2.4; STARU.uBandMag.value = -1.8;   // (10 % brighter and clearer again: G, 16/10/2026)
     }
   } else stepRealSky();
   skyLight();
 }
 function stepRealSky() {
-  STARU.uExtS.value = 0.2; STARU.uExtM.value = 0.32; STARU.uHz.value = 0.12; STARU.uBand.value = 1; STARU.uMWK.value = 0.38; STARU.uBandStars.value = 0; STARU.uGrain.value = 1; STARU.uBandMag.value = 0;
+  STARU.uExtS.value = 0.2; STARU.uExtM.value = 0.32; STARU.uHz.value = 0.12; STARU.uBand.value = 1; STARU.uMWK.value = 0.42; STARU.uBandStars.value = 0; STARU.uGrain.value = 1; STARU.uBandMag.value = 0;
   const d = HOUR.pin || new Date(), tz = -d.getTimezoneOffset() / 60, vn = tz === 7, lat = (vn ? 13.98 : 14) * SDEG, lon = vn ? 108.0 : tz * 15;
   const jd = d.getTime() / 864e5 + 2440587.5, th = ((280.46061837 + 360.98564736629 * (jd - 2451545.0) + lon) % 360) * SDEG;   // local sidereal time
   const sf = Math.sin(lat), cf = Math.cos(lat), st = Math.sin(th), ct = Math.cos(th), p0 = 103.7 * SDEG, sp = Math.sin(p0), cp = Math.cos(p0);
