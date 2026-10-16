@@ -2018,6 +2018,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   for (const n of ['ctable_top', 'ctable_legs']) { const m = new THREE.Mesh(B[n].geometry, n === 'ctable_top' ? topMat : MAT.oak); m.scale.copy(tS); m.castShadow = m.receiveShadow = true; tbl.add(m); }
   tbl.position.set(-0.32, 0, -6.3); tbl.rotation.y = 0.05; F.add(tbl);
   const lamp = tableLamp(); lamp.position.set(-0.6, 0.42, -6.47); F.add(lamp); LIGHTS.table = lamp;
+  paintLightly(lamp);   // (75 % less watercolour on it too: G, 17/10/2026)
   const cj = candleJar(); cj.position.set(-0.72, 0.42, -6.25); F.add(cj); LIGHTS.candle = cj;
   const tb1 = flatBook(B.book_book002, 0.35 + Math.PI / 2, 1.15); tb1.position.set(-0.13, 0.42, -6.22); F.add(tb1);
   const tb2 = flatBook(B.book_book01, 0.2 + Math.PI / 2, 1.1); tb2.position.set(-0.13, 0.42 + tb1.userData.h, -6.21); F.add(tb2);
@@ -2184,7 +2185,8 @@ function buildPost() {
       vec3 b = a * 0.5 + 0.25 * (texture2D(t, vUv - dir * 0.5).rgb + texture2D(t, vUv + dir * 0.5).rgb);
       float lb = L(b); gl_FragColor = vec4((lb < lo || lb > hi) ? a : b, 1.0); }`);
 }
-/* ---- parts of the room painted lightly (G, 16/10/2026: the floor lamp behind the sofa "75% less" watercolour): stand-ins
+/* ---- parts of the room painted lightly (G, 16/10/2026: the floor lamp behind the sofa "75% less" watercolour; 17/10: the
+   table lamp by the sofa too): stand-ins
    for their meshes, in a scene of their own, drawn into the picture's target after the room, through the room's own
    depth (so what stands in front of them still hides them), writing nothing but the target's alpha: 0 where they show,
    1 everywhere else (set first: the leaves' alpha-to-coverage leaves less than 1 in it). The tone pass hands that on and
