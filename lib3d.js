@@ -5428,7 +5428,19 @@ new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
 window.__lib3d = { PETS, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop };
-(window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => start().catch(e => {
+// The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
+// the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page
+// opened with ?at= starts in the theme of that hour, as the room does (the page's own rule: dark before 6:22 and from
+// 17:30), set through the switch itself so the page keeps it.
+const THEME = { box: document.getElementById('checkbox'), sync: false };
+if (THEME.box) THEME.box.addEventListener('change', () => { if (!THEME.sync && HOUR.pin) { HOUR.pin = null; setNeeds(true); } });
+function themeFromPin() {
+  if (!HOUR.pin || !THEME.box) return;
+  const m = HOUR.pin.getHours() * 60 + HOUR.pin.getMinutes(), dark = m < 382 || m >= 1050;
+  if (THEME.box.checked === dark) return;
+  THEME.sync = true; THEME.box.checked = dark; THEME.box.dispatchEvent(new Event('change', { bubbles: true })); THEME.sync = false;
+}
+(window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => start().then(themeFromPin).catch(e => {
   console.warn('3D library unavailable', e); setReady(false); updateOn(); document.documentElement.classList.add('lib3d-failed');
 }), { timeout: 800 });
 }
