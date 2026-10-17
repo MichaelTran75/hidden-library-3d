@@ -214,9 +214,13 @@ STYLE = IMPORTMAP + """<script>
   .l3-label:hover i, .l3-label.is-hover i { background: rgba(var(--on-accent-rgb), .25); }
   .l3-label.is-off { opacity: 0; pointer-events: none; }
   .l3-cap { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap; color: #2a2118; text-shadow: var(--halo);
-    font: 700 clamp(22.4px, 2.19vw, 33.6px)/1 var(--font); letter-spacing: .26em; text-transform: uppercase; transition: opacity .35s ease; }   /* (twice their first size: G, 15/10/2026) */
+    font: 700 clamp(22.4px, 2.19vw, 33.6px)/1 var(--font); letter-spacing: .26em; text-transform: uppercase; transition: opacity .35s ease, color .35s ease, text-shadow .35s ease; }   /* (twice their first size: G, 15/10/2026) */
   .l3-cap { pointer-events: auto; cursor: pointer; background: none; border: 0; padding: 0; }   /* (a click: that part of the room, close) */
-  .l3-cap:hover, .l3-cap:focus-visible { color: var(--accent); outline: none; }
+  /* a little painted (30 %: overlay.js #l3-wc), and under the pointer a soft warm glow round the letters (G, 18/10/2026) */
+  .l3-cap { filter: url(#l3-wc); --cap-glow: 0 0 2px rgba(255, 248, 232, 1), 0 0 .45em rgba(255, 238, 205, .95), 0 0 1.1em rgba(255, 220, 160, .7); }
+  body.dark-mode .l3-cap { --cap-glow: 0 0 2px rgba(0, 0, 0, .55), 0 0 .4em rgba(255, 226, 170, .62), 0 0 1.1em rgba(255, 204, 132, .42); }
+  .l3-defs { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+  .l3-cap:hover, .l3-cap:focus-visible { color: var(--accent); outline: none; text-shadow: var(--cap-glow); }
   .l3-cap.is-off { opacity: 0; pointer-events: none; }
   #l3-ui, .page .wx { transition: opacity .6s ease; }   /* the words over the room and the weather line come in last (loop.js reveal) */
   html.l3-wait:not(.lib3d-failed) #l3-ui, html.l3-wait:not(.lib3d-failed) .page .wx { opacity: 0 !important; }

@@ -102,8 +102,15 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const tb1 = flatBook(B.book_book002, 0.35 + Math.PI / 2, 1.15); tb1.position.set(-0.13, 0.42, -6.22); F.add(tb1);
   const tb2 = flatBook(B.book_book01, 0.2 + Math.PI / 2, 1.1); tb2.position.set(-0.13, 0.42 + tb1.userData.h, -6.21); F.add(tb2);
   paintLightly(tb1, 0.1); paintLightly(tb2, 0.1);   // (every book 10 % less watercolour: G, 17/10/2026)
-  // ---- floor lamp in the back-right corner, behind the sofa
-  const fl = floorLamp(); fl.position.set(R.xS - 0.28, 0, R.zB + R.caseD + 0.16); fl.rotation.y = -0.15; F.add(fl); LIGHTS.floor = fl;
+  // ---- floor lamp in the back-right corner, behind the sofa, turned so its shade hangs over the seat (G, 18/10/2026:
+  // "fix the position, em nên xoay tới sofa (above sofa)": it reached along the bookcase, its shade among the books); its
+  // counterweight arm shorter, so it stays clear of the bookcase behind it
+  const fl = floorLamp(0.16); fl.position.set(R.xS - 0.28, 0, R.zB + R.caseD + 0.16); fl.rotation.y = 1.0; F.add(fl); LIGHTS.floor = fl;
+  {   // its shade looking down on the seat, a little toward the room, as a reading lamp's (its light with it)
+    const sh = fl.userData.glow.parent; fl.updateMatrixWorld(true);
+    const pq = sh.parent.getWorldQuaternion(new THREE.Quaternion()).invert(), down = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, -1, 0.18).normalize());
+    sh.quaternion.copy(pq.multiply(down));
+  }
   paintLightly(fl);   // (75 % less watercolour on it: G, 16/10/2026)
   // ---- a bare bulb hanging over the front of the sofa's seat: from the room's first view it is seen above the RESEARCH
   // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up;

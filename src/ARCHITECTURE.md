@@ -142,6 +142,19 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   - Lớp sơn bóng mờ hơn (clearcoat 0,4, độ nhám 0,5).
   - Trước đó đèn sàn cạnh kệ chiếu sáng từng mặt phẳng ở góc bo, hiện thành một ô vuông màu be trên mép đế.
 
+### Đèn cây quay về sofa, tên RESEARCH/BOOKS kiểu màu nước (18/10/2026)
+
+- Đèn cây ở góc sau bên phải (`furnish.js`):
+  - Xoay `rotation.y` từ −0,15 thành 1,0 để chao đèn treo trên phần ghế bên phải sofa, ở (1,56; 2,0; −7,4). Trước đó cánh tay chạy dọc kệ, chao đèn lẫn vào sách.
+  - Cánh tay đối trọng ngắn lại 16 cm (`floorLamp(back)`), nếu không quả đối trọng đâm vào kệ phía sau. Giờ còn cách mặt kệ 2 cm.
+  - Chao đèn được đặt lại hướng theo hệ toạ độ thế giới: chúc xuống, hơi nghiêng ra phòng như đèn đọc sách. Đèn spot và đèn điểm trong chao đi theo.
+- Hai chữ `.l3-cap` (RESEARCH, BOOKS):
+  - Bộ lọc SVG `#l3-wc` (`overlay.js`):
+    - một bản sao chữ có mép loang (turbulence 0,05 + displacement 4 px + blur 0,6);
+    - màu mỏng dày theo mảng (turbulence 0,11 điều khiển alpha), mép đậm hơn (erode 0,7);
+    - trộn 30 % lên chữ gốc (`feComposite` arithmetic 0,7 / 0,3).
+  - Rê chuột hiện quầng sáng ấm `--cap-glow`. Ban ngày là quầng kem quanh chữ đen, ban đêm là quầng vàng quanh chữ kem. Chuyển đổi trong 0,35 s.
+
 ### Mô hình ISS trên nóc kệ Geography (`lib3d/world/iss.js`, 17/10/2026)
 
 - Mẫu "ISS" của uperesito (CC BY 4.0) đứng trên giá kiểu 747, trên nóc kệ thấp phía sau, ngay trên ô Geography, trước cửa kính (khung kính bên phải, chỗ G khoanh).

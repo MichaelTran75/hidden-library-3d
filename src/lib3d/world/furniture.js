@@ -52,15 +52,15 @@ function tableLamp() {
 }
 let _glow;
 function glowTex() { if (_glow) return _glow; const c = canvas(128, 128), g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.25, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); _glow = ctex(c, { rep: false }); return _glow; }
-function floorLamp() {
+function floorLamp(back = 0.32) {   // back: the counterweight arm's length behind the pole (m)
   const g = new THREE.Group();
   const base = new THREE.Mesh(new THREE.CylinderGeometry(.15, .16, .025, 40), MAT.bronze); base.position.y = .0125; g.add(base);
   const poleH = 1.42; const pole = new THREE.Mesh(new THREE.CylinderGeometry(.011, .011, poleH, 10), MAT.brass); pole.position.y = poleH / 2; g.add(pole);
   const joint = new THREE.Mesh(new THREE.SphereGeometry(.025, 14, 10), MAT.brass); joint.position.y = poleH; g.add(joint);
   // main arm towards the shade (local −x, up), counter arm behind
   const arm = new THREE.Group(); arm.position.y = poleH; arm.rotation.z = -0.62; g.add(arm);
-  const aL = 1.0; const rod = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, aL + .32, 8), MAT.brass); rod.rotation.z = Math.PI / 2; rod.position.x = -(aL - .32) / 2; arm.add(rod);
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 14, 10), MAT.bronze); knob.position.x = .32; arm.add(knob);
+  const aL = 1.0; const rod = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, aL + back, 8), MAT.brass); rod.rotation.z = Math.PI / 2; rod.position.x = -(aL - back) / 2; arm.add(rod);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 14, 10), MAT.bronze); knob.position.x = back; arm.add(knob);
   const head = new THREE.Group(); head.position.x = -aL; arm.add(head);
   const sh = new THREE.Mesh(new THREE.LatheGeometry([[.014, 0], [.035, .012], [.06, .05], [.1, .13], [.15, .23], [.165, .25]].map(p => new THREE.Vector2(p[0], -p[1])), 48), MAT.copper);
   sh.rotation.set(-0.25, 0, 0.62 - 0.4); head.add(sh);

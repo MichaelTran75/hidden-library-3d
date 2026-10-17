@@ -33,7 +33,20 @@ function showTip(bk, x, y, map, say) {   // (map: the pointer is on an open atla
   t.style.top = (y - t.offsetHeight - 14 > 8 ? y - t.offsetHeight - 14 : y + 22) + 'px';
 }
 function buildOverlay() {
+  // (the two parts' names a little painted, as the room is: a brushed copy of the letters, their edges wandering, the
+  // pigment thinner inside and denser at the edge, laid 30 % over the letters as they are: G, 18/10/2026)
   const ui = document.createElement('div'); ui.id = 'l3-ui'; ui.innerHTML = `<svg id="l3-lines" aria-hidden="true"></svg><div id="l3-labels"></div>
+    <svg class="l3-defs" width="0" height="0" aria-hidden="true" focusable="false"><filter id="l3-wc" x="-15%" y="-70%" width="130%" height="240%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" seed="11" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G" result="w"/>
+      <feGaussianBlur in="w" stdDeviation="0.6" result="s"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.11" numOctaves="2" seed="5" result="g"/>
+      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.6 1.45" result="ga"/>
+      <feComposite in="s" in2="ga" operator="in" result="thin"/>
+      <feMorphology in="s" operator="erode" radius="0.7" result="core"/>
+      <feComposite in="s" in2="core" operator="out" result="edge"/>
+      <feMerge result="wc"><feMergeNode in="thin"/><feMergeNode in="edge"/></feMerge>
+      <feComposite in="SourceGraphic" in2="wc" operator="arithmetic" k1="0" k2="0.7" k3="0.3" k4="0"/></filter></svg>
     <section id="l3-card" class="l3-card" aria-labelledby="l3-card-h" hidden>
       <header class="l3-card-head"><h3 id="l3-card-h"></h3><span class="l3-count" id="l3-count"></span><button type="button" class="l3-close" id="l3-close" aria-label="Close / Đóng">&times;</button></header>
       <ul class="l3-items" id="l3-items"></ul></section>

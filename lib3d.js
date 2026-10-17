@@ -1214,15 +1214,15 @@ function tableLamp() {
 }
 let _glow;
 function glowTex() { if (_glow) return _glow; const c = canvas(128, 128), g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.25, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); _glow = ctex(c, { rep: false }); return _glow; }
-function floorLamp() {
+function floorLamp(back = 0.32) {   // back: the counterweight arm's length behind the pole (m)
   const g = new THREE.Group();
   const base = new THREE.Mesh(new THREE.CylinderGeometry(.15, .16, .025, 40), MAT.bronze); base.position.y = .0125; g.add(base);
   const poleH = 1.42; const pole = new THREE.Mesh(new THREE.CylinderGeometry(.011, .011, poleH, 10), MAT.brass); pole.position.y = poleH / 2; g.add(pole);
   const joint = new THREE.Mesh(new THREE.SphereGeometry(.025, 14, 10), MAT.brass); joint.position.y = poleH; g.add(joint);
   // main arm towards the shade (local −x, up), counter arm behind
   const arm = new THREE.Group(); arm.position.y = poleH; arm.rotation.z = -0.62; g.add(arm);
-  const aL = 1.0; const rod = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, aL + .32, 8), MAT.brass); rod.rotation.z = Math.PI / 2; rod.position.x = -(aL - .32) / 2; arm.add(rod);
-  const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 14, 10), MAT.bronze); knob.position.x = .32; arm.add(knob);
+  const aL = 1.0; const rod = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, aL + back, 8), MAT.brass); rod.rotation.z = Math.PI / 2; rod.position.x = -(aL - back) / 2; arm.add(rod);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(.03, 14, 10), MAT.bronze); knob.position.x = back; arm.add(knob);
   const head = new THREE.Group(); head.position.x = -aL; arm.add(head);
   const sh = new THREE.Mesh(new THREE.LatheGeometry([[.014, 0], [.035, .012], [.06, .05], [.1, .13], [.15, .23], [.165, .25]].map(p => new THREE.Vector2(p[0], -p[1])), 48), MAT.copper);
   sh.rotation.set(-0.25, 0, 0.62 - 0.4); head.add(sh);
@@ -2185,8 +2185,15 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const tb1 = flatBook(B.book_book002, 0.35 + Math.PI / 2, 1.15); tb1.position.set(-0.13, 0.42, -6.22); F.add(tb1);
   const tb2 = flatBook(B.book_book01, 0.2 + Math.PI / 2, 1.1); tb2.position.set(-0.13, 0.42 + tb1.userData.h, -6.21); F.add(tb2);
   paintLightly(tb1, 0.1); paintLightly(tb2, 0.1);   // (every book 10 % less watercolour: G, 17/10/2026)
-  // ---- floor lamp in the back-right corner, behind the sofa
-  const fl = floorLamp(); fl.position.set(R.xS - 0.28, 0, R.zB + R.caseD + 0.16); fl.rotation.y = -0.15; F.add(fl); LIGHTS.floor = fl;
+  // ---- floor lamp in the back-right corner, behind the sofa, turned so its shade hangs over the seat (G, 18/10/2026:
+  // "fix the position, em nên xoay tới sofa (above sofa)": it reached along the bookcase, its shade among the books); its
+  // counterweight arm shorter, so it stays clear of the bookcase behind it
+  const fl = floorLamp(0.16); fl.position.set(R.xS - 0.28, 0, R.zB + R.caseD + 0.16); fl.rotation.y = 1.0; F.add(fl); LIGHTS.floor = fl;
+  {   // its shade looking down on the seat, a little toward the room, as a reading lamp's (its light with it)
+    const sh = fl.userData.glow.parent; fl.updateMatrixWorld(true);
+    const pq = sh.parent.getWorldQuaternion(new THREE.Quaternion()).invert(), down = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, -1, 0.18).normalize());
+    sh.quaternion.copy(pq.multiply(down));
+  }
   paintLightly(fl);   // (75 % less watercolour on it: G, 16/10/2026)
   // ---- a bare bulb hanging over the front of the sofa's seat: from the room's first view it is seen above the RESEARCH
   // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up;
@@ -7535,7 +7542,20 @@ function showTip(bk, x, y, map, say) {   // (map: the pointer is on an open atla
   t.style.top = (y - t.offsetHeight - 14 > 8 ? y - t.offsetHeight - 14 : y + 22) + 'px';
 }
 function buildOverlay() {
+  // (the two parts' names a little painted, as the room is: a brushed copy of the letters, their edges wandering, the
+  // pigment thinner inside and denser at the edge, laid 30 % over the letters as they are: G, 18/10/2026)
   const ui = document.createElement('div'); ui.id = 'l3-ui'; ui.innerHTML = `<svg id="l3-lines" aria-hidden="true"></svg><div id="l3-labels"></div>
+    <svg class="l3-defs" width="0" height="0" aria-hidden="true" focusable="false"><filter id="l3-wc" x="-15%" y="-70%" width="130%" height="240%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="3" seed="11" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G" result="w"/>
+      <feGaussianBlur in="w" stdDeviation="0.6" result="s"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.11" numOctaves="2" seed="5" result="g"/>
+      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.6 1.45" result="ga"/>
+      <feComposite in="s" in2="ga" operator="in" result="thin"/>
+      <feMorphology in="s" operator="erode" radius="0.7" result="core"/>
+      <feComposite in="s" in2="core" operator="out" result="edge"/>
+      <feMerge result="wc"><feMergeNode in="thin"/><feMergeNode in="edge"/></feMerge>
+      <feComposite in="SourceGraphic" in2="wc" operator="arithmetic" k1="0" k2="0.7" k3="0.3" k4="0"/></filter></svg>
     <section id="l3-card" class="l3-card" aria-labelledby="l3-card-h" hidden>
       <header class="l3-card-head"><h3 id="l3-card-h"></h3><span class="l3-count" id="l3-count"></span><button type="button" class="l3-close" id="l3-close" aria-label="Close / Đóng">&times;</button></header>
       <ul class="l3-items" id="l3-items"></ul></section>
