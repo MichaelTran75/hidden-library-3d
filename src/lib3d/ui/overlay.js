@@ -18,12 +18,13 @@ let tipBook = null, tipKey = '';
 function showTip(bk, x, y, map, say) {   // (map: the pointer is on an open atlas's map: the tip says a click opens its page; say: what a click does on an open book of notes, there)
   const t = UIEL.tip; if (!t) return;
   if (!bk) { if (tipBook) { t.classList.remove('is-on'); tipBook = null; tipKey = ''; } return; }
-  const key = say ? 'say:' + say.join('|') : map ? 'map' : isMapItem(bk.it) ? 'atlas' : isReadItem(bk.it) ? 'read' + (bk.out ? 1 : 0) : '';
+  const key = say ? 'say:' + say.join('|') : map ? 'map' : isMapItem(bk.it) ? 'atlas' : isReadItem(bk.it) ? 'read' + (bk.out ? 1 : 0) : bk === UIS.active && bk.out ? 'listen' : '';
   if (tipBook !== bk || tipKey !== key) {
     tipBook = bk; tipKey = key; const it = bk.it, info = bookInfo(it), by = byOf(it), n = info && info.pages;
     const line = pages => esc([by, pages].filter(Boolean).join(' · '));
     const hint = say ? say : key === 'map' ? ['Click the map to open the page ↗', 'Bấm vào bản đồ để mở trang ↗'] : key === 'atlas' ? [bk.out ? 'Click to put it back' : 'Click to open the atlas', bk.out ? 'Bấm để cất sách' : 'Bấm để mở tập bản đồ']
-      : key.startsWith('read') ? [bk.out ? 'Click to put it back' : 'Click to open the book', bk.out ? 'Bấm để cất sách' : 'Bấm để mở sách'] : null;
+      : key.startsWith('read') ? [bk.out ? 'Click to put it back' : 'Click to open the book', bk.out ? 'Bấm để cất sách' : 'Bấm để mở sách']
+      : key === 'listen' ? ['Click to open it on its summary · pause to put it back', 'Bấm để mở trang tóm tắt · pause để cất lên kệ'] : null;
     t.innerHTML = `<b><span class="en">${esc(titleIn(it, 'en'))}</span><span class="vi">${esc(it.title)}</span></b>`
       + (by || n ? `<small><span class="en">${line(n && n + ' pages')}</span><span class="vi">${line(n && n + ' trang')}</span></small>` : '')
       + (hint ? `<small><span class="en">${esc(hint[0])}</span><span class="vi">${esc(hint[1])}</span></small>` : '');
@@ -264,16 +265,23 @@ function layoutOverlay() {
   }
   // a white outline around the section under the pointer (and, fainter, around the open one): the boards of a row, the posts of a bay;
   // not the open one's while a book lies open in front of it (its lines would cross the pages)
-  const bookOpen = !!(UIS.mapBook && UIS.mapBook.out && UIS.mapBook.flapU && UIS.mapBook.flapU.uOpen.value > 0.5);
+  const opened = bk => !!(bk && bk.out && bk.flapU && bk.flapU.uOpen.value > 0.5), bookOpen = opened(UIS.mapBook) || (!!(UIS.active && UIS.active.reading) && opened(UIS.active));   // (an atlas, a book of notes, or the one being listened to, lying open)
   for (const [sec, cls] of [[UIS.open, 'l3-outline is-open'], ...[...UIS.hovers].map(s => [s, 'l3-outline'])]) {
     if (!sec || !show || (cls === 'l3-outline is-open' && (UIS.hovers.has(sec) || bookOpen))) continue;
     const pts = sec.box.corners.map(project); if (pts.some(q => !q.ok)) continue;
     lines.push(`<polygon class="${cls}" points="${pts.map(q => q.x.toFixed(1) + ',' + q.y.toFixed(1)).join(' ')}"/>`);
   }
-  if (UIS.open && !UIEL.card.hidden && !bookOpen) {   // the open card points at its section, at the first books right of the card
-    const r = UIEL.card.getBoundingClientRect(), b = UIS.open.box, p = faceAnchor(b, r.right + 46, r.top + 40), a = project(p || b.plate);
-    const ey = THREE.MathUtils.clamp(a.y, r.top + 30, r.bottom - 30);
-    if (a.ok) lines.push(`<path class="l3-card-line" d="M${a.x.toFixed(1)},${a.y.toFixed(1)} L${(r.right).toFixed(1)},${ey.toFixed(1)}"/><circle cx="${a.x.toFixed(1)}" cy="${a.y.toFixed(1)}" r="4"/>`);
+  if (UIS.open && !UIEL.card.hidden && !bookOpen) {   // the open card points down at its section: from the middle of its foot to the board its books stand on, under it
+    // (G, 18/10/2026: his arrows, from the card's foot straight down to the shelf, not from its side to the far corner)
+    // (where the vertical under the card's middle crosses the lowest edge of the section's outline, on the screen)
+    const r = UIEL.card.getBoundingClientRect(), cx = (r.left + r.right) / 2, pts = UIS.open.box.corners.map(project);
+    let ay = -Infinity;
+    if (pts.every(q => q.ok)) for (let i = 0; i < pts.length; i++) {
+      const q0 = pts[i], q1 = pts[(i + 1) % pts.length]; if ((q0.x - cx) * (q1.x - cx) > 0 || q0.x === q1.x) continue;
+      ay = Math.max(ay, q0.y + (q1.y - q0.y) * (cx - q0.x) / (q1.x - q0.x));
+    }
+    ay = Math.min(ay, innerHeight - 24);
+    if (ay > r.bottom + 12) lines.push(`<path class="l3-card-line" d="M${cx.toFixed(1)},${r.bottom.toFixed(1)} L${cx.toFixed(1)},${ay.toFixed(1)}"/><circle cx="${cx.toFixed(1)}" cy="${ay.toFixed(1)}" r="4"/>`);
   }
   UIEL.svg.innerHTML = lines.join('');
 }

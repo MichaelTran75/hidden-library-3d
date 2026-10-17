@@ -4,7 +4,7 @@ import { CANVAS } from '../core/base.js';
 import { camera } from '../core/renderer.js';
 import { UIS, offMode } from './library.js';
 import { buildSections } from './sections.js';
-import { syncActive } from './flight.js';
+import { startReading, stopReading, syncActive } from './flight.js';
 import { DECK, buildRecordPlayer, togglePlayer } from './deck.js';
 import { UIEL, buildOverlay, closeCard, openSection, refreshCard, setHover, setMapBook, setPeek, showBooks, showResearch, showTip } from './overlay.js';
 import { ready, setNeeds } from '../core/loop.js';
@@ -40,7 +40,7 @@ function mapHit(bk) {
 function pickAt(e) {
   const r = CANVAS.getBoundingClientRect(); NDC.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   RAY.setFromCamera(NDC, camera);
-  const ob = UIS.mapBook && UIS.mapBook.out ? UIS.mapBook : null;
+  const ob = UIS.mapBook && UIS.mapBook.out ? UIS.mapBook : UIS.active && UIS.active.out && UIS.active.reading ? UIS.active : null;   // (an open atlas or book of notes; the book being listened to, open)
   if (ob && ob.read) { const r = bookRay(ob), rh = r && readHit(ob, r.o, r.d); if (rh) return { book: ob, read: rh }; }   // (a book of notes: its pages)
   else { const mh = ob ? mapHit(ob) : null; if (mh) return { book: ob, map: mh.at === 'page' }; }
   // books first (they stand just behind their section's face): those of the open section, and the one out of the shelf
@@ -90,11 +90,13 @@ function bindPicking() {
     if (inspectPointer('up', e)) { down = null; return; }   // (the clock out: its own clicks and drags)
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || performance.now() - down.t > 600 || offMode()) { down = null; return; }
     down = null; const p = pickAt(e);
-    if (p && p.book && p.book === UIS.mapBook && p.book.out) {   // an open atlas: its map opens its page, the rest of it puts it back; a book of notes: its pages turn, its board puts it back
+    if (p && p.book && p.book === UIS.active && p.book.out && p.book !== UIS.mapBook) {   // the book being listened to: a click opens it on its summary, then turns its pages; its board closes it (pause puts it back)
+      if (!p.book.reading) startReading(p.book); else if (p.read && !readClick(p.book, p.read)) stopReading(p.book);
+    }
+    else if (p && p.book && p.book === UIS.mapBook && p.book.out) {   // an open atlas: its map opens its page, the rest of it puts it back; a book of notes: its pages turn, its board puts it back
       if (p.read) { if (!readClick(p.book, p.read)) setMapBook(null); }
       else if (p.map) window.open(p.book.it.href, '_blank', 'noopener'); else setMapBook(null);
     }
-    else if (p && p.book && p.book === UIS.active && p.book.out) { const x = document.getElementById('np-close'); if (x) x.click(); }   // the book out of the shelf: back to its place (the player closes)
     else if (p && p.book) activateItem(p.book.it);
     else if (p && p.deck) togglePlayer();   // the record player on the floor: the page's player comes out (or goes away)
     else if (p && p.plane) window.open(PLANE.url, '_blank', 'noopener');   // the 747: its page, in a new tab

@@ -167,6 +167,26 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   - Gồm lõi trắng ấm, quầng hổ phách và một lớp toả rộng (lớp này phồng nhiều nhất theo nhịp thở).
 - Chỉ bật khi bóng đèn sáng. Độ sáng đọc từ độ mờ quầng sáng của chính bóng đèn mà `hour.js` đặt (0 ban ngày).
 
+### Sách đang phát: mở ra đọc tóm tắt (18/10/2026)
+
+- Sách đang phát (`UIS.active`) bay ra trước camera như cũ.
+  - Bấm vào sách: `startReading` (`flight.js`) tải `summaries/books.json` (`loadSummaries`), dựng các tờ lật (`heroRead`, `hero-books.js`), rồi mở bìa như atlas.
+  - Trước đây bấm vào sách là đóng player và sách về kệ.
+- Bố cục sách tóm tắt (`R.over`, `leaves.js`):
+  - Trang 1 là tổng quan (`paintOverview`).
+  - Sau đó các phần chạy liền qua các trang (`flowAll`, `paintFlow`), ghi chú hộp thoại của trang nối sau.
+  - Số trang đôi lấy theo thứ tiếng dài hơn (`R.S`).
+  - Khoảng cách sách tới camera tính sao cho trang đôi chiếm khoảng 92 % phần màn hình còn trống bên phải thẻ (`openPose`).
+- Thao tác:
+  - Bấm trang phải để lật tới, trang trái để lật lại.
+  - Bấm bìa, hoặc bấm qua trang cuối, thì sách gập (`stopReading`) và vẫn phát.
+- Dừng phát: `wantOf` trả về 'shelf' khi mục đang phát mất class `is-playing`/`is-loading`, nên sách về kệ; phát tiếp thì sách bay ra lại. `syncActive` đánh dấu sách mỗi lần class đổi.
+- Mục có audio mà không có tóm tắt:
+  - có hộp thoại ghi chú thì mở ở mục lục như sách ghi chú;
+  - không có ghi chú thì chỉ có trang tên, tác giả, số trang.
+- Nội dung và cách dựng lại: `tools/summaries/README.md`.
+- Kiểm tra bố cục: `__lib3d.readCheck()`.
+
 ### Mô hình ISS trên nóc kệ Geography (`lib3d/world/iss.js`, 17/10/2026)
 
 - Mẫu "ISS" của uperesito (CC BY 4.0) đứng trên giá kiểu 747, trên nóc kệ thấp phía sau, ngay trên ô Geography, trước cửa kính (khung kính bên phải, chỗ G khoanh).

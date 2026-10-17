@@ -6,9 +6,9 @@ import { LIGHTS } from '../world/lights.js';
 import { V3 } from '../core/views.js';
 import { booksMesh } from '../core/build.js';
 import { PEEK, PULL, UIS, focusView, offMode } from './library.js';
-import { heroMesh } from './hero-books.js';
+import { heroMesh, heroRead } from './hero-books.js';
 import { opensFlat } from './book-data.js';
-import { readOpening, readRelease, stepRead } from './leaves.js';
+import { loadSummaries, readOpening, readRelease, stepRead } from './leaves.js';
 import { setNeeds } from '../core/loop.js';
 
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -40,7 +40,15 @@ function presentPose(bk) {
 // read (ui/leaves.js) comes nearer still, square to the camera, its spine in the middle of the free side
 function openPose(bk) {
   const v = focusView(bk.sec), fwd = v.tgt.clone().sub(v.pos).normalize(), up = new V3(0, 1, 0), right = fwd.clone().cross(up).normalize(), rd = !!bk.read;
-  const D = nearOf(v, rd ? 0.66 : 0.8), p = v.pos.clone().addScaledVector(fwd, D).addScaledVector(right, rd ? 0 : -0.02).addScaledVector(up, -0.02 - bk.h / 2);
+  // (a book to read as near as lets its spread fit the free part of the screen, right of the card, and its height the
+  // screen's: a large book, as Poor Charlie's Almanack is, further off; the view's lens shift keeps its spine in the middle there)
+  let near = rd ? 0.66 : 0.8;
+  if (rd) {
+    const tv = Math.tan(v.fov * Math.PI / 360), th = tv * innerWidth / Math.max(1, innerHeight), card = document.getElementById('l3-card');
+    const cr = card && !card.hidden ? card.getBoundingClientRect() : null, free = Math.max(0.4, 1 - (cr ? cr.right / innerWidth : 0));
+    near = Math.max(0.42, (2 * bk.d + 0.03) / (2 * th * free * 0.92), bk.h / (2 * tv * 0.82));   // (as near as that: its words read large enough)
+  }
+  const D = nearOf(v, near), p = v.pos.clone().addScaledVector(fwd, D).addScaledVector(right, rd ? 0 : -0.02).addScaledVector(up, -0.02 - bk.h / 2);
   const x = fwd.clone().negate().applyAxisAngle(up, rd ? 0 : -0.1), z = x.clone().cross(up).normalize();
   const th = rd ? 0.05 : 0.09, x2 = x.clone().multiplyScalar(Math.cos(th)).addScaledVector(up, Math.sin(th)), y2 = up.clone().multiplyScalar(Math.cos(th)).addScaledVector(x, -Math.sin(th));
   const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x2, y2, z));
@@ -64,9 +72,12 @@ function startFlight(bk, goal) {
   bk.to = goal === 'present' ? presentPose(bk) : goal === 'rest' ? restPose(bk) : pulledPose(bk);
   bk.fdur = reduceMotion ? 0.001 : goal === 'pulled' ? 0.9 : 1.05;
 }
+// the book being listened to: out while it plays (or loads); paused, it goes back to its shelf (G, 18/10/2026: "chỉ khi
+// nào ấn nút pause thì mới ngừng và sách cất lại lên kệ"), and comes out again when it plays on
+const playing = bk => { const cl = bk.it && bk.it.li && bk.it.li.classList; return !!cl && (cl.contains('is-playing') || cl.contains('is-loading')); };
 function wantOf(bk) {
   if (bk === UIS.mapBook) return UIS.open === bk.sec && !offMode() ? 'present' : 'shelf';   // (an atlas goes back to its shelf)
-  if (bk === UIS.active) return UIS.open === bk.sec && !offMode() ? 'present' : 'rest';
+  if (bk === UIS.active) return !playing(bk) ? 'shelf' : UIS.open === bk.sec && !offMode() ? 'present' : 'rest';
   return bk === UIS.peek ? 'peek' : 'shelf';
 }
 function stepBooks(dt, t) {
@@ -89,14 +100,16 @@ function stepBooks(dt, t) {
         bk.fk = Math.min(1, bk.fk + dt / bk.fdur); const k = bk.fk, e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
         const lift = (bk.goal === 'present' ? 0.08 : 0.22) * Math.sin(Math.PI * e);
         bk.pose = { p: bk.from.p.clone().lerp(bk.to.p, e).add(new V3(0, lift, 0)), q: bk.from.q.clone().slerp(bk.to.q, e) }; moving = true;
-        if (bk.fk >= 1 && bk.goal === 'pulled') { bk.out = false; bk.slide = PULL; if (bk.read) readRelease(bk); continue; }   // back at its place: it slides in on the shelf (a book of notes lets its pages go)
+        if (bk.fk >= 1 && bk.goal === 'pulled') { bk.out = false; bk.slide = PULL; bk.reading = false; if (bk.read) readRelease(bk); continue; }   // back at its place: it slides in on the shelf (a book of notes lets its pages go)
       }
       // an atlas, once in front of the camera, opens: it comes nearer and turns to face the camera as its cover turns
       // open (that a little later, so it clears the camera's way); it closes again as it goes back (a closing cover
       // flies back with it)
       let ok = 0;
-      if (bk.flapU && opensFlat(bk.it)) {
-        const want = bk.goal === 'present' && bk.fk >= 1 ? 1 : 0, k0 = bk.openK || 0;
+      if (bk.reading && bk.goal !== 'present') bk.reading = false;   // (being read only while it is in front of the camera)
+      const opens = opensFlat(bk.it) || bk.reading;   // (an atlas, a book of notes; a book being listened to, opened on its summary)
+      if (bk.flapU && (opens || bk.openK > 0)) {
+        const want = opens && bk.goal === 'present' && bk.fk >= 1 ? 1 : 0, k0 = bk.openK || 0;
         bk.openK = reduceMotion ? want : THREE.MathUtils.clamp(k0 + (want ? dt / 1.15 : -dt / 0.55), 0, 1); if (bk.openK !== k0) moving = true;
         if (bk.openK > 0 && bk.atlas && !bk.atlas.done) bk.atlas.paint();
         if (bk.openK > 0 && bk.read) readOpening(bk);
@@ -114,10 +127,20 @@ function stepBooks(dt, t) {
   }
   return moving;
 }
-function syncActive() {   // which book is "current" in the page's player
+function syncActive() {   // which book is "current" in the page's player (and, playing or paused, where it should be)
   const cur = document.querySelector('#pages .item.is-current');
   const bk = cur ? UIS.bySrc.get(cur.dataset.src) || null : null;
   if (bk !== UIS.active) { if (UIS.active) UIS.touched.add(UIS.active); UIS.active = bk; if (bk) UIS.touched.add(bk); setNeeds(true); }
+  else if (bk) { UIS.touched.add(bk); setNeeds(true); }
 }
+// a click on the book out of the shelf while it plays: it opens on its summary (once its words are here); its board,
+// or past its last page, closes it again
+async function startReading(bk) {
+  if (bk.reading || bk.readSoon) return; bk.readSoon = true;
+  await loadSummaries(); bk.readSoon = false;
+  if (bk !== UIS.active || !bk.out || bk.goal !== 'present' || !heroRead(bk)) return;
+  bk.reading = true; UIS.touched.add(bk); setNeeds(true);
+}
+function stopReading(bk) { if (!bk.reading) return; bk.reading = false; UIS.touched.add(bk); setNeeds(true); }
 
-export { stepBooks, syncActive };
+export { startReading, stepBooks, stopReading, syncActive };

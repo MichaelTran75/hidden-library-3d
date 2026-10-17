@@ -364,7 +364,7 @@ function heroMaterials(bk, shape) {
     front.tex.needsUpdate = true; setNeeds(true);
   }; im.src = img; }
   bk.heroFaces = { front: img ? null : front, spine };   // (a jacket's picture is not redrawn for another language)
-  bk.heroShape = { hinge: shape.hinge, page: shape.page };
+  bk.heroShape = { hinge: shape.hinge, page: shape.page, endW: shape.endW };
   return mats;
 }
 function heroMesh(bk) {
@@ -374,6 +374,13 @@ function heroMesh(bk) {
   m.layers.set(HERO_LAYER); m.visible = false; m.userData.book = bk; scene.add(m); bk.hero = m;
   if (isReadItem(bk.it) && buildRead(bk, shape, m, bk.heroBase)) m.material[7] = heroSharp(bk.read.endMat, bk.flapU);   // (a book of notes: its leaves, and its title page inside the front board)
   HERO.list.push(bk); heroForget(); return m;
+}
+// a book out of the shelf made one to read, if it is not yet (being listened to, opened on its summary: ui/leaves.js):
+// its leaves, and its title page inside the front board; false if it has nothing to show
+function heroRead(bk) {
+  if (bk.read) return true; if (!bk.hero || !bk.heroShape) return false;
+  if (!buildRead(bk, bk.heroShape, bk.hero, bk.heroBase)) return false;
+  bk.hero.material[7] = heroSharp(bk.read.endMat, bk.flapU); setNeeds(true); return true;
 }
 // past HERO.keep books made, the one longest out of sight (and not on its way anywhere) is let go: its pictures are large
 function heroForget() {
@@ -393,4 +400,4 @@ function relabelHero(bk) {
   if (bk.read) relabelRead(bk);
 }
 
-export { HERO, HERO_LAYER, heroCanvasTex, heroKey, heroMesh, inkFor, relabelHero, wrapText };
+export { HERO, HERO_LAYER, heroCanvasTex, heroKey, heroMesh, heroRead, inkFor, relabelHero, wrapText };

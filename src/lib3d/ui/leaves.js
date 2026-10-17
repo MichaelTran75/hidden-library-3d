@@ -5,7 +5,7 @@ import { canvas } from '../core/utils.js';
 import { setNeeds } from '../core/loop.js';
 import { DECKR } from './deck.js';
 import { HERO_LAYER, heroCanvasTex } from './hero-books.js';
-import { pageLang, printTitle } from './book-data.js';
+import { bookInfo, byOf, pageLang, printTitle } from './book-data.js';
 
 /* ---- a book read in the room (G, 17/10/2026: "[Economic models] book: add animation book open và list of các nước,
    thay vì popup thì đưa vào từng trang sách, click vào thì animation lật tới trang đó"). An item whose notes are the
@@ -21,11 +21,21 @@ import { pageLang, printTitle } from './book-data.js';
      back to the contents.
    - Its pictures are the page's (Wix's, which allows them to be drawn here). Its pages are painted while the book is
      out (in the browser's idle time, the title page and the contents first) and let go when it is back on the shelf. */
+/* ---- a book being listened to, read too (G, 18/10/2026: "tiếp tục click vào sách thì sách sẽ mở trang đầu với tóm tắt
+   nội dung chi tiết, click tiếp để lật trang, chỉ khi nào ấn nút pause thì mới ngừng và sách cất lại lên kệ"). The book
+   out of the shelf while its audio plays opens, on a click, as a book of notes does, on its summary (summaries/books.json,
+   in English and Vietnamese, each book's own words: what it argues, its ideas, its lessons): the title page inside the
+   front board (with its author), the overview on the first page, then a spread for each part of the summary, and the
+   page's own notes on it after those. Its leaves turn as a book of notes' do; a click on its board, or past its last
+   page, closes it again (it plays on); pausing puts it back on its shelf (flight.js). An item with no summary and no
+   notes opens on a page of its name, author and pages. */
 const READ = { stagger: 0.12, dur: 0.75, gap: 0.00003, turn: 2.7 };   // (turn: as far as the board opens: flight.js OPEN_TURN)
 const SERIF = `Georgia, 'Times New Roman', serif`, INK = '#2c241b', MUTED = '#7d6c56', ACCENT = '#8a3b2a';
 const NAMES_EN = { 'Hàn Quốc': 'South Korea', 'Nhật Bản': 'Japan', 'Singapore': 'Singapore', 'Trung Quốc': 'China', 'Đài Loan': 'Taiwan' };
 const WORDS = { contents: ['Contents', 'Mục lục'], hint: ['Click a country to turn to its pages', 'Bấm tên một nước để lật tới trang'], end: ['The end', 'Hết'],
-  back: ['‹ Contents', '‹ Mục lục'], from: ['From the notes of Hidden Library', 'Từ các ghi chép của Hidden Library'] };
+  back: ['‹ Contents', '‹ Mục lục'], from: ['From the notes of Hidden Library', 'Từ các ghi chép của Hidden Library'],
+  backOver: ['‹ Overview', '‹ Tổng quan'], over: ['Overview', 'Tổng quan'], fromSum: ['A summary by Hidden Library', 'Tóm tắt của Hidden Library'],
+  turnOn: ['Click to turn the page', 'Bấm để lật trang'], notes: ['Notes', 'Ghi chú'], hintAny: ['Click a chapter to turn to its pages', 'Bấm tên một mục để lật tới trang'] };
 const say = (k, lang) => WORDS[k][lang === 'vi' ? 1 : 0];
 const fontOf = (fs, b, i) => `${i ? 'italic ' : ''}${b ? 700 : 400} ${Math.round(fs)}px ${SERIF}`;
 
@@ -65,6 +75,49 @@ function chaptersOf(it) {
   return out;
 }
 const isReadable = it => chaptersOf(it).length > 0;
+// the summaries (summaries/books.json, by a book's English title): inline in the one-file page, a file next to it on
+// Pages, fetched the first time a book is opened
+const SUMS = { data: null, p: null };
+function loadSummaries() {
+  if (SUMS.p) return SUMS.p;
+  const el = document.getElementById('book-summaries');
+  SUMS.p = (async () => {
+    try { if (!el) return {}; if (el.dataset.src) { const r = await fetch(el.dataset.src); return r.ok ? await r.json() : {}; } return JSON.parse(el.textContent || '{}'); }
+    catch (e) { return {}; }
+  })().then(d => (SUMS.data = d || {}));
+  return SUMS.p;
+}
+const summaryOf = it => { const b = bookInfo(it); return (SUMS.data && b && SUMS.data[b.en]) || null; };
+// a summary's words: paragraphs a blank line apart, lines starting "- " a list, **words** bold
+function sumRuns(s) {   // (**bold**, *italic*)
+  const out = [];
+  for (const p of String(s).split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/)) if (p) out.push(/^\*\*[^*]+\*\*$/.test(p) ? { t: p.slice(2, -2), b: true } : /^\*[^*]+\*$/.test(p) ? { t: p.slice(1, -1), b: false, i: true } : { t: p, b: false });
+  return out;
+}
+function sumBlocks(s) {
+  const out = [];
+  for (const para of String(s || '').split(/\n\s*\n/)) {
+    let list = null, words = [];
+    const flush = () => { if (words.length) { out.push({ k: 'p', runs: sumRuns(words.join(' ')) }); words = []; } };
+    for (const ln of para.split('\n').map(l => l.trim()).filter(Boolean)) {
+      if (/^[-•] /.test(ln)) { flush(); if (!list) { list = { k: 'ul', items: [] }; out.push(list); } list.items.push(sumRuns(ln.slice(2))); }
+      else { list = null; words.push(ln); }
+    }
+    flush();
+  }
+  return out;
+}
+// the book's line under its title: its author and year, its pages (in the page's language), in italics
+function bylineOf(it, lang) { const b = bookInfo(it), n = b && b.pages; return [byOf(it), n ? (lang === 'vi' ? `${n} trang` : `${n} pages`) : ''].filter(Boolean).join(' · '); }
+function overviewOf(it, words) {   // the first page: the book's title, its line, then its overview (in each language)
+  const side = lang => ({ title: printTitle(it, lang), blocks: [{ k: 'p', runs: [{ t: bylineOf(it, lang), b: false, i: true }], muted: true }, ...sumBlocks(words ? words[lang] : '')] });
+  return { name: WORDS.over[1], en: WORDS.over[0], by: { en: side('en'), vi: side('vi') } };
+}
+function summaryChapters(S) {   // [label, title, words] for each part, the two languages side by side
+  const n = Math.min(S.en.ch.length, S.vi.ch.length), out = [];
+  for (let k = 0; k < n; k++) { const e = S.en.ch[k], v = S.vi.ch[k]; out.push({ name: v[0], en: e[0], by: { en: { title: e[1], blocks: sumBlocks(e[2]) }, vi: { title: v[1], blocks: sumBlocks(v[2]) } } }); }
+  return out;
+}
 
 /* ---- setting type: runs broken into lines (justified, the last line of a paragraph left as it is), a chapter's
    blocks flowed down its pages */
@@ -75,7 +128,7 @@ function wordsOf(runs) {   // words with their weight, and whether a space follo
     for (const part of r.t.split(/(\s+)/)) {
       if (!part) continue;
       if (/^\s+$/.test(part)) { if (ws.length) ws[ws.length - 1].sp = true; continue; }
-      const prev = ws[ws.length - 1]; ws.push({ t: part, b: r.b, h: r.h, glue: !!(prev && !prev.br && !prev.sp) });
+      const prev = ws[ws.length - 1]; ws.push({ t: part, b: r.b, i: r.i, h: r.h, glue: !!(prev && !prev.br && !prev.sp) });
     }
   }
   return ws;
@@ -88,7 +141,7 @@ function setLines(g, runs, width, fs) {
     const w = ws[i]; if (w.br) { end(true); continue; }
     // a word and those glued to it go together
     let j = i, gw = 0; const grp = [];
-    do { const v = ws[j]; g.font = fontOf(fs, v.b); const vw = g.measureText(v.t).width; grp.push({ ...v, w: vw }); gw += vw; j++; } while (j < ws.length && ws[j].glue);
+    do { const v = ws[j]; g.font = fontOf(fs, v.b, v.i); const vw = g.measureText(v.t).width; grp.push({ ...v, w: vw }); gw += vw; j++; } while (j < ws.length && ws[j].glue);
     const sp = line.length ? space(line[line.length - 1].b) : 0;
     if (line.length && x + sp + gw > width) end(false);
     for (const v of grp) { v.x = x + (line.length && v === grp[0] ? space(line[line.length - 1].b) : 0); line.push(v); x = v.x + v.w; }
@@ -102,25 +155,26 @@ function drawLine(g, ln, x0, y, width, fs, color, lk) {   // (lk: where a link's
   const extra = !ln.last && gaps ? Math.min((width - ln.w) / gaps, fs * 0.6) : 0;   // (justified; a line far too short is left ragged)
   let add = 0; g.textBaseline = 'alphabetic';
   ln.words.forEach((w, k) => {
-    if (k && !w.glue) add += extra; const x = x0 + w.x + add; g.font = fontOf(fs, w.b); g.fillStyle = w.h ? ACCENT : color || INK; g.fillText(w.t, x, y);
+    if (k && !w.glue) add += extra; const x = x0 + w.x + add; g.font = fontOf(fs, w.b, w.i); g.fillStyle = w.h ? ACCENT : color || INK; g.fillText(w.t, x, y);
     if (w.h) { g.fillRect(x, y + fs * 0.14, w.w + (k < ln.words.length - 1 && ln.words[k + 1].h === w.h ? extra + fs * 0.25 : 0), Math.max(1.5, fs * 0.05)); if (lk) lk(x - 2, y - fs * 0.85, x + w.w + 2, y + fs * 0.3, w.h); }
   });
 }
 // a chapter flowed down pages: items of a height, drawn at their place; those of a box carry its number
-function flowChapter(g, ch, P, fs) {
-  const items = [], LH = fs * 1.42, TW = P.tw, PAD = fs * 0.7;
+function flowChapter(g, ch, P, fs, lang) { return paginate(itemsOf(g, ch, P, fs, lang), P.y1 - P.y0, fs); }
+function itemsOf(g, ch, P, fs, lang) {
+  const items = [], LH = fs * 1.42, TW = P.tw, PAD = fs * 0.7, T = ch.by ? ch.by[lang] || ch.by.en : ch;   // (a summary's part: its words in the page's language)
   const gap = (h, box = null) => items.push({ h, box, gap: true });
   const text = (runs, x0, w, box, f = fs, lh = LH, color) => { for (const ln of setLines(g, runs, w, f)) items.push({ h: lh, box, draw: (g, x, y, lang, pic, lk) => drawLine(g, ln, x + x0, y + lh * 0.74, w, f, color, lk) }); };
   // the chapter's country, small and spaced in the accent, over its title
   items.push({ h: fs * 1.5, head: true, draw: (g, x, y, lang) => { g.font = `600 ${Math.round(fs * 0.62)}px ${SERIF}`; g.fillStyle = ACCENT; g.letterSpacing = `${(fs * 0.18).toFixed(1)}px`; g.fillText((lang === 'vi' ? ch.name : ch.en).toUpperCase(), x, y + fs * 0.75); g.letterSpacing = '0px'; } });
   const TF = fs * 1.48; g.font = fontOf(TF, true);
-  for (const ln of setLines(g, [{ t: ch.title, b: true }], TW, TF)) items.push({ h: TF * 1.2, draw: (g, x, y) => drawLine(g, { ...ln, last: true }, x, y + TF * 0.92, TW, TF) });
+  for (const ln of setLines(g, [{ t: T.title, b: true }], TW, TF)) items.push({ h: TF * 1.2, draw: (g, x, y) => drawLine(g, { ...ln, last: true }, x, y + TF * 0.92, TW, TF) });
   items.push({ h: fs * 0.55, draw: (g, x, y) => { g.fillStyle = ACCENT; g.fillRect(x, y + fs * 0.2, fs * 2.2, Math.max(2, fs * 0.08)); } });
   gap(fs * 0.5);
   const flow = (blocks, x0, w, box) => {
     for (const b of blocks) {
       if (b.k === 'img') { const h = w / b.ar; items.push({ h: h + fs * 0.8, img: b, draw: (g, x, y, lang, pic) => drawPicture(g, pic, x + x0, y, w, h) }); }
-      else if (b.k === 'p') { text(b.runs, x0, w, box); gap(fs * 0.45, box); }
+      else if (b.k === 'p') { text(b.runs, x0, w, box, fs, LH, b.muted ? MUTED : undefined); gap(fs * 0.45, box); }
       else if (b.k === 'ul') {
         for (const li of b.items) {
           const lines = setLines(g, li, w - fs * 1.25, fs);
@@ -134,15 +188,32 @@ function flowChapter(g, ch, P, fs) {
       }
     }
   };
-  flow(ch.blocks, 0, TW, null);
-  // onto the pages: an item that does not fit goes over to the next (a gap at the top of a page is dropped)
-  const pages = [[]], room = P.y1 - P.y0; let y = 0;
+  flow(T.blocks, 0, TW, null);
+  for (const it of items) it.ch = ch;
+  return items;
+}
+// onto the pages: an item that does not fit goes over to the next (a gap at the top of a page is dropped); a part's
+// head goes over too if too little of its page is left for it and a few lines after it
+function paginate(items, room, fs) {
+  const pages = [[]]; let y = 0;
   for (const it of items) {
-    if (y + it.h > room && y > 0) { pages.push([]); y = 0; if (it.gap && it.box === null) continue; }
+    if (y > 0 && (y + it.h > room || (it.head && y + fs * 8 > room))) { pages.push([]); y = 0; if (it.gap && it.box === null) continue; }
     pages[pages.length - 1].push({ it, y }); y += it.h;
   }
   return pages;
 }
+// a summary's parts (and the page's notes after them) one after another down its pages, as a book's text runs on, at
+// one size of type; each page knows the part it opens in (its running head)
+function flowAll(R, lang) {
+  if (R.flows[lang]) return R.flows[lang];
+  const g = canvas(8, 8).getContext('2d'), P = frameOf(R.W, R.H, true), fs = R.W * 0.03, items = [];
+  R.ch.forEach((ch, k) => { if (k) items.push({ h: fs * 1.7, gap: true, box: null, ch }); items.push(...itemsOf(g, ch, P, fs, lang)); });
+  const pages = paginate(items, P.y1 - P.y0, fs).filter(p => p.length);
+  for (const pg of pages) pg.ch = pg[0].it.ch;
+  const lp = pages[pages.length - 1], la = lp && lp[lp.length - 1], endFits = !!la && la.y + la.it.h + fs * 2.2 < P.y1 - P.y0;   // (the end marked under the last line, or on a page of its own)
+  return (R.flows[lang] = { fs, pages, endFits });
+}
+const spreadsOf = R => R.over ? R.S : R.ch.length;   // (how far its leaves turn)
 function drawPicture(g, pic, x, y, w, h) {
   g.save(); const r = Math.min(12, w * 0.012);
   g.beginPath(); g.roundRect(x, y, w, h, r); g.clip();
@@ -179,7 +250,18 @@ function folio(g, P, n, rightPage, fs) {
 // a link on a page: where (in the page's pixels) and where it leads
 const linkAt = (face, x0, y0, x1, y1, go) => face.links.push({ x0, y0, x1, y1, go });
 
+function paintOverview(face, R, lang) {   // a summary's first page: the book's title and line, its overview, a way on
+  const { c, W, H } = face, g = c.getContext('2d'), P = frameOf(W, H, true), fsH = W * 0.03; face.links = [];
+  pagePaper(g, W, H, true);
+  const lay = layoutOf(R, R.over, P, g, lang, 1);
+  runningHead(g, P, W, '', R.title, fsH);
+  for (const { it, y } of lay.pages[0] || []) if (it.draw) it.draw(g, P.x0, P.y0 + y, lang, null, null);
+  g.font = `400 ${Math.round(fsH * 0.95)}px ${SERIF}`; g.fillStyle = MUTED; g.textAlign = 'right';
+  if (spreadsOf(R)) g.fillText('›', P.x0 + P.tw - fsH * 1.6, P.foot);
+  g.textAlign = 'left'; folio(g, P, 1, true, fsH);
+}
 function paintContents(face, R, lang) {
+  if (R.over) return paintOverview(face, R, lang);
   const { c, W, H } = face, g = c.getContext('2d'), P = frameOf(W, H, true), fs = W * 0.034; face.links = [];
   pagePaper(g, W, H, true);
   g.textAlign = 'center'; g.fillStyle = ACCENT; g.font = `600 ${Math.round(fs * 0.7)}px ${SERIF}`; g.letterSpacing = `${(fs * 0.3).toFixed(1)}px`;
@@ -200,16 +282,17 @@ function paintContents(face, R, lang) {
     linkAt(face, P.x0 - fs * 0.4, top - fs * 0.25, P.x0 + P.tw + fs * 0.4, top + step - fs * 0.3, k + 1);
     y += step;
   });
-  g.font = fontOf(fs * 0.72, false, true); g.fillStyle = MUTED; g.textAlign = 'center'; g.fillText(say('hint', lang) + ' →', P.x0 + P.tw / 2, P.y1 - fs * 0.4); g.textAlign = 'left';
+  const lands = R.ch.every(ch => NAMES_EN[ch.name]);   // (a book of countries' notes, or of any notes)
+  g.font = fontOf(fs * 0.72, false, true); g.fillStyle = MUTED; g.textAlign = 'center'; g.fillText(say(lands ? 'hint' : 'hintAny', lang) + ' →', P.x0 + P.tw / 2, P.y1 - fs * 0.4); g.textAlign = 'left';
   folio(g, P, 1, true, fs);
 }
 function paintChapter(face, R, lang) {
   const { c, W, H, ch, part } = face, g = c.getContext('2d'), right = part === 1, P = frameOf(W, H, right), k = R.ch.indexOf(ch);
-  const lay = layoutOf(R, ch, P, g), pics = R.pics, fs = lay.fs; face.links = [];
+  const lay = layoutOf(R, ch, P, g, lang), pics = R.pics, fs = lay.fs, back = R.over ? 'backOver' : 'back'; face.links = [];
   pagePaper(g, W, H, right);
   const name = lang === 'vi' ? ch.name : ch.en, fsH = W * 0.03;
-  if (right) runningHead(g, P, W, '', R.title, fsH); else runningHead(g, P, W, say('back', lang), name, fsH, ACCENT);   // (the way back to the contents, in the accent)
-  if (!right) { g.font = `500 ${Math.round(fsH * 0.6)}px ${SERIF}`; g.letterSpacing = `${(fsH * 0.12).toFixed(1)}px`; linkAt(face, P.x0 - fsH * 0.5, P.head - fsH * 1.2, P.x0 + g.measureText(say('back', lang).toUpperCase()).width + fsH * 0.6, P.head + fsH * 0.6, 0); g.letterSpacing = '0px'; }
+  if (right) runningHead(g, P, W, '', R.title, fsH); else runningHead(g, P, W, say(back, lang), name, fsH, ACCENT);   // (the way back to the contents, or a summary's overview, in the accent)
+  if (!right) { g.font = `500 ${Math.round(fsH * 0.6)}px ${SERIF}`; g.letterSpacing = `${(fsH * 0.12).toFixed(1)}px`; linkAt(face, P.x0 - fsH * 0.5, P.head - fsH * 1.2, P.x0 + g.measureText(say(back, lang).toUpperCase()).width + fsH * 0.6, P.head + fsH * 0.6, 0); g.letterSpacing = '0px'; }
   // the boxes behind their lines, then the lines
   const placed = lay.pages[part] || [];
   for (let i = 0; i < placed.length;) {
@@ -229,6 +312,25 @@ function paintChapter(face, R, lang) {
   if (!right) g.fillText('‹', P.x0 + fsH * 1.6, P.foot);
   g.textAlign = 'left';
 }
+function paintFlow(face, R, lang) {   // a page of a summary's running text (or, past its end, the end)
+  const { c, W, H, f } = face, g = c.getContext('2d'), right = f % 2 === 0, P = frameOf(W, H, right), fsH = W * 0.03, fl = flowAll(R, lang), pg = fl.pages[f - 1]; face.links = [];
+  if (!pg) { if (f - 1 === fl.pages.length && !fl.endFits) paintEnd(face, R, lang); else pagePaper(g, W, H, right); return; }
+  pagePaper(g, W, H, right);
+  const name = lang === 'vi' ? pg.ch.name : pg.ch.en;
+  if (right) runningHead(g, P, W, '', R.title, fsH);
+  else {
+    runningHead(g, P, W, say('backOver', lang), name, fsH, ACCENT);   // (the way back to the overview, in the accent)
+    g.font = `500 ${Math.round(fsH * 0.6)}px ${SERIF}`; g.letterSpacing = `${(fsH * 0.12).toFixed(1)}px`; linkAt(face, P.x0 - fsH * 0.5, P.head - fsH * 1.2, P.x0 + g.measureText(say('backOver', lang).toUpperCase()).width + fsH * 0.6, P.head + fsH * 0.6, 0); g.letterSpacing = '0px';
+  }
+  const lk = (x0, y0, x1, y1, href) => face.links.push({ x0, y0, x1, y1, href });
+  for (const { it, y } of pg) if (it.draw) it.draw(g, P.x0, P.y0 + y, lang, it.img ? R.pics.get(it.img.src) : null, lk);
+  if (f === fl.pages.length && fl.endFits) { const last = pg[pg.length - 1], y = P.y0 + last.y + last.it.h + fl.fs * 1.2; { g.font = fontOf(fl.fs * 0.8, false, true); g.fillStyle = MUTED; g.textAlign = 'center'; g.fillText('— ' + say('end', lang) + ' —', P.x0 + P.tw / 2, y); g.textAlign = 'left'; } }
+  folio(g, P, f + 1, right, fsH);
+  g.font = `400 ${Math.round(fsH * 0.95)}px ${SERIF}`; g.fillStyle = MUTED; g.textAlign = right ? 'right' : 'left';
+  if (right && f / 2 < R.S && f < fl.pages.length) g.fillText('›', P.x0 + P.tw - fsH * 1.6, P.foot);
+  if (!right) g.fillText('‹', P.x0 + fsH * 1.6, P.foot);
+  g.textAlign = 'left';
+}
 function paintEnd(face, R, lang) {
   const { c, W, H } = face, g = c.getContext('2d'), fs = W * 0.034; face.links = [];
   pagePaper(g, W, H, false);
@@ -244,17 +346,19 @@ function paintTitlePage(R, lang) {
   g.fillStyle = MUTED; g.font = `600 ${Math.round(fs * 0.55)}px ${SERIF}`; g.letterSpacing = `${(fs * 0.3).toFixed(1)}px`; g.fillText('HIDDEN LIBRARY', cx, H * 0.2); g.letterSpacing = '0px';
   g.fillStyle = INK; let size = fs * 1.9; g.font = fontOf(size, true); while (g.measureText(R.title).width > W * 0.68 && size > fs) { size -= 2; g.font = fontOf(size, true); }
   g.fillText(R.title, cx, H * 0.36);
+  const by = R.over ? bylineOf(R.bk.it, lang) : '';
+  if (by) { g.font = fontOf(fs * 0.6, false, true); g.fillStyle = MUTED; let t = by; while (g.measureText(t).width > W * 0.7 && t.length > 8) t = t.slice(0, -2).trimEnd() + '…'; g.fillText(t, cx, H * 0.455); }
   g.fillStyle = ACCENT; g.beginPath(); for (const [dx, s] of [[-fs * 1.1, 0.5], [0, 1], [fs * 1.1, 0.5]]) { g.moveTo(cx + dx, H * 0.41 - fs * 0.22 * s); g.lineTo(cx + dx + fs * 0.22 * s, H * 0.41); g.lineTo(cx + dx, H * 0.41 + fs * 0.22 * s); g.lineTo(cx + dx - fs * 0.22 * s, H * 0.41); } g.fill();
-  g.font = fontOf(fs * 0.82, false, true); g.fillStyle = INK;
-  R.ch.forEach((ch, k) => g.fillText(lang === 'vi' ? ch.name : ch.en, cx, H * 0.5 + k * fs * 1.35));
-  g.font = fontOf(fs * 0.55, false, true); g.fillStyle = MUTED; g.fillText(say('from', lang), cx, H * 0.86);
+  g.font = fontOf(fs * 0.82, false, true); g.fillStyle = INK; const y0 = H * (by ? 0.53 : 0.5), dy = Math.min(fs * 1.35, (H * 0.8 - y0) / Math.max(1, R.ch.length));
+  R.ch.forEach((ch, k) => g.fillText(lang === 'vi' ? ch.name : ch.en, cx, y0 + k * dy));
+  g.font = fontOf(fs * 0.55, false, true); g.fillStyle = MUTED; g.fillText(say(R.over ? 'fromSum' : 'from', lang), cx, H * 0.86);
   g.textAlign = 'left';
 }
 // a chapter's type size: the largest (35 px to a page 1024 across, down to 20) at which it fills no more than its two pages
-function layoutOf(R, ch, P, g) {
-  const key = `${R.W}`; if (ch.lay && ch.lay.key === key) return ch.lay;
+function layoutOf(R, ch, P, g, lang, most = 2) {
+  const key = `${R.W}|${lang}|${most}`; if (ch.lay && ch.lay.key === key) return ch.lay;
   let lay = null;
-  for (let fs = R.W * 0.034; fs >= R.W * 0.0195; fs -= R.W * 0.001) { const pages = flowChapter(g, ch, P, fs); lay = { key, fs, pages }; if (pages.length <= 2) break; }
+  for (let fs = R.W * 0.034; fs >= R.W * 0.0195; fs -= R.W * 0.001) { const pages = flowChapter(g, ch, P, fs, lang); lay = { key, fs, pages }; if (pages.length <= most) break; }
   ch.lay = lay; return lay;
 }
 
@@ -296,15 +400,21 @@ function leafStrip(bk, pg, x) {   // in the unit box (the hero is scaled by the 
 /* ---- the book: its chapters, faces (0: the contents; 2k−1 and 2k: chapter k's two pages; the last: the end), leaves
    (leaf i shows face 2(i−1) on its front and 2i−1 on its back) and title page */
 function buildRead(bk, shape, mesh, base) {
-  const ch = chaptersOf(bk.it); if (!ch.length) return null;
+  const notes = chaptersOf(bk.it), S = summaryOf(bk.it);
+  let ch = notes, over = null;
+  if (S) { ch = [...summaryChapters(S), ...notes]; over = overviewOf(bk.it, { en: S.en.over, vi: S.vi.over }); }
+  else if (bk.it.src && !notes.length) over = overviewOf(bk.it, null);   // (something to listen to with nothing to read: its name, author and pages)
+  if (!ch.length && !over) return null;
   const pg = shape.page, W = 1024, H = Math.round(W * (pg.y1 - pg.y0) / (pg.z0 - pg.z1));
   const blank = canvas(8, 8), bg = blank.getContext('2d'); bg.fillStyle = '#f4ecd8'; bg.fillRect(0, 0, 8, 8);
-  const R = { bk, ch, W, H, shape, spread: 0, pending: null, open: false, flapU: bk.flapU, title: printTitle(bk.it), faces: [], leaves: [], pics: new Map(), blank: heroCanvasTex(blank, true) };
-  const nf = 2 * ch.length + 2;
-  for (let f = 0; f < nf; f++) R.faces.push({ f, W, H, c: null, tex: null, links: [], done: '', ch: f && f < nf - 1 ? ch[Math.ceil(f / 2) - 1] : null, part: f && f < nf - 1 ? (f % 2 ? 0 : 1) : -1 });
+  const R = { bk, ch, over, W, H, shape, spread: 0, pending: null, open: false, flapU: bk.flapU, title: printTitle(bk.it), faces: [], leaves: [], pics: new Map(), flows: {}, blank: heroCanvasTex(blank, true) };
+  // (a summary: its overview on the first page, then its running pages, as many leaves as the longer language needs)
+  if (over) R.S = Math.ceil(Math.max(flowAll(R, 'en').pages.length, flowAll(R, 'vi').pages.length) / 2);
+  const nf = over ? 2 * R.S + 2 : 2 * ch.length + 2;
+  for (let f = 0; f < nf; f++) R.faces.push({ f, W, H, c: null, tex: null, links: [], done: '', ch: !over && f && f < nf - 1 ? ch[Math.ceil(f / 2) - 1] : null, part: !over && f && f < nf - 1 ? (f % 2 ? 0 : 1) : -1, flow: !!over && f > 0 });
   // the leaves, stacked on the page block (the first on top); turned, the same offsets put them on the endpaper in the
   // reverse order (the first underneath)
-  const nl = ch.length + 1;
+  const nl = nf / 2;
   for (let i = 0; i < nl; i++) {
     const L = { i, phi: 0, bend: 0, from: 0, to: 0, t0: null, dur: 1, dir: 1, u: { uPhi: { value: 0 }, uBend: { value: 0 }, uMax: { value: 0 }, uVerso: { value: R.blank } } };
     L.mat = leafMaterial(R, L, base);
@@ -321,14 +431,15 @@ function buildRead(bk, shape, mesh, base) {
 function facePaint(R, f) {   // a face painted (again if the language changed), its texture given to its leaf
   const F = R.faces[f], lang = pageLang(); if (!F || F.done === lang) return;
   if (!F.c) { F.c = canvas(F.W, F.H); F.tex = heroCanvasTex(F.c, true); F.tex.generateMipmaps = false; F.tex.minFilter = THREE.LinearFilter; }
-  if (f === 0) paintContents(F, R, lang); else if (F.ch) paintChapter(F, R, lang); else paintEnd(F, R, lang);
+  if (f === 0) paintContents(F, R, lang); else if (F.flow) paintFlow(F, R, lang); else if (F.ch) paintChapter(F, R, lang); else paintEnd(F, R, lang);
   F.done = lang; F.tex.needsUpdate = true;
   const L = R.leaves[f % 2 ? (f + 1) / 2 - 1 : f / 2];
   if (f % 2) L.u.uVerso.value = F.tex; else { L.mat.map = F.tex; L.mat.needsUpdate = true; }
   // its pictures, once loaded, paint it again
-  if (F.ch) for (const b of F.ch.blocks) if (b.k === 'img' && !R.pics.has(b.src)) {
+  const chs = F.flow ? R.ch : F.ch ? [F.ch] : [];   // (a running page: any of its parts' pictures)
+  for (const ch of chs) for (const b of ch.by ? Object.values(ch.by).flatMap(T => T.blocks) : ch.blocks) if (b.k === 'img' && !R.pics.has(b.src)) {
     const im = new Image(); im.crossOrigin = 'anonymous'; R.pics.set(b.src, im);
-    im.onload = () => { for (const G of R.faces) if (G.ch === F.ch && G.done) { G.done = ''; facePaint(R, G.f); } setNeeds(true); };
+    im.onload = () => { for (const G of R.faces) if ((G.flow || G.ch === ch) && G.done) { G.done = ''; facePaint(R, G.f); } setNeeds(true); };
     im.src = b.src.replace(/w_\d+,h_\d+/, `w_1000,h_${Math.round(1000 / b.ar)}`);
   }
   setNeeds(true);
@@ -356,7 +467,7 @@ function readDispose(bk) {
 // turn to a spread (0: the contents; k: chapter k): the leaves between turn, one after another
 function readTurnTo(bk, s) {
   const R = bk.read; if (!R) { bk.readWant = s; return; }
-  s = THREE.MathUtils.clamp(s, 0, R.ch.length); if (!R.open) { R.pending = s; return; }
+  s = THREE.MathUtils.clamp(s, 0, spreadsOf(R)); if (!R.open) { R.pending = s; return; }
   for (const f of [2 * s - 1, 2 * s]) if (f >= 0) facePaint(R, f);
   const now = performance.now() / 1000, go = [];
   R.leaves.forEach((L, i) => { const want = i < s ? READ.turn : 0; if (L.to !== want) go.push([L, want]); });
@@ -418,7 +529,7 @@ function readHit(bk, o, d) {
 function readClick(bk, h) {
   const R = bk.read; if (!R || readTurning(bk)) return true;
   if (h.link) { if (h.link.href) window.open(h.link.href, '_blank', 'noopener'); else readTurnTo(bk, h.link.go); }
-  else if (h.side === 'right') { if (R.spread < R.ch.length) readTurnTo(bk, R.spread + 1); }
+  else if (h.side === 'right') { if (R.spread < spreadsOf(R)) readTurnTo(bk, R.spread + 1); else if (R.over) return false; }   // (past a summary's last page: it closes)
   else if (h.side === 'left') readTurnTo(bk, R.spread - 1);
   else return false;
   return true;
@@ -427,11 +538,23 @@ function readClick(bk, h) {
 function readHint(bk, h) {
   const R = bk.read; if (!R || !h) return null;
   if (h.link && h.link.href) return ['Open the link ↗', 'Mở liên kết ↗'];
-  if (h.link) { const s = h.link.go, ch = R.ch[s - 1]; return s ? ['Turn to ' + ch.en, 'Lật tới ' + ch.name] : ['Back to the contents', 'Về mục lục']; }
-  if (h.side === 'right') return R.spread < R.ch.length ? ['Click to turn the page', 'Bấm để lật trang'] : null;
+  if (h.link) { const s = h.link.go, ch = R.ch[s - 1]; return s ? ['Turn to ' + ch.en, 'Lật tới ' + ch.name] : R.over ? ['Back to the overview', 'Về trang tổng quan'] : ['Back to the contents', 'Về mục lục']; }
+  if (h.side === 'right') return R.spread < spreadsOf(R) ? ['Click to turn the page', 'Bấm để lật trang'] : R.over ? ['Click to close the book', 'Bấm để gập sách'] : null;
   if (h.side === 'left') return ['Click to turn back', 'Bấm để lật lại'];
-  return ['Click to put it back', 'Bấm để cất sách'];
+  return R.over ? ['Click to close the book (pause puts it back)', 'Bấm để gập sách (pause để cất lên kệ)'] : ['Click to put it back', 'Bấm để cất sách'];
 }
 function relabelRead(bk) { const R = bk.read; if (!R || !R.painting) return; titlePaint(R); for (const f of [2 * R.spread - 1, 2 * R.spread]) if (f >= 0) facePaint(R, f); R.painting = false; readOpening(bk); }
 
-export { buildRead, isReadable, readClick, readDispose, readHint, readHit, readOpening, readRelease, readTurning, relabelRead, stepRead, readTurnTo };
+// (tests: each book with a summary made and laid out in both languages: its overview fits its first page, how many
+// spreads it runs to, its type size there)
+async function readCheck(books, make) {
+  await loadSummaries(); const out = [];
+  for (const bk of books) {
+    if (!summaryOf(bk.it) || !make(bk) || !bk.read) continue;
+    const R = bk.read, g = canvas(8, 8).getContext('2d'), P = frameOf(R.W, R.H, true), r = { t: printTitle(bk.it, 'en'), S: R.S };
+    for (const lang of ['en', 'vi']) { const lay = layoutOf(R, R.over, P, g, lang, 1); r[lang] = { over: lay.pages.length === 1, fs: Math.round(lay.fs), pages: flowAll(R, lang).pages.length }; }
+    out.push(r);
+  }
+  return out;
+}
+export { buildRead, isReadable, loadSummaries, readCheck, readClick, readDispose, readHint, readHit, readOpening, readRelease, readTurning, relabelRead, stepRead, readTurnTo };

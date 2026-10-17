@@ -97,6 +97,10 @@ import json   # the books' covers (tools/covers/make.py): the images themselves 
 COVER_DIR = os.path.join(HERE, 'covers'); cover_files = sorted(f for f in os.listdir(COVER_DIR) if f.endswith('.webp')) if os.path.isdir(COVER_DIR) else []
 covers_inline = json.dumps({f[:-5]: 'data:image/webp;base64,' + base64.b64encode(open(os.path.join(COVER_DIR, f), 'rb').read()).decode() for f in cover_files}, separators=(',', ':'))
 covers_files = json.dumps({f[:-5]: 'covers/' + f for f in cover_files}, separators=(',', ':'))
+# the books' summaries, read when a book being listened to is opened (ui/leaves.js): inline in the one-file page, a file
+# next to it on Pages (fetched then)
+SUMS_PATH = os.path.join(HERE, 'summaries', 'books.json')
+sums_json = json.dumps(json.load(open(SUMS_PATH, encoding='utf-8')) if os.path.exists(SUMS_PATH) else {}, ensure_ascii=False, separators=(',', ':')).replace('</', '<\\/')
 
 THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@0.170.0/'
 IMPORTMAP = ('<script type="importmap">{"imports":{"three":"' + THREE_CDN + 'build/three.module.min.js",'
@@ -350,6 +354,7 @@ SCRIPTS = (CREDITS + '<script id="sky-weather-js">\n' + WX_JS + '</script>\n'
   + f'<script id="clock-glb" type="application/octet-stream">{clock}</script>\n'
   + f'<script id="iss-glb" type="application/octet-stream">{iss}</script>\n'
   + f'<script id="book-covers" type="application/json">{covers_inline}</script>\n'
+  + f'<script id="book-summaries" type="application/json">{sums_json}</script>\n'
   + '<script type="module">\n' + module + '</script>\n')
 
 assert page.count('</head>') == 1 and page.rstrip().endswith('</html>') and page.count('</body>') == 1, 'unexpected page structure'
@@ -463,6 +468,7 @@ if pages_dir:   # the same page with the models as a separate file
     iss_inline = f'<script id="iss-glb" type="application/octet-stream">{iss}</script>'
     assert page.count(cat_inline) == 1 and page.count(hen_inline) == 1
     covers_el = f'<script id="book-covers" type="application/json">{covers_inline}</script>'
+    sums_el = f'<script id="book-summaries" type="application/json">{sums_json}</script>'
     assert page.count(covers_el) == 1
     out = (page.replace(inline, '<script id="lib-glb" type="application/octet-stream" data-src="lib.glb"></script>', 1)
                .replace(cat_inline, '<script id="cat-bin" type="application/octet-stream" data-src="cat.bin"></script>', 1)
@@ -470,6 +476,7 @@ if pages_dir:   # the same page with the models as a separate file
                .replace(clock_inline, '<script id="clock-glb" type="application/octet-stream" data-src="clock.glb"></script>', 1)
                .replace(iss_inline, '<script id="iss-glb" type="application/octet-stream" data-src="iss.glb"></script>', 1)
                .replace(covers_el, f'<script id="book-covers" type="application/json">{covers_files}</script>', 1)
+               .replace(sums_el, '<script id="book-summaries" type="application/json" data-src="summaries.json"></script>', 1)
                .replace('/*GLB_PRELOAD*/', preload, 1).replace(mod_inline, loader, 1))
     open(os.path.join(pages_dir, 'index.html'), 'w', encoding='utf-8').write(out)
     open(os.path.join(pages_dir, 'lib3d.js'), 'w', encoding='utf-8').write(module)
@@ -480,6 +487,7 @@ if pages_dir:   # the same page with the models as a separate file
         print('dev  :', os.path.join(pages_dir, 'dev.html'), '(the modules unjoined)')
     shutil.copyfile(os.path.join(HERE, 'lib.glb'), os.path.join(pages_dir, 'lib.glb'))
     for f in ('cat.bin', 'hen.glb', 'clock.glb', 'iss.glb'): shutil.copyfile(os.path.join(HERE, f), os.path.join(pages_dir, f))
+    open(os.path.join(pages_dir, 'summaries.json'), 'w', encoding='utf-8').write(sums_json.replace('<\\/', '</'))
     os.makedirs(os.path.join(pages_dir, 'covers'), exist_ok=True)
     for f in cover_files: shutil.copyfile(os.path.join(COVER_DIR, f), os.path.join(pages_dir, 'covers', f))
     if os.path.exists(os.path.join(pages_dir, 'pets.glb')): os.remove(os.path.join(pages_dir, 'pets.glb'))   # (the cat and hen were one file until 14/10)

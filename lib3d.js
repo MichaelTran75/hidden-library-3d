@@ -3364,7 +3364,7 @@ function heroMaterials(bk, shape) {
     front.tex.needsUpdate = true; setNeeds(true);
   }; im.src = img; }
   bk.heroFaces = { front: img ? null : front, spine };   // (a jacket's picture is not redrawn for another language)
-  bk.heroShape = { hinge: shape.hinge, page: shape.page };
+  bk.heroShape = { hinge: shape.hinge, page: shape.page, endW: shape.endW };
   return mats;
 }
 function heroMesh(bk) {
@@ -3374,6 +3374,13 @@ function heroMesh(bk) {
   m.layers.set(HERO_LAYER); m.visible = false; m.userData.book = bk; scene.add(m); bk.hero = m;
   if (isReadItem(bk.it) && buildRead(bk, shape, m, bk.heroBase)) m.material[7] = heroSharp(bk.read.endMat, bk.flapU);   // (a book of notes: its leaves, and its title page inside the front board)
   HERO.list.push(bk); heroForget(); return m;
+}
+// a book out of the shelf made one to read, if it is not yet (being listened to, opened on its summary: ui/leaves.js):
+// its leaves, and its title page inside the front board; false if it has nothing to show
+function heroRead(bk) {
+  if (bk.read) return true; if (!bk.hero || !bk.heroShape) return false;
+  if (!buildRead(bk, bk.heroShape, bk.hero, bk.heroBase)) return false;
+  bk.hero.material[7] = heroSharp(bk.read.endMat, bk.flapU); setNeeds(true); return true;
 }
 // past HERO.keep books made, the one longest out of sight (and not on its way anywhere) is let go: its pictures are large
 function heroForget() {
@@ -3742,11 +3749,21 @@ function drawEndpaper(c, which, lang, title) {
      back to the contents.
    - Its pictures are the page's (Wix's, which allows them to be drawn here). Its pages are painted while the book is
      out (in the browser's idle time, the title page and the contents first) and let go when it is back on the shelf. */
+/* ---- a book being listened to, read too (G, 18/10/2026: "tiếp tục click vào sách thì sách sẽ mở trang đầu với tóm tắt
+   nội dung chi tiết, click tiếp để lật trang, chỉ khi nào ấn nút pause thì mới ngừng và sách cất lại lên kệ"). The book
+   out of the shelf while its audio plays opens, on a click, as a book of notes does, on its summary (summaries/books.json,
+   in English and Vietnamese, each book's own words: what it argues, its ideas, its lessons): the title page inside the
+   front board (with its author), the overview on the first page, then a spread for each part of the summary, and the
+   page's own notes on it after those. Its leaves turn as a book of notes' do; a click on its board, or past its last
+   page, closes it again (it plays on); pausing puts it back on its shelf (flight.js). An item with no summary and no
+   notes opens on a page of its name, author and pages. */
 const READ = { stagger: 0.12, dur: 0.75, gap: 0.00003, turn: 2.7 };   // (turn: as far as the board opens: flight.js OPEN_TURN)
 const SERIF = `Georgia, 'Times New Roman', serif`, INK = '#2c241b', MUTED = '#7d6c56', ACCENT = '#8a3b2a';
 const NAMES_EN = { 'Hàn Quốc': 'South Korea', 'Nhật Bản': 'Japan', 'Singapore': 'Singapore', 'Trung Quốc': 'China', 'Đài Loan': 'Taiwan' };
 const WORDS = { contents: ['Contents', 'Mục lục'], hint: ['Click a country to turn to its pages', 'Bấm tên một nước để lật tới trang'], end: ['The end', 'Hết'],
-  back: ['‹ Contents', '‹ Mục lục'], from: ['From the notes of Hidden Library', 'Từ các ghi chép của Hidden Library'] };
+  back: ['‹ Contents', '‹ Mục lục'], from: ['From the notes of Hidden Library', 'Từ các ghi chép của Hidden Library'],
+  backOver: ['‹ Overview', '‹ Tổng quan'], over: ['Overview', 'Tổng quan'], fromSum: ['A summary by Hidden Library', 'Tóm tắt của Hidden Library'],
+  turnOn: ['Click to turn the page', 'Bấm để lật trang'], notes: ['Notes', 'Ghi chú'], hintAny: ['Click a chapter to turn to its pages', 'Bấm tên một mục để lật tới trang'] };
 const say = (k, lang) => WORDS[k][lang === 'vi' ? 1 : 0];
 const fontOf = (fs, b, i) => `${i ? 'italic ' : ''}${b ? 700 : 400} ${Math.round(fs)}px ${SERIF}`;
 
@@ -3786,6 +3803,49 @@ function chaptersOf(it) {
   return out;
 }
 const isReadable = it => chaptersOf(it).length > 0;
+// the summaries (summaries/books.json, by a book's English title): inline in the one-file page, a file next to it on
+// Pages, fetched the first time a book is opened
+const SUMS = { data: null, p: null };
+function loadSummaries() {
+  if (SUMS.p) return SUMS.p;
+  const el = document.getElementById('book-summaries');
+  SUMS.p = (async () => {
+    try { if (!el) return {}; if (el.dataset.src) { const r = await fetch(el.dataset.src); return r.ok ? await r.json() : {}; } return JSON.parse(el.textContent || '{}'); }
+    catch (e) { return {}; }
+  })().then(d => (SUMS.data = d || {}));
+  return SUMS.p;
+}
+const summaryOf = it => { const b = bookInfo(it); return (SUMS.data && b && SUMS.data[b.en]) || null; };
+// a summary's words: paragraphs a blank line apart, lines starting "- " a list, **words** bold
+function sumRuns(s) {   // (**bold**, *italic*)
+  const out = [];
+  for (const p of String(s).split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/)) if (p) out.push(/^\*\*[^*]+\*\*$/.test(p) ? { t: p.slice(2, -2), b: true } : /^\*[^*]+\*$/.test(p) ? { t: p.slice(1, -1), b: false, i: true } : { t: p, b: false });
+  return out;
+}
+function sumBlocks(s) {
+  const out = [];
+  for (const para of String(s || '').split(/\n\s*\n/)) {
+    let list = null, words = [];
+    const flush = () => { if (words.length) { out.push({ k: 'p', runs: sumRuns(words.join(' ')) }); words = []; } };
+    for (const ln of para.split('\n').map(l => l.trim()).filter(Boolean)) {
+      if (/^[-•] /.test(ln)) { flush(); if (!list) { list = { k: 'ul', items: [] }; out.push(list); } list.items.push(sumRuns(ln.slice(2))); }
+      else { list = null; words.push(ln); }
+    }
+    flush();
+  }
+  return out;
+}
+// the book's line under its title: its author and year, its pages (in the page's language), in italics
+function bylineOf(it, lang) { const b = bookInfo(it), n = b && b.pages; return [byOf(it), n ? (lang === 'vi' ? `${n} trang` : `${n} pages`) : ''].filter(Boolean).join(' · '); }
+function overviewOf(it, words) {   // the first page: the book's title, its line, then its overview (in each language)
+  const side = lang => ({ title: printTitle(it, lang), blocks: [{ k: 'p', runs: [{ t: bylineOf(it, lang), b: false, i: true }], muted: true }, ...sumBlocks(words ? words[lang] : '')] });
+  return { name: WORDS.over[1], en: WORDS.over[0], by: { en: side('en'), vi: side('vi') } };
+}
+function summaryChapters(S) {   // [label, title, words] for each part, the two languages side by side
+  const n = Math.min(S.en.ch.length, S.vi.ch.length), out = [];
+  for (let k = 0; k < n; k++) { const e = S.en.ch[k], v = S.vi.ch[k]; out.push({ name: v[0], en: e[0], by: { en: { title: e[1], blocks: sumBlocks(e[2]) }, vi: { title: v[1], blocks: sumBlocks(v[2]) } } }); }
+  return out;
+}
 
 /* ---- setting type: runs broken into lines (justified, the last line of a paragraph left as it is), a chapter's
    blocks flowed down its pages */
@@ -3796,7 +3856,7 @@ function wordsOf(runs) {   // words with their weight, and whether a space follo
     for (const part of r.t.split(/(\s+)/)) {
       if (!part) continue;
       if (/^\s+$/.test(part)) { if (ws.length) ws[ws.length - 1].sp = true; continue; }
-      const prev = ws[ws.length - 1]; ws.push({ t: part, b: r.b, h: r.h, glue: !!(prev && !prev.br && !prev.sp) });
+      const prev = ws[ws.length - 1]; ws.push({ t: part, b: r.b, i: r.i, h: r.h, glue: !!(prev && !prev.br && !prev.sp) });
     }
   }
   return ws;
@@ -3809,7 +3869,7 @@ function setLines(g, runs, width, fs) {
     const w = ws[i]; if (w.br) { end(true); continue; }
     // a word and those glued to it go together
     let j = i, gw = 0; const grp = [];
-    do { const v = ws[j]; g.font = fontOf(fs, v.b); const vw = g.measureText(v.t).width; grp.push({ ...v, w: vw }); gw += vw; j++; } while (j < ws.length && ws[j].glue);
+    do { const v = ws[j]; g.font = fontOf(fs, v.b, v.i); const vw = g.measureText(v.t).width; grp.push({ ...v, w: vw }); gw += vw; j++; } while (j < ws.length && ws[j].glue);
     const sp = line.length ? space(line[line.length - 1].b) : 0;
     if (line.length && x + sp + gw > width) end(false);
     for (const v of grp) { v.x = x + (line.length && v === grp[0] ? space(line[line.length - 1].b) : 0); line.push(v); x = v.x + v.w; }
@@ -3823,25 +3883,26 @@ function drawLine(g, ln, x0, y, width, fs, color, lk) {   // (lk: where a link's
   const extra = !ln.last && gaps ? Math.min((width - ln.w) / gaps, fs * 0.6) : 0;   // (justified; a line far too short is left ragged)
   let add = 0; g.textBaseline = 'alphabetic';
   ln.words.forEach((w, k) => {
-    if (k && !w.glue) add += extra; const x = x0 + w.x + add; g.font = fontOf(fs, w.b); g.fillStyle = w.h ? ACCENT : color || INK; g.fillText(w.t, x, y);
+    if (k && !w.glue) add += extra; const x = x0 + w.x + add; g.font = fontOf(fs, w.b, w.i); g.fillStyle = w.h ? ACCENT : color || INK; g.fillText(w.t, x, y);
     if (w.h) { g.fillRect(x, y + fs * 0.14, w.w + (k < ln.words.length - 1 && ln.words[k + 1].h === w.h ? extra + fs * 0.25 : 0), Math.max(1.5, fs * 0.05)); if (lk) lk(x - 2, y - fs * 0.85, x + w.w + 2, y + fs * 0.3, w.h); }
   });
 }
 // a chapter flowed down pages: items of a height, drawn at their place; those of a box carry its number
-function flowChapter(g, ch, P, fs) {
-  const items = [], LH = fs * 1.42, TW = P.tw, PAD = fs * 0.7;
+function flowChapter(g, ch, P, fs, lang) { return paginate(itemsOf(g, ch, P, fs, lang), P.y1 - P.y0, fs); }
+function itemsOf(g, ch, P, fs, lang) {
+  const items = [], LH = fs * 1.42, TW = P.tw, PAD = fs * 0.7, T = ch.by ? ch.by[lang] || ch.by.en : ch;   // (a summary's part: its words in the page's language)
   const gap = (h, box = null) => items.push({ h, box, gap: true });
   const text = (runs, x0, w, box, f = fs, lh = LH, color) => { for (const ln of setLines(g, runs, w, f)) items.push({ h: lh, box, draw: (g, x, y, lang, pic, lk) => drawLine(g, ln, x + x0, y + lh * 0.74, w, f, color, lk) }); };
   // the chapter's country, small and spaced in the accent, over its title
   items.push({ h: fs * 1.5, head: true, draw: (g, x, y, lang) => { g.font = `600 ${Math.round(fs * 0.62)}px ${SERIF}`; g.fillStyle = ACCENT; g.letterSpacing = `${(fs * 0.18).toFixed(1)}px`; g.fillText((lang === 'vi' ? ch.name : ch.en).toUpperCase(), x, y + fs * 0.75); g.letterSpacing = '0px'; } });
   const TF = fs * 1.48; g.font = fontOf(TF, true);
-  for (const ln of setLines(g, [{ t: ch.title, b: true }], TW, TF)) items.push({ h: TF * 1.2, draw: (g, x, y) => drawLine(g, { ...ln, last: true }, x, y + TF * 0.92, TW, TF) });
+  for (const ln of setLines(g, [{ t: T.title, b: true }], TW, TF)) items.push({ h: TF * 1.2, draw: (g, x, y) => drawLine(g, { ...ln, last: true }, x, y + TF * 0.92, TW, TF) });
   items.push({ h: fs * 0.55, draw: (g, x, y) => { g.fillStyle = ACCENT; g.fillRect(x, y + fs * 0.2, fs * 2.2, Math.max(2, fs * 0.08)); } });
   gap(fs * 0.5);
   const flow = (blocks, x0, w, box) => {
     for (const b of blocks) {
       if (b.k === 'img') { const h = w / b.ar; items.push({ h: h + fs * 0.8, img: b, draw: (g, x, y, lang, pic) => drawPicture(g, pic, x + x0, y, w, h) }); }
-      else if (b.k === 'p') { text(b.runs, x0, w, box); gap(fs * 0.45, box); }
+      else if (b.k === 'p') { text(b.runs, x0, w, box, fs, LH, b.muted ? MUTED : undefined); gap(fs * 0.45, box); }
       else if (b.k === 'ul') {
         for (const li of b.items) {
           const lines = setLines(g, li, w - fs * 1.25, fs);
@@ -3855,15 +3916,32 @@ function flowChapter(g, ch, P, fs) {
       }
     }
   };
-  flow(ch.blocks, 0, TW, null);
-  // onto the pages: an item that does not fit goes over to the next (a gap at the top of a page is dropped)
-  const pages = [[]], room = P.y1 - P.y0; let y = 0;
+  flow(T.blocks, 0, TW, null);
+  for (const it of items) it.ch = ch;
+  return items;
+}
+// onto the pages: an item that does not fit goes over to the next (a gap at the top of a page is dropped); a part's
+// head goes over too if too little of its page is left for it and a few lines after it
+function paginate(items, room, fs) {
+  const pages = [[]]; let y = 0;
   for (const it of items) {
-    if (y + it.h > room && y > 0) { pages.push([]); y = 0; if (it.gap && it.box === null) continue; }
+    if (y > 0 && (y + it.h > room || (it.head && y + fs * 8 > room))) { pages.push([]); y = 0; if (it.gap && it.box === null) continue; }
     pages[pages.length - 1].push({ it, y }); y += it.h;
   }
   return pages;
 }
+// a summary's parts (and the page's notes after them) one after another down its pages, as a book's text runs on, at
+// one size of type; each page knows the part it opens in (its running head)
+function flowAll(R, lang) {
+  if (R.flows[lang]) return R.flows[lang];
+  const g = canvas(8, 8).getContext('2d'), P = frameOf(R.W, R.H, true), fs = R.W * 0.03, items = [];
+  R.ch.forEach((ch, k) => { if (k) items.push({ h: fs * 1.7, gap: true, box: null, ch }); items.push(...itemsOf(g, ch, P, fs, lang)); });
+  const pages = paginate(items, P.y1 - P.y0, fs).filter(p => p.length);
+  for (const pg of pages) pg.ch = pg[0].it.ch;
+  const lp = pages[pages.length - 1], la = lp && lp[lp.length - 1], endFits = !!la && la.y + la.it.h + fs * 2.2 < P.y1 - P.y0;   // (the end marked under the last line, or on a page of its own)
+  return (R.flows[lang] = { fs, pages, endFits });
+}
+const spreadsOf = R => R.over ? R.S : R.ch.length;   // (how far its leaves turn)
 function drawPicture(g, pic, x, y, w, h) {
   g.save(); const r = Math.min(12, w * 0.012);
   g.beginPath(); g.roundRect(x, y, w, h, r); g.clip();
@@ -3900,7 +3978,18 @@ function folio(g, P, n, rightPage, fs) {
 // a link on a page: where (in the page's pixels) and where it leads
 const linkAt = (face, x0, y0, x1, y1, go) => face.links.push({ x0, y0, x1, y1, go });
 
+function paintOverview(face, R, lang) {   // a summary's first page: the book's title and line, its overview, a way on
+  const { c, W, H } = face, g = c.getContext('2d'), P = frameOf(W, H, true), fsH = W * 0.03; face.links = [];
+  pagePaper(g, W, H, true);
+  const lay = layoutOf(R, R.over, P, g, lang, 1);
+  runningHead(g, P, W, '', R.title, fsH);
+  for (const { it, y } of lay.pages[0] || []) if (it.draw) it.draw(g, P.x0, P.y0 + y, lang, null, null);
+  g.font = `400 ${Math.round(fsH * 0.95)}px ${SERIF}`; g.fillStyle = MUTED; g.textAlign = 'right';
+  if (spreadsOf(R)) g.fillText('›', P.x0 + P.tw - fsH * 1.6, P.foot);
+  g.textAlign = 'left'; folio(g, P, 1, true, fsH);
+}
 function paintContents(face, R, lang) {
+  if (R.over) return paintOverview(face, R, lang);
   const { c, W, H } = face, g = c.getContext('2d'), P = frameOf(W, H, true), fs = W * 0.034; face.links = [];
   pagePaper(g, W, H, true);
   g.textAlign = 'center'; g.fillStyle = ACCENT; g.font = `600 ${Math.round(fs * 0.7)}px ${SERIF}`; g.letterSpacing = `${(fs * 0.3).toFixed(1)}px`;
@@ -3921,16 +4010,17 @@ function paintContents(face, R, lang) {
     linkAt(face, P.x0 - fs * 0.4, top - fs * 0.25, P.x0 + P.tw + fs * 0.4, top + step - fs * 0.3, k + 1);
     y += step;
   });
-  g.font = fontOf(fs * 0.72, false, true); g.fillStyle = MUTED; g.textAlign = 'center'; g.fillText(say('hint', lang) + ' →', P.x0 + P.tw / 2, P.y1 - fs * 0.4); g.textAlign = 'left';
+  const lands = R.ch.every(ch => NAMES_EN[ch.name]);   // (a book of countries' notes, or of any notes)
+  g.font = fontOf(fs * 0.72, false, true); g.fillStyle = MUTED; g.textAlign = 'center'; g.fillText(say(lands ? 'hint' : 'hintAny', lang) + ' →', P.x0 + P.tw / 2, P.y1 - fs * 0.4); g.textAlign = 'left';
   folio(g, P, 1, true, fs);
 }
 function paintChapter(face, R, lang) {
   const { c, W, H, ch, part } = face, g = c.getContext('2d'), right = part === 1, P = frameOf(W, H, right), k = R.ch.indexOf(ch);
-  const lay = layoutOf(R, ch, P, g), pics = R.pics, fs = lay.fs; face.links = [];
+  const lay = layoutOf(R, ch, P, g, lang), pics = R.pics, fs = lay.fs, back = R.over ? 'backOver' : 'back'; face.links = [];
   pagePaper(g, W, H, right);
   const name = lang === 'vi' ? ch.name : ch.en, fsH = W * 0.03;
-  if (right) runningHead(g, P, W, '', R.title, fsH); else runningHead(g, P, W, say('back', lang), name, fsH, ACCENT);   // (the way back to the contents, in the accent)
-  if (!right) { g.font = `500 ${Math.round(fsH * 0.6)}px ${SERIF}`; g.letterSpacing = `${(fsH * 0.12).toFixed(1)}px`; linkAt(face, P.x0 - fsH * 0.5, P.head - fsH * 1.2, P.x0 + g.measureText(say('back', lang).toUpperCase()).width + fsH * 0.6, P.head + fsH * 0.6, 0); g.letterSpacing = '0px'; }
+  if (right) runningHead(g, P, W, '', R.title, fsH); else runningHead(g, P, W, say(back, lang), name, fsH, ACCENT);   // (the way back to the contents, or a summary's overview, in the accent)
+  if (!right) { g.font = `500 ${Math.round(fsH * 0.6)}px ${SERIF}`; g.letterSpacing = `${(fsH * 0.12).toFixed(1)}px`; linkAt(face, P.x0 - fsH * 0.5, P.head - fsH * 1.2, P.x0 + g.measureText(say(back, lang).toUpperCase()).width + fsH * 0.6, P.head + fsH * 0.6, 0); g.letterSpacing = '0px'; }
   // the boxes behind their lines, then the lines
   const placed = lay.pages[part] || [];
   for (let i = 0; i < placed.length;) {
@@ -3950,6 +4040,25 @@ function paintChapter(face, R, lang) {
   if (!right) g.fillText('‹', P.x0 + fsH * 1.6, P.foot);
   g.textAlign = 'left';
 }
+function paintFlow(face, R, lang) {   // a page of a summary's running text (or, past its end, the end)
+  const { c, W, H, f } = face, g = c.getContext('2d'), right = f % 2 === 0, P = frameOf(W, H, right), fsH = W * 0.03, fl = flowAll(R, lang), pg = fl.pages[f - 1]; face.links = [];
+  if (!pg) { if (f - 1 === fl.pages.length && !fl.endFits) paintEnd(face, R, lang); else pagePaper(g, W, H, right); return; }
+  pagePaper(g, W, H, right);
+  const name = lang === 'vi' ? pg.ch.name : pg.ch.en;
+  if (right) runningHead(g, P, W, '', R.title, fsH);
+  else {
+    runningHead(g, P, W, say('backOver', lang), name, fsH, ACCENT);   // (the way back to the overview, in the accent)
+    g.font = `500 ${Math.round(fsH * 0.6)}px ${SERIF}`; g.letterSpacing = `${(fsH * 0.12).toFixed(1)}px`; linkAt(face, P.x0 - fsH * 0.5, P.head - fsH * 1.2, P.x0 + g.measureText(say('backOver', lang).toUpperCase()).width + fsH * 0.6, P.head + fsH * 0.6, 0); g.letterSpacing = '0px';
+  }
+  const lk = (x0, y0, x1, y1, href) => face.links.push({ x0, y0, x1, y1, href });
+  for (const { it, y } of pg) if (it.draw) it.draw(g, P.x0, P.y0 + y, lang, it.img ? R.pics.get(it.img.src) : null, lk);
+  if (f === fl.pages.length && fl.endFits) { const last = pg[pg.length - 1], y = P.y0 + last.y + last.it.h + fl.fs * 1.2; { g.font = fontOf(fl.fs * 0.8, false, true); g.fillStyle = MUTED; g.textAlign = 'center'; g.fillText('— ' + say('end', lang) + ' —', P.x0 + P.tw / 2, y); g.textAlign = 'left'; } }
+  folio(g, P, f + 1, right, fsH);
+  g.font = `400 ${Math.round(fsH * 0.95)}px ${SERIF}`; g.fillStyle = MUTED; g.textAlign = right ? 'right' : 'left';
+  if (right && f / 2 < R.S && f < fl.pages.length) g.fillText('›', P.x0 + P.tw - fsH * 1.6, P.foot);
+  if (!right) g.fillText('‹', P.x0 + fsH * 1.6, P.foot);
+  g.textAlign = 'left';
+}
 function paintEnd(face, R, lang) {
   const { c, W, H } = face, g = c.getContext('2d'), fs = W * 0.034; face.links = [];
   pagePaper(g, W, H, false);
@@ -3965,17 +4074,19 @@ function paintTitlePage(R, lang) {
   g.fillStyle = MUTED; g.font = `600 ${Math.round(fs * 0.55)}px ${SERIF}`; g.letterSpacing = `${(fs * 0.3).toFixed(1)}px`; g.fillText('HIDDEN LIBRARY', cx, H * 0.2); g.letterSpacing = '0px';
   g.fillStyle = INK; let size = fs * 1.9; g.font = fontOf(size, true); while (g.measureText(R.title).width > W * 0.68 && size > fs) { size -= 2; g.font = fontOf(size, true); }
   g.fillText(R.title, cx, H * 0.36);
+  const by = R.over ? bylineOf(R.bk.it, lang) : '';
+  if (by) { g.font = fontOf(fs * 0.6, false, true); g.fillStyle = MUTED; let t = by; while (g.measureText(t).width > W * 0.7 && t.length > 8) t = t.slice(0, -2).trimEnd() + '…'; g.fillText(t, cx, H * 0.455); }
   g.fillStyle = ACCENT; g.beginPath(); for (const [dx, s] of [[-fs * 1.1, 0.5], [0, 1], [fs * 1.1, 0.5]]) { g.moveTo(cx + dx, H * 0.41 - fs * 0.22 * s); g.lineTo(cx + dx + fs * 0.22 * s, H * 0.41); g.lineTo(cx + dx, H * 0.41 + fs * 0.22 * s); g.lineTo(cx + dx - fs * 0.22 * s, H * 0.41); } g.fill();
-  g.font = fontOf(fs * 0.82, false, true); g.fillStyle = INK;
-  R.ch.forEach((ch, k) => g.fillText(lang === 'vi' ? ch.name : ch.en, cx, H * 0.5 + k * fs * 1.35));
-  g.font = fontOf(fs * 0.55, false, true); g.fillStyle = MUTED; g.fillText(say('from', lang), cx, H * 0.86);
+  g.font = fontOf(fs * 0.82, false, true); g.fillStyle = INK; const y0 = H * (by ? 0.53 : 0.5), dy = Math.min(fs * 1.35, (H * 0.8 - y0) / Math.max(1, R.ch.length));
+  R.ch.forEach((ch, k) => g.fillText(lang === 'vi' ? ch.name : ch.en, cx, y0 + k * dy));
+  g.font = fontOf(fs * 0.55, false, true); g.fillStyle = MUTED; g.fillText(say(R.over ? 'fromSum' : 'from', lang), cx, H * 0.86);
   g.textAlign = 'left';
 }
 // a chapter's type size: the largest (35 px to a page 1024 across, down to 20) at which it fills no more than its two pages
-function layoutOf(R, ch, P, g) {
-  const key = `${R.W}`; if (ch.lay && ch.lay.key === key) return ch.lay;
+function layoutOf(R, ch, P, g, lang, most = 2) {
+  const key = `${R.W}|${lang}|${most}`; if (ch.lay && ch.lay.key === key) return ch.lay;
   let lay = null;
-  for (let fs = R.W * 0.034; fs >= R.W * 0.0195; fs -= R.W * 0.001) { const pages = flowChapter(g, ch, P, fs); lay = { key, fs, pages }; if (pages.length <= 2) break; }
+  for (let fs = R.W * 0.034; fs >= R.W * 0.0195; fs -= R.W * 0.001) { const pages = flowChapter(g, ch, P, fs, lang); lay = { key, fs, pages }; if (pages.length <= most) break; }
   ch.lay = lay; return lay;
 }
 
@@ -4017,15 +4128,21 @@ function leafStrip(bk, pg, x) {   // in the unit box (the hero is scaled by the 
 /* ---- the book: its chapters, faces (0: the contents; 2k−1 and 2k: chapter k's two pages; the last: the end), leaves
    (leaf i shows face 2(i−1) on its front and 2i−1 on its back) and title page */
 function buildRead(bk, shape, mesh, base) {
-  const ch = chaptersOf(bk.it); if (!ch.length) return null;
+  const notes = chaptersOf(bk.it), S = summaryOf(bk.it);
+  let ch = notes, over = null;
+  if (S) { ch = [...summaryChapters(S), ...notes]; over = overviewOf(bk.it, { en: S.en.over, vi: S.vi.over }); }
+  else if (bk.it.src && !notes.length) over = overviewOf(bk.it, null);   // (something to listen to with nothing to read: its name, author and pages)
+  if (!ch.length && !over) return null;
   const pg = shape.page, W = 1024, H = Math.round(W * (pg.y1 - pg.y0) / (pg.z0 - pg.z1));
   const blank = canvas(8, 8), bg = blank.getContext('2d'); bg.fillStyle = '#f4ecd8'; bg.fillRect(0, 0, 8, 8);
-  const R = { bk, ch, W, H, shape, spread: 0, pending: null, open: false, flapU: bk.flapU, title: printTitle(bk.it), faces: [], leaves: [], pics: new Map(), blank: heroCanvasTex(blank, true) };
-  const nf = 2 * ch.length + 2;
-  for (let f = 0; f < nf; f++) R.faces.push({ f, W, H, c: null, tex: null, links: [], done: '', ch: f && f < nf - 1 ? ch[Math.ceil(f / 2) - 1] : null, part: f && f < nf - 1 ? (f % 2 ? 0 : 1) : -1 });
+  const R = { bk, ch, over, W, H, shape, spread: 0, pending: null, open: false, flapU: bk.flapU, title: printTitle(bk.it), faces: [], leaves: [], pics: new Map(), flows: {}, blank: heroCanvasTex(blank, true) };
+  // (a summary: its overview on the first page, then its running pages, as many leaves as the longer language needs)
+  if (over) R.S = Math.ceil(Math.max(flowAll(R, 'en').pages.length, flowAll(R, 'vi').pages.length) / 2);
+  const nf = over ? 2 * R.S + 2 : 2 * ch.length + 2;
+  for (let f = 0; f < nf; f++) R.faces.push({ f, W, H, c: null, tex: null, links: [], done: '', ch: !over && f && f < nf - 1 ? ch[Math.ceil(f / 2) - 1] : null, part: !over && f && f < nf - 1 ? (f % 2 ? 0 : 1) : -1, flow: !!over && f > 0 });
   // the leaves, stacked on the page block (the first on top); turned, the same offsets put them on the endpaper in the
   // reverse order (the first underneath)
-  const nl = ch.length + 1;
+  const nl = nf / 2;
   for (let i = 0; i < nl; i++) {
     const L = { i, phi: 0, bend: 0, from: 0, to: 0, t0: null, dur: 1, dir: 1, u: { uPhi: { value: 0 }, uBend: { value: 0 }, uMax: { value: 0 }, uVerso: { value: R.blank } } };
     L.mat = leafMaterial(R, L, base);
@@ -4042,14 +4159,15 @@ function buildRead(bk, shape, mesh, base) {
 function facePaint(R, f) {   // a face painted (again if the language changed), its texture given to its leaf
   const F = R.faces[f], lang = pageLang(); if (!F || F.done === lang) return;
   if (!F.c) { F.c = canvas(F.W, F.H); F.tex = heroCanvasTex(F.c, true); F.tex.generateMipmaps = false; F.tex.minFilter = THREE.LinearFilter; }
-  if (f === 0) paintContents(F, R, lang); else if (F.ch) paintChapter(F, R, lang); else paintEnd(F, R, lang);
+  if (f === 0) paintContents(F, R, lang); else if (F.flow) paintFlow(F, R, lang); else if (F.ch) paintChapter(F, R, lang); else paintEnd(F, R, lang);
   F.done = lang; F.tex.needsUpdate = true;
   const L = R.leaves[f % 2 ? (f + 1) / 2 - 1 : f / 2];
   if (f % 2) L.u.uVerso.value = F.tex; else { L.mat.map = F.tex; L.mat.needsUpdate = true; }
   // its pictures, once loaded, paint it again
-  if (F.ch) for (const b of F.ch.blocks) if (b.k === 'img' && !R.pics.has(b.src)) {
+  const chs = F.flow ? R.ch : F.ch ? [F.ch] : [];   // (a running page: any of its parts' pictures)
+  for (const ch of chs) for (const b of ch.by ? Object.values(ch.by).flatMap(T => T.blocks) : ch.blocks) if (b.k === 'img' && !R.pics.has(b.src)) {
     const im = new Image(); im.crossOrigin = 'anonymous'; R.pics.set(b.src, im);
-    im.onload = () => { for (const G of R.faces) if (G.ch === F.ch && G.done) { G.done = ''; facePaint(R, G.f); } setNeeds(true); };
+    im.onload = () => { for (const G of R.faces) if ((G.flow || G.ch === ch) && G.done) { G.done = ''; facePaint(R, G.f); } setNeeds(true); };
     im.src = b.src.replace(/w_\d+,h_\d+/, `w_1000,h_${Math.round(1000 / b.ar)}`);
   }
   setNeeds(true);
@@ -4077,7 +4195,7 @@ function readDispose(bk) {
 // turn to a spread (0: the contents; k: chapter k): the leaves between turn, one after another
 function readTurnTo(bk, s) {
   const R = bk.read; if (!R) { bk.readWant = s; return; }
-  s = THREE.MathUtils.clamp(s, 0, R.ch.length); if (!R.open) { R.pending = s; return; }
+  s = THREE.MathUtils.clamp(s, 0, spreadsOf(R)); if (!R.open) { R.pending = s; return; }
   for (const f of [2 * s - 1, 2 * s]) if (f >= 0) facePaint(R, f);
   const now = performance.now() / 1000, go = [];
   R.leaves.forEach((L, i) => { const want = i < s ? READ.turn : 0; if (L.to !== want) go.push([L, want]); });
@@ -4139,7 +4257,7 @@ function readHit(bk, o, d) {
 function readClick(bk, h) {
   const R = bk.read; if (!R || readTurning(bk)) return true;
   if (h.link) { if (h.link.href) window.open(h.link.href, '_blank', 'noopener'); else readTurnTo(bk, h.link.go); }
-  else if (h.side === 'right') { if (R.spread < R.ch.length) readTurnTo(bk, R.spread + 1); }
+  else if (h.side === 'right') { if (R.spread < spreadsOf(R)) readTurnTo(bk, R.spread + 1); else if (R.over) return false; }   // (past a summary's last page: it closes)
   else if (h.side === 'left') readTurnTo(bk, R.spread - 1);
   else return false;
   return true;
@@ -4148,12 +4266,25 @@ function readClick(bk, h) {
 function readHint(bk, h) {
   const R = bk.read; if (!R || !h) return null;
   if (h.link && h.link.href) return ['Open the link ↗', 'Mở liên kết ↗'];
-  if (h.link) { const s = h.link.go, ch = R.ch[s - 1]; return s ? ['Turn to ' + ch.en, 'Lật tới ' + ch.name] : ['Back to the contents', 'Về mục lục']; }
-  if (h.side === 'right') return R.spread < R.ch.length ? ['Click to turn the page', 'Bấm để lật trang'] : null;
+  if (h.link) { const s = h.link.go, ch = R.ch[s - 1]; return s ? ['Turn to ' + ch.en, 'Lật tới ' + ch.name] : R.over ? ['Back to the overview', 'Về trang tổng quan'] : ['Back to the contents', 'Về mục lục']; }
+  if (h.side === 'right') return R.spread < spreadsOf(R) ? ['Click to turn the page', 'Bấm để lật trang'] : R.over ? ['Click to close the book', 'Bấm để gập sách'] : null;
   if (h.side === 'left') return ['Click to turn back', 'Bấm để lật lại'];
-  return ['Click to put it back', 'Bấm để cất sách'];
+  return R.over ? ['Click to close the book (pause puts it back)', 'Bấm để gập sách (pause để cất lên kệ)'] : ['Click to put it back', 'Bấm để cất sách'];
 }
 function relabelRead(bk) { const R = bk.read; if (!R || !R.painting) return; titlePaint(R); for (const f of [2 * R.spread - 1, 2 * R.spread]) if (f >= 0) facePaint(R, f); R.painting = false; readOpening(bk); }
+
+// (tests: each book with a summary made and laid out in both languages: its overview fits its first page, how many
+// spreads it runs to, its type size there)
+async function readCheck(books, make) {
+  await loadSummaries(); const out = [];
+  for (const bk of books) {
+    if (!summaryOf(bk.it) || !make(bk) || !bk.read) continue;
+    const R = bk.read, g = canvas(8, 8).getContext('2d'), P = frameOf(R.W, R.H, true), r = { t: printTitle(bk.it, 'en'), S: R.S };
+    for (const lang of ['en', 'vi']) { const lay = layoutOf(R, R.over, P, g, lang, 1); r[lang] = { over: lay.pages.length === 1, fs: Math.round(lay.fs), pages: flowAll(R, lang).pages.length }; }
+    out.push(r);
+  }
+  return out;
+}
 /* ---- the titles on the shelves' spines: drawn after the watercolour pass so they stay sharp, and hidden wherever the
    room stands in front of the book (each pixel is tested against the room's depth); shown only once its section is
    opened and the camera has come close. (A book out of the shelf has its words printed on itself: hero-books.js.) */
@@ -7339,7 +7470,15 @@ function presentPose(bk) {
 // read (ui/leaves.js) comes nearer still, square to the camera, its spine in the middle of the free side
 function openPose(bk) {
   const v = focusView(bk.sec), fwd = v.tgt.clone().sub(v.pos).normalize(), up = new V3(0, 1, 0), right = fwd.clone().cross(up).normalize(), rd = !!bk.read;
-  const D = nearOf(v, rd ? 0.66 : 0.8), p = v.pos.clone().addScaledVector(fwd, D).addScaledVector(right, rd ? 0 : -0.02).addScaledVector(up, -0.02 - bk.h / 2);
+  // (a book to read as near as lets its spread fit the free part of the screen, right of the card, and its height the
+  // screen's: a large book, as Poor Charlie's Almanack is, further off; the view's lens shift keeps its spine in the middle there)
+  let near = rd ? 0.66 : 0.8;
+  if (rd) {
+    const tv = Math.tan(v.fov * Math.PI / 360), th = tv * innerWidth / Math.max(1, innerHeight), card = document.getElementById('l3-card');
+    const cr = card && !card.hidden ? card.getBoundingClientRect() : null, free = Math.max(0.4, 1 - (cr ? cr.right / innerWidth : 0));
+    near = Math.max(0.42, (2 * bk.d + 0.03) / (2 * th * free * 0.92), bk.h / (2 * tv * 0.82));   // (as near as that: its words read large enough)
+  }
+  const D = nearOf(v, near), p = v.pos.clone().addScaledVector(fwd, D).addScaledVector(right, rd ? 0 : -0.02).addScaledVector(up, -0.02 - bk.h / 2);
   const x = fwd.clone().negate().applyAxisAngle(up, rd ? 0 : -0.1), z = x.clone().cross(up).normalize();
   const th = rd ? 0.05 : 0.09, x2 = x.clone().multiplyScalar(Math.cos(th)).addScaledVector(up, Math.sin(th)), y2 = up.clone().multiplyScalar(Math.cos(th)).addScaledVector(x, -Math.sin(th));
   const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x2, y2, z));
@@ -7363,9 +7502,12 @@ function startFlight(bk, goal) {
   bk.to = goal === 'present' ? presentPose(bk) : goal === 'rest' ? restPose(bk) : pulledPose(bk);
   bk.fdur = reduceMotion ? 0.001 : goal === 'pulled' ? 0.9 : 1.05;
 }
+// the book being listened to: out while it plays (or loads); paused, it goes back to its shelf (G, 18/10/2026: "chỉ khi
+// nào ấn nút pause thì mới ngừng và sách cất lại lên kệ"), and comes out again when it plays on
+const playing = bk => { const cl = bk.it && bk.it.li && bk.it.li.classList; return !!cl && (cl.contains('is-playing') || cl.contains('is-loading')); };
 function wantOf(bk) {
   if (bk === UIS.mapBook) return UIS.open === bk.sec && !offMode() ? 'present' : 'shelf';   // (an atlas goes back to its shelf)
-  if (bk === UIS.active) return UIS.open === bk.sec && !offMode() ? 'present' : 'rest';
+  if (bk === UIS.active) return !playing(bk) ? 'shelf' : UIS.open === bk.sec && !offMode() ? 'present' : 'rest';
   return bk === UIS.peek ? 'peek' : 'shelf';
 }
 function stepBooks(dt, t) {
@@ -7388,14 +7530,16 @@ function stepBooks(dt, t) {
         bk.fk = Math.min(1, bk.fk + dt / bk.fdur); const k = bk.fk, e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
         const lift = (bk.goal === 'present' ? 0.08 : 0.22) * Math.sin(Math.PI * e);
         bk.pose = { p: bk.from.p.clone().lerp(bk.to.p, e).add(new V3(0, lift, 0)), q: bk.from.q.clone().slerp(bk.to.q, e) }; moving = true;
-        if (bk.fk >= 1 && bk.goal === 'pulled') { bk.out = false; bk.slide = PULL; if (bk.read) readRelease(bk); continue; }   // back at its place: it slides in on the shelf (a book of notes lets its pages go)
+        if (bk.fk >= 1 && bk.goal === 'pulled') { bk.out = false; bk.slide = PULL; bk.reading = false; if (bk.read) readRelease(bk); continue; }   // back at its place: it slides in on the shelf (a book of notes lets its pages go)
       }
       // an atlas, once in front of the camera, opens: it comes nearer and turns to face the camera as its cover turns
       // open (that a little later, so it clears the camera's way); it closes again as it goes back (a closing cover
       // flies back with it)
       let ok = 0;
-      if (bk.flapU && opensFlat(bk.it)) {
-        const want = bk.goal === 'present' && bk.fk >= 1 ? 1 : 0, k0 = bk.openK || 0;
+      if (bk.reading && bk.goal !== 'present') bk.reading = false;   // (being read only while it is in front of the camera)
+      const opens = opensFlat(bk.it) || bk.reading;   // (an atlas, a book of notes; a book being listened to, opened on its summary)
+      if (bk.flapU && (opens || bk.openK > 0)) {
+        const want = opens && bk.goal === 'present' && bk.fk >= 1 ? 1 : 0, k0 = bk.openK || 0;
         bk.openK = reduceMotion ? want : THREE.MathUtils.clamp(k0 + (want ? dt / 1.15 : -dt / 0.55), 0, 1); if (bk.openK !== k0) moving = true;
         if (bk.openK > 0 && bk.atlas && !bk.atlas.done) bk.atlas.paint();
         if (bk.openK > 0 && bk.read) readOpening(bk);
@@ -7413,11 +7557,21 @@ function stepBooks(dt, t) {
   }
   return moving;
 }
-function syncActive() {   // which book is "current" in the page's player
+function syncActive() {   // which book is "current" in the page's player (and, playing or paused, where it should be)
   const cur = document.querySelector('#pages .item.is-current');
   const bk = cur ? UIS.bySrc.get(cur.dataset.src) || null : null;
   if (bk !== UIS.active) { if (UIS.active) UIS.touched.add(UIS.active); UIS.active = bk; if (bk) UIS.touched.add(bk); setNeeds(true); }
+  else if (bk) { UIS.touched.add(bk); setNeeds(true); }
 }
+// a click on the book out of the shelf while it plays: it opens on its summary (once its words are here); its board,
+// or past its last page, closes it again
+async function startReading(bk) {
+  if (bk.reading || bk.readSoon) return; bk.readSoon = true;
+  await loadSummaries(); bk.readSoon = false;
+  if (bk !== UIS.active || !bk.out || bk.goal !== 'present' || !heroRead(bk)) return;
+  bk.reading = true; UIS.touched.add(bk); setNeeds(true);
+}
+function stopReading(bk) { if (!bk.reading) return; bk.reading = false; UIS.touched.add(bk); setNeeds(true); }
 /* ---- the record player on the floor, between the chaise and the tall shelf: the page's own packed model (paper-and-ink
    base, platter and tonearm), drawn in the sharp layer like the page's sidebar deck, so the watercolour pass leaves it
    alone. It is tested against the room's depth like the titles. Its record carries the label art of the song playing;
@@ -7427,7 +7581,7 @@ function syncActive() {   // which book is "current" in the page's player
    it on screen (the camera's projection narrowed to that rectangle), then laid over the picture, 60 % of it painted as
    the picture is (G, 14/10/2026: 10 %, then 30 % more, then 20 % more; the paint pass's own steps, post.js PAINT_GLSL, so the turning
    label is painted as it turns). */
-const DECK = { ok: false, angle: 0, speed: 0, playing: false, progress: 0, hover: false, scene: new THREE.Scene() };
+const DECK = { ok: false, angle: 0, speed: 0, playing: false, progress: 0, hover: false, out: 0, scene: new THREE.Scene() };   // (out: its selection outline under the pointer, 0..1)
 const DECKR = { rt: null, cam: new THREE.Camera(), corners: [], u: { uDepth: OVER.u.uDepth, uFull: { value: new THREE.Vector2(1, 1) }, uOff: { value: new THREE.Vector2() } }, quad: null };
 DECK.R = DECKR;   // (for tests)
 function sharpDepth(mat) {   // fragments behind the room are dropped (the target's pixels map back to the whole picture)
@@ -7443,7 +7597,7 @@ function drawDeck() {   // the deck over the finished picture
   let x0 = W, y0 = H, x1 = 0, y1 = 0;
   for (const c of DECKR.corners) { const v = TMPV.copy(c).applyMatrix4(DECK.deck.matrixWorld).project(camera); if (v.z > 1) return;
     const px = (v.x + 1) / 2 * W, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
-  x0 = Math.max(0, Math.floor(x0) - 4); y0 = Math.max(0, Math.floor(y0) - 4); x1 = Math.min(W, Math.ceil(x1) + 4); y1 = Math.min(H, Math.ceil(y1) + 4);
+  x0 = Math.max(0, Math.floor(x0) - 12); y0 = Math.max(0, Math.floor(y0) - 12); x1 = Math.min(W, Math.ceil(x1) + 12); y1 = Math.min(H, Math.ceil(y1) + 12);   // (room for its outline)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return;
   if (!DECKR.rt || DECKR.rt.width < w || DECKR.rt.height < h) {
     if (DECKR.rt) DECKR.rt.dispose();
@@ -7460,6 +7614,7 @@ function drawDeck() {   // the deck over the finished picture
   DECKR.rt.viewport.set(0, 0, w, h); DECKR.rt.scissor.set(0, 0, w, h); DECKR.rt.scissorTest = true;
   renderer.setRenderTarget(DECKR.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(DECK.scene, C);
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca);
+  { const Q = DECKR.quad.material.uniforms; Q.uOut.value = DECK.out; Q.uOutW.value = 2 * pr; Q.uHalo.value = 1.6 * pr; }
   DECKR.quad.material.uniforms.uScale.value.set(w / DECKR.rt.width, h / DECKR.rt.height); setPaint(DECKR.quad.material.uniforms, DECKR.rt, W, H);
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); DECKR.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W / pr, H / pr); renderer.autoClear = true;
@@ -7500,14 +7655,23 @@ function buildRecordPlayer() {
   { const b = new THREE.Box3(); deck.traverse(m => { if (m.isMesh) { m.geometry.computeBoundingBox(); b.union(m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld)); } });
     const inv = deck.matrixWorld.clone().invert(); for (let i = 0; i < 8; i++) DECKR.corners.push(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(inv)); }
   DECKR.cam.matrixAutoUpdate = false;
-  DECKR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: 0.6 }, ...paintUniforms() },
+  DECKR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: 0.6 }, uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, ...paintUniforms() },
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
-    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uPaint; varying vec2 vUv;
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uPaint, uOut, uOutW, uHalo; varying vec2 vUv;
       ${PAINT_GLSL}
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
+      float aAt(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > uScale.x || uv.y > uScale.y) ? 0.0 : texture2D(t, uv).a; }
       vec4 shadeAt(vec2 uv) { vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(toS(c.rgb / c.a), c.a); }
       void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
-        if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
+        vec4 res = vec4(o.rgb * o.a, o.a);
+        if (uOut > 0.001) {   // under the pointer, outlined as the 747 and the clock are (pets.js sharpQuad): white just outside it, a soft dark edge beyond
+          float near = 0.0, far = 0.0, here = aAt(uv);
+          for (int i = 0; i < 24; i++) { float an = 6.2831853 * (float(i) + 0.5) / 24.0; vec2 d = vec2(cos(an), sin(an)) * uTexel;
+            near = max(near, max(aAt(uv + d * uOutW), aAt(uv + d * uOutW * 0.5))); far = max(far, aAt(uv + d * (uOutW + uHalo))); }
+          float w = smoothstep(0.2, 0.6, near) * (1.0 - smoothstep(0.3, 0.8, here)) * 0.95 * uOut, h = smoothstep(0.1, 0.6, far) * (1.0 - here) * 0.55 * uOut;
+          vec4 ring = vec4(vec3(w), w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
+        }
+        if (res.a < 0.002) discard; gl_FragColor = res; }` }));
   // its contact shadow on the floor (in the room, so it is painted with it)
   { const c = canvas(128, 128), g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 6, 64, 64, 62);
     gr.addColorStop(0, 'rgba(20,12,6,.8)'); gr.addColorStop(0.5, 'rgba(20,12,6,.5)'); gr.addColorStop(1, 'rgba(20,12,6,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
@@ -7540,7 +7704,8 @@ function stepDeck(dt) {   // follows the sidebar deck: spins while the music pla
   U.uInk.value.setRGB(lerp(0.17, 0.07, n), lerp(0.14, 0.06, n), lerp(0.11, 0.05, n), THREE.SRGBColorSpace); DECK.line.color.copy(U.uInk.value);
   if (DECK.recMat.map) DECK.recMat.color.setScalar(lerp(1, 0.64, n)); else DECK.recMat.color.copy(U.uInk.value);   // the label art, dimmed by night like the page's
   const hv = DECK.hover ? 0.12 : 0; U.uGlow.value += (hv - U.uGlow.value) * Math.min(1, dt * 10);
-  return armMoving || (DECK.speed !== omega) || Math.abs(hv - U.uGlow.value) > 0.004;   // a steady spin is drawn cheaply (loop)
+  const ot = DECK.hover ? 1 : 0, ow = DECK.out; DECK.out += Math.sign(ot - DECK.out) * Math.min(Math.abs(ot - DECK.out), dt / 0.14);   // (the outline in and out, as the 747's)
+  return armMoving || (DECK.speed !== omega) || Math.abs(hv - U.uGlow.value) > 0.004 || DECK.out !== ow;   // a steady spin is drawn cheaply (loop)
 }
 function togglePlayer(open = !body.classList.contains('l3-player-open')) {   // the page's own player, in the left corner
   clearTimeout(togglePlayer.t);
@@ -7560,12 +7725,13 @@ let tipBook = null, tipKey = '';
 function showTip(bk, x, y, map, say) {   // (map: the pointer is on an open atlas's map: the tip says a click opens its page; say: what a click does on an open book of notes, there)
   const t = UIEL.tip; if (!t) return;
   if (!bk) { if (tipBook) { t.classList.remove('is-on'); tipBook = null; tipKey = ''; } return; }
-  const key = say ? 'say:' + say.join('|') : map ? 'map' : isMapItem(bk.it) ? 'atlas' : isReadItem(bk.it) ? 'read' + (bk.out ? 1 : 0) : '';
+  const key = say ? 'say:' + say.join('|') : map ? 'map' : isMapItem(bk.it) ? 'atlas' : isReadItem(bk.it) ? 'read' + (bk.out ? 1 : 0) : bk === UIS.active && bk.out ? 'listen' : '';
   if (tipBook !== bk || tipKey !== key) {
     tipBook = bk; tipKey = key; const it = bk.it, info = bookInfo(it), by = byOf(it), n = info && info.pages;
     const line = pages => esc([by, pages].filter(Boolean).join(' · '));
     const hint = say ? say : key === 'map' ? ['Click the map to open the page ↗', 'Bấm vào bản đồ để mở trang ↗'] : key === 'atlas' ? [bk.out ? 'Click to put it back' : 'Click to open the atlas', bk.out ? 'Bấm để cất sách' : 'Bấm để mở tập bản đồ']
-      : key.startsWith('read') ? [bk.out ? 'Click to put it back' : 'Click to open the book', bk.out ? 'Bấm để cất sách' : 'Bấm để mở sách'] : null;
+      : key.startsWith('read') ? [bk.out ? 'Click to put it back' : 'Click to open the book', bk.out ? 'Bấm để cất sách' : 'Bấm để mở sách']
+      : key === 'listen' ? ['Click to open it on its summary · pause to put it back', 'Bấm để mở trang tóm tắt · pause để cất lên kệ'] : null;
     t.innerHTML = `<b><span class="en">${esc(titleIn(it, 'en'))}</span><span class="vi">${esc(it.title)}</span></b>`
       + (by || n ? `<small><span class="en">${line(n && n + ' pages')}</span><span class="vi">${line(n && n + ' trang')}</span></small>` : '')
       + (hint ? `<small><span class="en">${esc(hint[0])}</span><span class="vi">${esc(hint[1])}</span></small>` : '');
@@ -7806,16 +7972,23 @@ function layoutOverlay() {
   }
   // a white outline around the section under the pointer (and, fainter, around the open one): the boards of a row, the posts of a bay;
   // not the open one's while a book lies open in front of it (its lines would cross the pages)
-  const bookOpen = !!(UIS.mapBook && UIS.mapBook.out && UIS.mapBook.flapU && UIS.mapBook.flapU.uOpen.value > 0.5);
+  const opened = bk => !!(bk && bk.out && bk.flapU && bk.flapU.uOpen.value > 0.5), bookOpen = opened(UIS.mapBook) || (!!(UIS.active && UIS.active.reading) && opened(UIS.active));   // (an atlas, a book of notes, or the one being listened to, lying open)
   for (const [sec, cls] of [[UIS.open, 'l3-outline is-open'], ...[...UIS.hovers].map(s => [s, 'l3-outline'])]) {
     if (!sec || !show || (cls === 'l3-outline is-open' && (UIS.hovers.has(sec) || bookOpen))) continue;
     const pts = sec.box.corners.map(project); if (pts.some(q => !q.ok)) continue;
     lines.push(`<polygon class="${cls}" points="${pts.map(q => q.x.toFixed(1) + ',' + q.y.toFixed(1)).join(' ')}"/>`);
   }
-  if (UIS.open && !UIEL.card.hidden && !bookOpen) {   // the open card points at its section, at the first books right of the card
-    const r = UIEL.card.getBoundingClientRect(), b = UIS.open.box, p = faceAnchor(b, r.right + 46, r.top + 40), a = project(p || b.plate);
-    const ey = THREE.MathUtils.clamp(a.y, r.top + 30, r.bottom - 30);
-    if (a.ok) lines.push(`<path class="l3-card-line" d="M${a.x.toFixed(1)},${a.y.toFixed(1)} L${(r.right).toFixed(1)},${ey.toFixed(1)}"/><circle cx="${a.x.toFixed(1)}" cy="${a.y.toFixed(1)}" r="4"/>`);
+  if (UIS.open && !UIEL.card.hidden && !bookOpen) {   // the open card points down at its section: from the middle of its foot to the board its books stand on, under it
+    // (G, 18/10/2026: his arrows, from the card's foot straight down to the shelf, not from its side to the far corner)
+    // (where the vertical under the card's middle crosses the lowest edge of the section's outline, on the screen)
+    const r = UIEL.card.getBoundingClientRect(), cx = (r.left + r.right) / 2, pts = UIS.open.box.corners.map(project);
+    let ay = -Infinity;
+    if (pts.every(q => q.ok)) for (let i = 0; i < pts.length; i++) {
+      const q0 = pts[i], q1 = pts[(i + 1) % pts.length]; if ((q0.x - cx) * (q1.x - cx) > 0 || q0.x === q1.x) continue;
+      ay = Math.max(ay, q0.y + (q1.y - q0.y) * (cx - q0.x) / (q1.x - q0.x));
+    }
+    ay = Math.min(ay, innerHeight - 24);
+    if (ay > r.bottom + 12) lines.push(`<path class="l3-card-line" d="M${cx.toFixed(1)},${r.bottom.toFixed(1)} L${cx.toFixed(1)},${ay.toFixed(1)}"/><circle cx="${cx.toFixed(1)}" cy="${ay.toFixed(1)}" r="4"/>`);
   }
   UIEL.svg.innerHTML = lines.join('');
 }
@@ -7845,7 +8018,7 @@ function mapHit(bk) {
 function pickAt(e) {
   const r = CANVAS.getBoundingClientRect(); NDC.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   RAY.setFromCamera(NDC, camera);
-  const ob = UIS.mapBook && UIS.mapBook.out ? UIS.mapBook : null;
+  const ob = UIS.mapBook && UIS.mapBook.out ? UIS.mapBook : UIS.active && UIS.active.out && UIS.active.reading ? UIS.active : null;   // (an open atlas or book of notes; the book being listened to, open)
   if (ob && ob.read) { const r = bookRay(ob), rh = r && readHit(ob, r.o, r.d); if (rh) return { book: ob, read: rh }; }   // (a book of notes: its pages)
   else { const mh = ob ? mapHit(ob) : null; if (mh) return { book: ob, map: mh.at === 'page' }; }
   // books first (they stand just behind their section's face): those of the open section, and the one out of the shelf
@@ -7895,11 +8068,13 @@ function bindPicking() {
     if (inspectPointer('up', e)) { down = null; return; }   // (the clock out: its own clicks and drags)
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || performance.now() - down.t > 600 || offMode()) { down = null; return; }
     down = null; const p = pickAt(e);
-    if (p && p.book && p.book === UIS.mapBook && p.book.out) {   // an open atlas: its map opens its page, the rest of it puts it back; a book of notes: its pages turn, its board puts it back
+    if (p && p.book && p.book === UIS.active && p.book.out && p.book !== UIS.mapBook) {   // the book being listened to: a click opens it on its summary, then turns its pages; its board closes it (pause puts it back)
+      if (!p.book.reading) startReading(p.book); else if (p.read && !readClick(p.book, p.read)) stopReading(p.book);
+    }
+    else if (p && p.book && p.book === UIS.mapBook && p.book.out) {   // an open atlas: its map opens its page, the rest of it puts it back; a book of notes: its pages turn, its board puts it back
       if (p.read) { if (!readClick(p.book, p.read)) setMapBook(null); }
       else if (p.map) window.open(p.book.it.href, '_blank', 'noopener'); else setMapBook(null);
     }
-    else if (p && p.book && p.book === UIS.active && p.book.out) { const x = document.getElementById('np-close'); if (x) x.click(); }   // the book out of the shelf: back to its place (the player closes)
     else if (p && p.book) activateItem(p.book.it);
     else if (p && p.deck) togglePlayer();   // the record player on the floor: the page's player comes out (or goes away)
     else if (p && p.plane) window.open(PLANE.url, '_blank', 'noopener');   // the 747: its page, in a new tab
@@ -8101,7 +8276,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, PLANE, CLOCK, ISS, BULB, RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
+window.__lib3d = { PETS, PLANE, CLOCK, ISS, BULB, readCheck: () => readCheck(UIS.secs.flatMap(s => s.books), bk => (heroMesh(bk), heroRead(bk))), RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
   atlas: (which, lang, w = 1024, h = 1371) => { const c = canvas(w, h), t0 = performance.now(); drawAtlas(c, which, lang); return { url: c.toDataURL('image/png'), ms: performance.now() - t0 }; } };   // (tests: the Geography books' page on its own)
 // The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
 // the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page

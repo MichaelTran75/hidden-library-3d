@@ -20,7 +20,7 @@ import { setNeeds } from '../core/loop.js';
    it on screen (the camera's projection narrowed to that rectangle), then laid over the picture, 60 % of it painted as
    the picture is (G, 14/10/2026: 10 %, then 30 % more, then 20 % more; the paint pass's own steps, post.js PAINT_GLSL, so the turning
    label is painted as it turns). */
-const DECK = { ok: false, angle: 0, speed: 0, playing: false, progress: 0, hover: false, scene: new THREE.Scene() };
+const DECK = { ok: false, angle: 0, speed: 0, playing: false, progress: 0, hover: false, out: 0, scene: new THREE.Scene() };   // (out: its selection outline under the pointer, 0..1)
 const DECKR = { rt: null, cam: new THREE.Camera(), corners: [], u: { uDepth: OVER.u.uDepth, uFull: { value: new THREE.Vector2(1, 1) }, uOff: { value: new THREE.Vector2() } }, quad: null };
 DECK.R = DECKR;   // (for tests)
 function sharpDepth(mat) {   // fragments behind the room are dropped (the target's pixels map back to the whole picture)
@@ -36,7 +36,7 @@ function drawDeck() {   // the deck over the finished picture
   let x0 = W, y0 = H, x1 = 0, y1 = 0;
   for (const c of DECKR.corners) { const v = TMPV.copy(c).applyMatrix4(DECK.deck.matrixWorld).project(camera); if (v.z > 1) return;
     const px = (v.x + 1) / 2 * W, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
-  x0 = Math.max(0, Math.floor(x0) - 4); y0 = Math.max(0, Math.floor(y0) - 4); x1 = Math.min(W, Math.ceil(x1) + 4); y1 = Math.min(H, Math.ceil(y1) + 4);
+  x0 = Math.max(0, Math.floor(x0) - 12); y0 = Math.max(0, Math.floor(y0) - 12); x1 = Math.min(W, Math.ceil(x1) + 12); y1 = Math.min(H, Math.ceil(y1) + 12);   // (room for its outline)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return;
   if (!DECKR.rt || DECKR.rt.width < w || DECKR.rt.height < h) {
     if (DECKR.rt) DECKR.rt.dispose();
@@ -53,6 +53,7 @@ function drawDeck() {   // the deck over the finished picture
   DECKR.rt.viewport.set(0, 0, w, h); DECKR.rt.scissor.set(0, 0, w, h); DECKR.rt.scissorTest = true;
   renderer.setRenderTarget(DECKR.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(DECK.scene, C);
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca);
+  { const Q = DECKR.quad.material.uniforms; Q.uOut.value = DECK.out; Q.uOutW.value = 2 * pr; Q.uHalo.value = 1.6 * pr; }
   DECKR.quad.material.uniforms.uScale.value.set(w / DECKR.rt.width, h / DECKR.rt.height); setPaint(DECKR.quad.material.uniforms, DECKR.rt, W, H);
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); DECKR.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W / pr, H / pr); renderer.autoClear = true;
@@ -93,14 +94,23 @@ function buildRecordPlayer() {
   { const b = new THREE.Box3(); deck.traverse(m => { if (m.isMesh) { m.geometry.computeBoundingBox(); b.union(m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld)); } });
     const inv = deck.matrixWorld.clone().invert(); for (let i = 0; i < 8; i++) DECKR.corners.push(new THREE.Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(inv)); }
   DECKR.cam.matrixAutoUpdate = false;
-  DECKR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: 0.6 }, ...paintUniforms() },
+  DECKR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: 0.6 }, uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, ...paintUniforms() },
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
-    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uPaint; varying vec2 vUv;
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uPaint, uOut, uOutW, uHalo; varying vec2 vUv;
       ${PAINT_GLSL}
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
+      float aAt(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > uScale.x || uv.y > uScale.y) ? 0.0 : texture2D(t, uv).a; }
       vec4 shadeAt(vec2 uv) { vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(toS(c.rgb / c.a), c.a); }
       void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
-        if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
+        vec4 res = vec4(o.rgb * o.a, o.a);
+        if (uOut > 0.001) {   // under the pointer, outlined as the 747 and the clock are (pets.js sharpQuad): white just outside it, a soft dark edge beyond
+          float near = 0.0, far = 0.0, here = aAt(uv);
+          for (int i = 0; i < 24; i++) { float an = 6.2831853 * (float(i) + 0.5) / 24.0; vec2 d = vec2(cos(an), sin(an)) * uTexel;
+            near = max(near, max(aAt(uv + d * uOutW), aAt(uv + d * uOutW * 0.5))); far = max(far, aAt(uv + d * (uOutW + uHalo))); }
+          float w = smoothstep(0.2, 0.6, near) * (1.0 - smoothstep(0.3, 0.8, here)) * 0.95 * uOut, h = smoothstep(0.1, 0.6, far) * (1.0 - here) * 0.55 * uOut;
+          vec4 ring = vec4(vec3(w), w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
+        }
+        if (res.a < 0.002) discard; gl_FragColor = res; }` }));
   // its contact shadow on the floor (in the room, so it is painted with it)
   { const c = canvas(128, 128), g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 6, 64, 64, 62);
     gr.addColorStop(0, 'rgba(20,12,6,.8)'); gr.addColorStop(0.5, 'rgba(20,12,6,.5)'); gr.addColorStop(1, 'rgba(20,12,6,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
@@ -133,7 +143,8 @@ function stepDeck(dt) {   // follows the sidebar deck: spins while the music pla
   U.uInk.value.setRGB(lerp(0.17, 0.07, n), lerp(0.14, 0.06, n), lerp(0.11, 0.05, n), THREE.SRGBColorSpace); DECK.line.color.copy(U.uInk.value);
   if (DECK.recMat.map) DECK.recMat.color.setScalar(lerp(1, 0.64, n)); else DECK.recMat.color.copy(U.uInk.value);   // the label art, dimmed by night like the page's
   const hv = DECK.hover ? 0.12 : 0; U.uGlow.value += (hv - U.uGlow.value) * Math.min(1, dt * 10);
-  return armMoving || (DECK.speed !== omega) || Math.abs(hv - U.uGlow.value) > 0.004;   // a steady spin is drawn cheaply (loop)
+  const ot = DECK.hover ? 1 : 0, ow = DECK.out; DECK.out += Math.sign(ot - DECK.out) * Math.min(Math.abs(ot - DECK.out), dt / 0.14);   // (the outline in and out, as the 747's)
+  return armMoving || (DECK.speed !== omega) || Math.abs(hv - U.uGlow.value) > 0.004 || DECK.out !== ow;   // a steady spin is drawn cheaply (loop)
 }
 function togglePlayer(open = !body.classList.contains('l3-player-open')) {   // the page's own player, in the left corner
   clearTimeout(togglePlayer.t);
