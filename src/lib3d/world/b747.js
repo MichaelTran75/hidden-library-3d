@@ -260,15 +260,16 @@ function shape747(q, bare) {
   return group;
 }
 
-// the desk stand: a walnut base and a chrome rod up to the belly (in metres, the base's middle at the origin)
-function standParts(rodTop) {
-  const shp = new THREE.Shape(), w = 0.156, d = 0.09, r = 0.035;
+// the desk stand: a walnut base and a chrome rod up to the belly (in metres, the base's middle at the origin); k: its
+// size (the ISS's is half as large again: iss.js)
+function standParts(rodTop, k = 1) {
+  const shp = new THREE.Shape(), w = 0.156 * k, d = 0.09 * k, r = 0.035 * k;
   shp.moveTo(-w / 2 + r, -d / 2); shp.lineTo(w / 2 - r, -d / 2); shp.quadraticCurveTo(w / 2, -d / 2, w / 2, -d / 2 + r); shp.lineTo(w / 2, d / 2 - r); shp.quadraticCurveTo(w / 2, d / 2, w / 2 - r, d / 2);
   shp.lineTo(-w / 2 + r, d / 2); shp.quadraticCurveTo(-w / 2, d / 2, -w / 2, d / 2 - r); shp.lineTo(-w / 2, -d / 2 + r); shp.quadraticCurveTo(-w / 2, -d / 2, -w / 2 + r, -d / 2);
-  const base = new THREE.ExtrudeGeometry(shp, { depth: 0.008, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 3, curveSegments: 6 });
-  base.rotateX(-Math.PI / 2); base.rotateY(Math.PI / 2); base.translate(0, 0.003, 0);   // (lying on the board along the fuselage, 14 mm thick with its bevels)
-  const rod = new THREE.CylinderGeometry(0.004, 0.0052, rodTop.y - 0.012, 16); rod.translate(0, (rodTop.y + 0.012) / 2, 0);
-  const cup = new THREE.CylinderGeometry(0.011, 0.007, 0.009, 20); cup.translate(0, rodTop.y - 0.0045, 0);   // (the cradle under the belly)
+  const base = new THREE.ExtrudeGeometry(shp, { depth: 0.008 * k, bevelEnabled: true, bevelThickness: 0.003 * k, bevelSize: 0.003 * k, bevelSegments: 3, curveSegments: 6 });
+  base.rotateX(-Math.PI / 2); base.rotateY(Math.PI / 2); base.translate(0, 0.003 * k, 0);   // (lying on the board along the fuselage, 14 mm thick with its bevels)
+  const rod = new THREE.CylinderGeometry(0.004 * k, 0.0052 * k, rodTop.y - 0.012 * k, 16); rod.translate(0, (rodTop.y + 0.012 * k) / 2, 0);
+  const cup = new THREE.CylinderGeometry(0.011 * k, 0.007 * k, 0.009 * k, 20); cup.translate(0, rodTop.y - 0.0045 * k, 0);   // (the cradle under the belly)
   return { base, rod: mergeGeometries([rod, cup]) };
 }
 
@@ -338,4 +339,4 @@ function drawPlane() {   // over the picture, before the animals (the shelf is b
   crispPass(PLANE.P, PLANE.box);
 }
 
-export { PLANE, buildPlane, drawPlane, stepPlane };
+export { PLANE, buildPlane, drawPlane, standParts, stepPlane };

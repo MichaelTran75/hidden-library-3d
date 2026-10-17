@@ -63,7 +63,7 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   core/   base.js (DOM, R, REF, tick)   utils.js (rng, noise, canvas…)   renderer.js   views.js (camera)
           build.js (main: dựng phòng)   loop.js (draw, loop, start, biên dịch shader)
   world/  textures materials room books shelves pouf rug furniture (đèn bàn, đèn cây, đèn treo bóng sợi đốt pendantLamp: dựng theo số đo mẫu CC BY) bush (bụi cây ngoài kính: thẻ chùm lá quay về người xem, pháp tuyến theo khối bụi, alpha-to-coverage) outside lights trees assets wind velvet furnish
-          decor/{kit, atlas, items, build}.js   cat.js (thân mèo: tư thế, lò xo, IK, dáng đi)   fur.js (lông: 20 lớp shell, ánh sáng nướng trong không gian texture)   pets.js (tập tính mèo, gà, lớp vẽ sắc nét)   b747.js (mô hình 747-8 trên kệ Research, dựng từ số đo; viền chọn, bấm mở link)   clock.js (đồng hồ trung cổ trên kệ cao: bánh răng theo giờ thật, chuông mỗi giờ; bấm vào thì bay ra to gấp 3, tách rời từng bộ phận có tên)
+          decor/{kit, atlas, items, build}.js   cat.js (thân mèo: tư thế, lò xo, IK, dáng đi)   fur.js (lông: 20 lớp shell, ánh sáng nướng trong không gian texture)   pets.js (tập tính mèo, gà, lớp vẽ sắc nét)   b747.js (mô hình 747-8 trên kệ Research, dựng từ số đo; viền chọn, bấm mở link)   clock.js (đồng hồ trung cổ trên kệ cao: bánh răng theo giờ thật, chuông mỗi giờ; bấm vào thì bay ra to gấp 3, tách rời từng bộ phận có tên)   iss.js (mô hình ISS trên nóc kệ Geography: một mesh + atlas, viền chọn, bấm mở trang iss-station)
   fx/     dust post (màu nước: Kuwahara tổng quát, loang ướt ở mảng lá, sàn gỗ vẽ nhẹ tay hơn, FXAA) night hour (mặt trời, lấy từ `window.HL_SUN`) glass (kính: phản chiếu phòng bằng cubemap hiệu chỉnh thị sai, Fresnel, bụi, vệt sáng chéo) rain (mưa theo thời tiết thật Pleiku: vệt mưa ngoài kính, nước bắn trên sân, giọt nước đọng và chảy trên kính khúc xạ hình phía sau, trời u ám, chớp khi dông; ?wx=rain|drizzle|storm) star-catalog (danh mục sao Yale BSC5, 2887 sao) sky (trời sắp đặt: Ngân Hà xoay vào góc kính trái cạnh trăng ở góc nhìn đầu, SKYSET; ?sky=real: trời thật theo giờ sao tại nơi người xem (`HL_SUN.place`); sao chổi sau trăng, sao băng trước trăng; dò chỗ thấy trời trên GPU, probeSky) fireflies
   ui/     library sections hero-books (sách lấy ra: bìa cứng dựng như thợ đóng sách, gáy tròn, rãnh bản lề, ruột lùi vào, vân trang, headband, chữ dập; áo sách bóng; đèn chính riêng; giữ tối đa 5 cuốn) leaves (sách đọc được, 17/10/2026: ghi chú [Mô hình kinh tế] thành sách; mở ra trang tiêu đề + mục lục, mỗi nước một trang đôi, tờ giấy lật trong shader quanh bản lề bìa, chữ tự co cho vừa 2 trang; bấm mục lục/chip trong thẻ để lật tới, trang phải lật tiếp, trang trái lật lui) words (tên trên gáy sách ở kệ, bầu trời) flight deck overlay picking hooks (__lib3d, khởi động)
 ```
@@ -132,6 +132,24 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   - Hộp của bánh răng lấy tròn quanh trục (`ckPartBox`) để nhãn không rung khi bánh quay.
   - Chỉnh bố cục từ console: `__lib3d.CLOCK.CK.apart`, rồi `CLOCK.reSpan()`.
 - Mèo to thêm 10 % (`CATR.scale` 1,375 → 1,5125), vết lún nệm và độ chìm khi nằm đêm tăng theo.
+
+### Mô hình ISS trên nóc kệ Geography (`lib3d/world/iss.js`, 17/10/2026)
+
+- Mẫu "ISS" của uperesito (CC BY 4.0) đứng trên giá kiểu 747, trên nóc kệ thấp phía sau, ngay trên ô Geography, trước cửa kính (khung kính bên phải, chỗ G khoanh).
+- `iss.glb` 360 KB, dựng bằng `tools/iss/make.mjs` (xem `tools/iss/README.md`):
+  - một mesh, một vật liệu;
+  - 36 texture gộp trong atlas 1024×512, thuộc tính `_CELL`/`_UVT`, shader `issPatch` lặp vân trong ô;
+  - không có pháp tuyến, đổ bóng phẳng.
+- Kích thước và tư thế:
+  - Rộng 88 cm, mặt quay vào phòng, ngả sau 12°, xoay 18° về phía mắt người xem, tâm ở (1,68; 3,51).
+  - Giá đỡ `standParts(rodTop, 1.5)` (hàm của `b747.js`, có thêm hệ số kích thước). Cần cao khoảng 0,86 m.
+  - Đế đặt giữa nóc kệ. Lưng trạm cách kính ít nhất 4 cm, đế cách thanh ngang chân kính.
+- Vẽ sắc nét trên lớp 6 qua `crispPass`, có viền chọn như 747. Có đèn trưng bày riêng chỉ trên lớp 6 (`ISS.key`, cường độ 1,6) vì nó đứng xa các đèn của phòng.
+- Bắt chuột (`issHit`):
+  - Đế và cần thử bằng hộp bao.
+  - Thân trạm thử bằng lưới ô vuông khoảng 100 ô theo chiều dài (`issVoxels`), tia chuột đi qua lưới bằng DDA, nên khe giữa các cánh pin không bắt chuột.
+  - Bấm thì mở `ISS.url` (https://michaeltran75.github.io/iss-station/) trong tab mới.
+- Ở khung nhìn chính với cửa sổ thấp (vd. 1512×945), góc trên bên trái của trạm nằm dưới chữ SET của đồng hồ trời. Ở khung nhìn Research chỉ thấy nửa dưới trạm ở mép trên. Ở ngăn Geography chỉ thấy cần.
 
 ### Thời tiết trực tiếp (`src/weather/`)
 

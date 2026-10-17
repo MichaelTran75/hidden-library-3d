@@ -21,6 +21,7 @@ import { buildInterface } from '../ui/picking.js';
 import { PETS, loadPets } from '../world/pets.js';
 import { buildPlane, stepPlane } from '../world/b747.js';
 import { CLOCK, buildClock, stepClock } from '../world/clock.js';
+import { buildIss, stepIss } from '../world/iss.js';
 import { RAIN, readWeather } from '../fx/rain.js';
 
 /* ---------------------------------------------------------------- render loop */
@@ -61,7 +62,7 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt);      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepIss(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
@@ -129,7 +130,8 @@ async function start() {
   // use of one of theirs while those were still being made held a frame up to 0.4 s
   loadPets().catch(e => console.warn('pets unavailable', e));
   buildPlane().catch(e => console.warn('747 unavailable', e));
-  buildClock().catch(e => console.warn('clock unavailable', e));   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
+  buildClock().catch(e => console.warn('clock unavailable', e));
+  buildIss().catch(e => console.warn('ISS unavailable', e));   // (the ISS over the Geography bay)   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
   buildNightSky(); buildFireflies(); await compileFor(OVER.skyScene, null); await compileFor(OVER.scene, null);   // (the sharp layer: drawn on the page's own canvas)
   await notBefore(1250); reveal(2);

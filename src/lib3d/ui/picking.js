@@ -12,6 +12,7 @@ import { isMapItem, opensFlat } from './book-data.js';
 import { readClick, readHint, readHit } from './leaves.js';
 import { PLANE } from '../world/b747.js';
 import { CLOCK, clockHit, closeClock, inspectPointer, openClock } from '../world/clock.js';
+import { ISS, issHit } from '../world/iss.js';
 
 /* ---- picking in the room */
 const RAY = new THREE.Raycaster(), NDC = new THREE.Vector2(); RAY.layers.enable(3);   // (the book out of the shelf is on its own layer: hero-books.js)
@@ -48,6 +49,7 @@ function pickAt(e) {
   const hb = books.length ? RAY.intersectObjects(books, false)[0] : null; if (hb) return { book: hb.object.userData.book };
   if (PLANE.ok && PLANE.hit && RAY.intersectObject(PLANE.hit, false).length) return { plane: true };   // (the 747 on the Research shelf: b747.js)
   if (clockHit(RAY.ray)) return { clock: true };   // (the medieval clock on the tall shelf: clock.js)
+  if (issHit(RAY.ray)) return { iss: true };   // (the ISS over the Geography bay: iss.js)
   const hs = RAY.intersectObjects(UIS.secs.map(s => s.hit), false)[0], hd = DECK.ok ? RAY.intersectObject(DECK.hit, false)[0] : null;
   if (hd && (!hs || hd.distance < hs.distance)) return { deck: true };
   return hs ? { sec: hs.object.userData.sec } : null;
@@ -74,12 +76,15 @@ function bindPicking() {
     if (!ready || offMode()) return;
     if (inspectPointer('move', e)) { CANVAS.style.cursor = CLOCK.view.drag && CLOCK.view.drag.moved ? 'grabbing' : 'grab'; return; }   // (the clock out of its shelf: the room is not picked)
     const p = pickAt(e), bk = p && p.book && p.book.sec === UIS.open ? p.book : null;
-    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map), p && p.read ? readHint(p.book, p.read) : null); setHover(!p || p.book || p.deck || p.plane || p.clock || UIS.open === p.sec ? null : p.sec);
-    CANVAS.style.cursor = p && (p.book || p.deck || p.plane || p.clock || UIS.open !== p.sec) ? 'pointer' : '';
-    const dh = !!(p && p.deck), ph = !!(p && p.plane), ch = !!(p && p.clock), vi = document.documentElement.lang === 'vi';
-    if (dh !== DECK.hover || ph !== PLANE.hover || ch !== CLOCK.hover) { DECK.hover = dh; PLANE.hover = ph; CLOCK.hover = ch; CANVAS.title = dh ? (vi ? 'Máy hát' : 'Record player') : ph ? 'Boeing 747-8' : ch ? (vi ? 'Đồng hồ trung cổ' : 'Medieval clock') : ''; setNeeds(true); }
+    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map), p && p.read ? readHint(p.book, p.read) : null); setHover(!p || p.book || p.deck || p.plane || p.clock || p.iss || UIS.open === p.sec ? null : p.sec);
+    CANVAS.style.cursor = p && (p.book || p.deck || p.plane || p.clock || p.iss || UIS.open !== p.sec) ? 'pointer' : '';
+    const dh = !!(p && p.deck), ph = !!(p && p.plane), ch = !!(p && p.clock), ih = !!(p && p.iss), vi = document.documentElement.lang === 'vi';
+    if (dh !== DECK.hover || ph !== PLANE.hover || ch !== CLOCK.hover || ih !== ISS.hover) {
+      DECK.hover = dh; PLANE.hover = ph; CLOCK.hover = ch; ISS.hover = ih;
+      CANVAS.title = dh ? (vi ? 'Máy hát' : 'Record player') : ph ? 'Boeing 747-8' : ch ? (vi ? 'Đồng hồ trung cổ' : 'Medieval clock') : ih ? (vi ? 'Trạm Vũ trụ Quốc tế (ISS)' : 'International Space Station') : ''; setNeeds(true);
+    }
   });
-  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover || PLANE.hover || CLOCK.hover) { DECK.hover = PLANE.hover = CLOCK.hover = false; CANVAS.title = ''; setNeeds(true); } });
+  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover || PLANE.hover || CLOCK.hover || ISS.hover) { DECK.hover = PLANE.hover = CLOCK.hover = ISS.hover = false; CANVAS.title = ''; setNeeds(true); } });
   CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; showTip(null); inspectPointer('down', e); });
   CANVAS.addEventListener('pointerup', e => {
     if (inspectPointer('up', e)) { down = null; return; }   // (the clock out: its own clicks and drags)
@@ -93,6 +98,7 @@ function bindPicking() {
     else if (p && p.book) activateItem(p.book.it);
     else if (p && p.deck) togglePlayer();   // the record player on the floor: the page's player comes out (or goes away)
     else if (p && p.plane) window.open(PLANE.url, '_blank', 'noopener');   // the 747: its page, in a new tab
+    else if (p && p.iss) window.open(ISS.url, '_blank', 'noopener');   // the ISS: the station's own page, in a new tab
     else if (p && p.clock) { CLOCK.hover = false; CANVAS.title = ''; openClock(); }   // the clock: out of its shelf, three times as large, apart
     else if (p && p.sec) openSection(p.sec);
     else if (UIS.mode !== 'home') closeCard();
