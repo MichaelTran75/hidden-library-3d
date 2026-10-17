@@ -2708,7 +2708,7 @@ function booksView() {
   const bs = UIS.secs.filter(s => s.group === 'books' && s.box.focus); if (!bs.length) return null;
   let z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const s of bs) { const b = s.box; z0 = Math.min(z0, b.focus.z - b.focusW / 2); z1 = Math.max(z1, b.focus.z + b.focusW / 2); y0 = Math.min(y0, b.ya); y1 = Math.max(y1, b.yb); }
-  const aspect = innerWidth / innerHeight, fov0 = 40, t = Math.tan(fov0 / 2 * Math.PI / 180), w = (z1 - z0) * 1.18 * 1.5, h = (y1 - y0) * 1.3 * 1.5;   // (50 % further out: G, 17/10/2026)
+  const aspect = innerWidth / innerHeight, fov0 = 40, t = Math.tan(fov0 / 2 * Math.PI / 180), w = (z1 - z0) * 1.18 * 2.25, h = (y1 - y0) * 1.3 * 2.25;   // (50 % further out, twice: G, 17/10/2026)
   const need = Math.max(w / (2 * t * aspect), h / (2 * t)), dmax = R.xS - R.xL - 0.35, dist = Math.min(need, dmax);
   const fov = need <= dmax ? fov0 : 2 * Math.atan(t * need / dmax) * 180 / Math.PI, yc = (y0 + y1) / 2, zc = (z0 + z1) / 2;
   return { pos: new V3(R.xS - dist, yc + 0.05, zc), tgt: new V3(R.xS, yc, zc), fov, shift: 0 };
@@ -4128,7 +4128,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
     // only in the close-up of its own section (G, 17/10/2026: "các text này ko nên hiện ra khi chưa close up"), and wide enough to read there
     const on = !bk.away && (UIS.open === sec || UIS.mode === sec.group) && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;
   }
-  if (OVER.sky) { const night = NIGHT.u.value > 0.005; OVER.sky.visible = night; if (night) { OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); stepMeteors(clock.getElapsedTime(), camera); } }
+  if (OVER.sky) { const night = NIGHT.u.value > 0.005 && REVEAL.stage >= 2; OVER.sky.visible = night; if (night) { OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); stepMeteors(clock.getElapsedTime(), camera); } }
   if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   // the night sky first: it darkens the dome behind it (fx/sky.js), so the rain, the deck, the animals and the rest stand in front of it
@@ -5077,7 +5077,7 @@ function stepRain(t) {
 function drawRain() {
   if (!RAIN.built) buildRain();
   stepRain(clock.getElapsedTime());
-  if (!RAIN.on) return;
+  if (!RAIN.on || REVEAL.stage < 3) return;   // (the weather comes in last)
   const S = HOUR.S || {};
   RU.uTime.value = reduceMotion ? 0 : clock.getElapsedTime(); RU.uK.value = WX.k; RU.uWet.value = WX.wet; RU.uWind.value.copy(WX.wind);
   RU.uDay.value = (1 - NIGHT.u.value) * (1 - 0.35 * WX.ov); RU.uLamp.value = (S.lamps || 0) * 0.9; RU.uFlash.value = WX.fl; RU.uPic.value = POST.out.texture;
@@ -6815,6 +6815,18 @@ function adaptQuality(now, smooth) {
     try { localStorage.setItem('hiddenLibrary.lib3dScale', JSON.stringify({ s: RT_SCALE, t: Date.now() })); } catch (e) { /* storage blocked */ }
   }
 }
+/* the room comes in by parts as the page opens (G, 17/10/2026: "phòng trước, sau đó mới đến cây, rồi mới đến trời, và
+   cuối cùng là thời tiết và text"): 0 the room alone (the garden's haze behind the glass), 1 the garden (trees, shrubs,
+   ground), 2 the sky (its dome; by night the stars and the moon), 3 the weather (rain, drops, lightning) and the words
+   over the room (its labels; the page's weather line) */
+const REVEAL = { stage: 3, hid: null };
+function reveal(stage) {
+  REVEAL.stage = stage; const sky = LIGHTS.sky, out = sky && sky.parent;
+  if (out) { if (!REVEAL.hid) REVEAL.hid = out.children.filter(o => o.visible); for (const o of REVEAL.hid) o.visible = o === sky ? stage >= 2 : stage >= 1; }
+  if (stage < 2) { scene.background = (scene.background && scene.background.isColor ? scene.background : new THREE.Color()).copy(scene.fog.color); } else if (scene.background && scene.background.isColor) scene.background = null;
+  document.documentElement.classList.toggle('l3-wait', stage < 3);
+  setShadowsDirty(true); needs = true;
+}
 async function start() {
   await main();
   buildNightLights(); buildNightSky(); buildFireflies();
@@ -6822,8 +6834,10 @@ async function start() {
   { const t = hourTarget(); applyHour(t.e, t.az); }
   resize(); applyRefCamera();
   buildInterface();
-  await compileFor(scene);
+  await compileFor(scene);   // (everything compiled while shown; then let in by parts)
+  reveal(0);
   ready = true; draw(); updateOn(); startedAt = performance.now();
+  if (!reduceMotion) [[1, 600], [2, 1250], [3, 1900]].forEach(([s, ms]) => setTimeout(() => reveal(s), ms)); else reveal(3);
   renderer.setAnimationLoop(loop);
   loadPets().catch(e => console.warn('pets unavailable', e));   // the cat and the chicken, once the room shows
   (window.requestIdleCallback || (fn => setTimeout(fn, 500)))(() => precompileLightStates(), { timeout: 3000 });

@@ -10,7 +10,7 @@ import { NIGHT } from './night.js';
 import { OVER } from '../ui/words.js';
 import { SKYCLEAR } from './sky.js';
 import { FLY } from './fireflies.js';
-import { clock, setNeeds } from '../core/loop.js';
+import { REVEAL, clock, setNeeds } from '../core/loop.js';
 import { setHenAway } from '../world/pets.js';
 
 /* ---------------------------------------------------------------- rain
@@ -200,7 +200,7 @@ function stepRain(t) {
 function drawRain() {
   if (!RAIN.built) buildRain();
   stepRain(clock.getElapsedTime());
-  if (!RAIN.on) return;
+  if (!RAIN.on || REVEAL.stage < 3) return;   // (the weather comes in last)
   const S = HOUR.S || {};
   RU.uTime.value = reduceMotion ? 0 : clock.getElapsedTime(); RU.uK.value = WX.k; RU.uWet.value = WX.wet; RU.uWind.value.copy(WX.wind);
   RU.uDay.value = (1 - NIGHT.u.value) * (1 - 0.35 * WX.ov); RU.uLamp.value = (S.lamps || 0) * 0.9; RU.uFlash.value = WX.fl; RU.uPic.value = POST.out.texture;

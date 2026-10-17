@@ -102,7 +102,7 @@ IMPORTMAP = ('<script type="importmap">{"imports":{"three":"' + THREE_CDN + 'bui
 STYLE = IMPORTMAP + """<script>
   // wide screens with WebGL 2 get the 3D library; phones keep the page as it was (and never download three.js)
   if (window.innerWidth > 768 && window.WebGL2RenderingContext) {
-    document.documentElement.classList.add('lib3d-capable');
+    document.documentElement.classList.add('lib3d-capable', 'l3-wait');   // (l3-wait: the words over the room come in once it is all there: loop.js reveal)
     // fetch three.js (and the room's models) now, while the rest of the page loads
     ['build/three.module.min.js', 'examples/jsm/loaders/GLTFLoader.js', 'examples/jsm/libs/meshopt_decoder.module.js',
      'examples/jsm/lights/RectAreaLightUniformsLib.js', 'examples/jsm/lights/RectAreaLightTexturesLib.js',
@@ -163,19 +163,21 @@ STYLE = IMPORTMAP + """<script>
      narrower window (1.5 % of its width, 15 to 23 px); every measure in em, so they keep their shape at any size */
   .l3-label { position: absolute; left: 0; top: 0; pointer-events: auto; display: inline-flex; align-items: center; gap: .5em; max-width: 25em;
     padding: .43em .6em .43em .95em; border-radius: 999px; border: 1px solid rgba(60, 45, 25, .28); background: rgba(246, 240, 228, .9); color: #2a2118;
-    font: 600 clamp(15px, 1.5vw, 23px)/1.25 var(--font); box-shadow: 0 7px 24px rgba(60, 40, 15, .18); cursor: pointer; white-space: nowrap;
+    font: 600 clamp(12px, 1.2vw, 18.4px)/1.25 var(--font); box-shadow: 0 7px 24px rgba(60, 40, 15, .18); cursor: pointer; white-space: nowrap;
     transition: opacity .35s ease, background-color .2s ease, color .2s ease, border-color .2s ease; }
-  .l3-label.l3-books { font-size: calc(clamp(15px, 1.5vw, 23px) * var(--l3-k, 1)); }   /* (smaller only where the shelf's frame is too narrow: overlay.js) */
+  .l3-label.l3-books { font-size: calc(clamp(12px, 1.2vw, 18.4px) * var(--l3-k, 1)); }   /* (20 % smaller: G, 17/10/2026) */   /* (smaller only where the shelf's frame is too narrow: overlay.js) */
   .l3-label > span { overflow: hidden; text-overflow: ellipsis; }
   .l3-label i { font-style: normal; font-weight: 700; font-size: .91em; min-width: 1.6em; text-align: center; padding: .14em .5em; border-radius: 999px; background: rgba(60, 45, 25, .1); }
   .l3-label:hover, .l3-label.is-hover { background: var(--accent); color: #fff; border-color: var(--accent); }
   .l3-label:hover i, .l3-label.is-hover i { background: rgba(255, 255, 255, .25); }
   .l3-label.is-off { opacity: 0; pointer-events: none; }
   .l3-cap { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap; color: #2a2118; text-shadow: var(--halo);
-    font: 700 clamp(28px, 2.74vw, 42px)/1 var(--font); letter-spacing: .26em; text-transform: uppercase; transition: opacity .35s ease; }   /* (twice their first size: G, 15/10/2026) */
+    font: 700 clamp(22.4px, 2.19vw, 33.6px)/1 var(--font); letter-spacing: .26em; text-transform: uppercase; transition: opacity .35s ease; }   /* (twice their first size: G, 15/10/2026) */
   .l3-cap { pointer-events: auto; cursor: pointer; background: none; border: 0; padding: 0; }   /* (a click: that part of the room, close) */
   .l3-cap:hover, .l3-cap:focus-visible { color: var(--accent); outline: none; }
   .l3-cap.is-off { opacity: 0; pointer-events: none; }
+  #l3-ui, .page .wx { transition: opacity .6s ease; }   /* the words over the room and the weather line come in last (loop.js reveal) */
+  html.l3-wait:not(.lib3d-failed) #l3-ui, html.l3-wait:not(.lib3d-failed) .page .wx { opacity: 0 !important; }
   body.dark-mode .l3-cap { color: #f3ead9; }
   /* a book under the pointer, named beside it */
   .l3-tip { position: absolute; left: 0; top: 0; max-width: 300px; padding: 7px 11px 8px; border-radius: 10px; pointer-events: none; opacity: 0; transition: opacity .15s ease;

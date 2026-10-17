@@ -88,6 +88,18 @@ function adaptQuality(now, smooth) {
     try { localStorage.setItem('hiddenLibrary.lib3dScale', JSON.stringify({ s: RT_SCALE, t: Date.now() })); } catch (e) { /* storage blocked */ }
   }
 }
+/* the room comes in by parts as the page opens (G, 17/10/2026: "phòng trước, sau đó mới đến cây, rồi mới đến trời, và
+   cuối cùng là thời tiết và text"): 0 the room alone (the garden's haze behind the glass), 1 the garden (trees, shrubs,
+   ground), 2 the sky (its dome; by night the stars and the moon), 3 the weather (rain, drops, lightning) and the words
+   over the room (its labels; the page's weather line) */
+const REVEAL = { stage: 3, hid: null };
+function reveal(stage) {
+  REVEAL.stage = stage; const sky = LIGHTS.sky, out = sky && sky.parent;
+  if (out) { if (!REVEAL.hid) REVEAL.hid = out.children.filter(o => o.visible); for (const o of REVEAL.hid) o.visible = o === sky ? stage >= 2 : stage >= 1; }
+  if (stage < 2) { scene.background = (scene.background && scene.background.isColor ? scene.background : new THREE.Color()).copy(scene.fog.color); } else if (scene.background && scene.background.isColor) scene.background = null;
+  document.documentElement.classList.toggle('l3-wait', stage < 3);
+  setShadowsDirty(true); needs = true;
+}
 async function start() {
   await main();
   buildNightLights(); buildNightSky(); buildFireflies();
@@ -95,8 +107,10 @@ async function start() {
   { const t = hourTarget(); applyHour(t.e, t.az); }
   resize(); applyRefCamera();
   buildInterface();
-  await compileFor(scene);
+  await compileFor(scene);   // (everything compiled while shown; then let in by parts)
+  reveal(0);
   ready = true; draw(); updateOn(); startedAt = performance.now();
+  if (!reduceMotion) [[1, 600], [2, 1250], [3, 1900]].forEach(([s, ms]) => setTimeout(() => reveal(s), ms)); else reveal(3);
   renderer.setAnimationLoop(loop);
   loadPets().catch(e => console.warn('pets unavailable', e));   // the cat and the chicken, once the room shows
   (window.requestIdleCallback || (fn => setTimeout(fn, 500)))(() => precompileLightStates(), { timeout: 3000 });
@@ -131,4 +145,4 @@ async function precompileLightStates() {
 function setNeeds(v) { needs = v; }
 function setReady(v) { ready = v; }
 
-export { clock, draw, hold, loop, on, ready, setNeeds, setReady, start, updateOn };
+export { REVEAL, clock, draw, hold, loop, on, ready, setNeeds, setReady, start, updateOn };
