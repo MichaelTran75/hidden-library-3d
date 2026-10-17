@@ -20,7 +20,7 @@ import { setNeeds } from '../core/loop.js';
      textures in one atlas; each vertex carries its texture's place there and the range of its own texture coordinates,
      and the shader repeats each texture inside its cell as the model did (issPatch). No normals: shaded flat, as its
      panels and trusses are.
-   - 79 cm across its arrays (88 at first, 10 % smaller: G, 18/10/2026), its face to the room (the truss over the modules, the Russian segment above), leaning back
+   - 71 cm across its arrays (88 at first, 10 % smaller twice: G, 18/10/2026), its face to the room (the truss over the modules, the Russian segment above), leaning back
      12° to look down at the room's eye, turned 18° toward it. The rod meets the back of the US laboratory, under the
      truss's middle.
    - Drawn sharp over the painted room as the 747 is (pets.js crispPass, on a layer of its own), outlined under the
@@ -28,12 +28,12 @@ import { setNeeds } from '../core/loop.js';
 const ISS = { ok: false, layer: 6, url: 'https://michaeltran75.github.io/iss-station/', hover: false, out: 0, fade: 0, holder: null, mesh: null, box: null, vox: null, hitBoxes: null,
   P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 6, toneK: 1, outline: true, pad: 12 } };
 const IS = {
-  span: 0.88 * 0.9,                          // across its arrays (m): 79 cm
+  span: 0.88 * 0.9 * 0.9,                    // across its arrays (m): 71 cm
   lean: 12 * Math.PI / 180,                  // its face tipped down toward the room's eye
   yaw: -18 * Math.PI / 180,                  // and turned toward it (the room's eye is to its left)
   mid: [1.68, 3.51],                         // the middle of it (x, y): the middle of G's box, over the Geography bay
   attach: [7.0, -2.3, -4.0],                 // where the rod meets it, in the model's units: the back of the US lab, under the truss's middle
-  stand: 1.5 * 0.9,                          // the stand: the 747's (as it was at first) 1.35 times
+  stand: 1.5 * 0.9 * 0.9,                    // the stand: the 747's (as it was at first) 1.2 times
   light: 1.6,                                // its display light
 };
 

@@ -160,7 +160,9 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
 - Một tấm quay mặt về camera đặt ở kính bóng đèn, kéo về phía mắt 7 cm, cộng sáng (additive) trong `OVER.scene` như đom đóm. Nó được vẽ cùng lớp sắc nét (30 khung/giây), không bắt phòng (đã tô màu nước) vẽ lại.
 - Bị che bởi những gì phòng đặt phía trước (so với `uDepth`).
 - Nhịp:
-  - "Thở" bằng hai sóng chậm 3,8 s và 6,1 s, nên không bao giờ lặp y hệt. Quầng sáng sáng/tối khoảng ±20 %, cỡ to/nhỏ 14 %.
+  - "Thở" bằng hai sóng chậm 3,8 s và 6,1 s, nên không bao giờ lặp y hệt.
+  - Mức sáng "vừa đủ" (G, 18/10): vòng sáng quanh bóng sáng hơn bản tô màu nước khoảng 1/4 (đo 44,6 → 54–63), lõi khoảng 200–220 trên 255, không cháy trắng. Cỡ quầng to/nhỏ 8 %.
+  - Bản đầu sáng gấp khoảng 2,5 lần mức này và làm kính cháy trắng.
   - Lung linh rất nhẹ 3 %.
   - Gồm lõi trắng ấm, quầng hổ phách và một lớp toả rộng (lớp này phồng nhiều nhất theo nhịp thở).
 - Chỉ bật khi bóng đèn sáng. Độ sáng đọc từ độ mờ quầng sáng của chính bóng đèn mà `hour.js` đặt (0 ban ngày).
@@ -173,8 +175,8 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   - 36 texture gộp trong atlas 1024×512, thuộc tính `_CELL`/`_UVT`, shader `issPatch` lặp vân trong ô;
   - không có pháp tuyến, đổ bóng phẳng.
 - Kích thước và tư thế:
-  - Rộng 79 cm (lúc đầu 88 cm, G cho nhỏ đi 10 % ngày 18/10), mặt quay vào phòng, ngả sau 12°, xoay 18° về phía mắt người xem, tâm ở (1,68; 3,51).
-  - Giá đỡ `standParts(rodTop, 1.35)` (hàm của `b747.js`, có thêm hệ số kích thước). Cần cao khoảng 0,86 m.
+  - Rộng 71 cm (lúc đầu 88 cm, ngày 18/10 G cho nhỏ đi 10 % hai lần), mặt quay vào phòng, ngả sau 12°, xoay 18° về phía mắt người xem, tâm ở (1,68; 3,51).
+  - Giá đỡ `standParts(rodTop, 1.215)` (hàm của `b747.js`, có thêm hệ số kích thước). Cần cao khoảng 0,86 m.
   - Đế đặt giữa nóc kệ. Lưng trạm cách kính ít nhất 4 cm, đế cách thanh ngang chân kính.
 - Vẽ sắc nét trên lớp 6 qua `crispPass`, có viền chọn như 747. Có đèn trưng bày riêng chỉ trên lớp 6 (`ISS.key`, cường độ 1,6) vì nó đứng xa các đèn của phòng.
 - Bắt chuột (`issHit`):

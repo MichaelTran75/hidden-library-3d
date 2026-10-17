@@ -4994,7 +4994,9 @@ function buildFireflies() {
    layer, 30 times a second. A quad facing the eye at the bulb's glass, pulled 7 cm toward the eye so the glass does not
    hide it, and hidden behind whatever the room puts in front of it. Its light breathes slowly (two slow waves, 3.8 s
    and 6.1 s, so it never quite repeats) and shimmers a very little: a warm core in an amber halo, in a wider bloom that
-   swells more with the breath. On only while the bulb is (fx/hour.js: the pendant's glow). */
+   swells more with the breath; just enough of it (G, 18/10/2026: "glowing ở mức vừa đủ"): the ring round the bulb
+   about a quarter brighter than the painting has it, give or take a tenth with the breath, its glass not blown white.
+   On only while the bulb is (fx/hour.js: the pendant's glow). */
 const BULB = { mesh: null, on: { value: 0 }, t: { value: 0 }, at: { value: new THREE.Vector3() }, size: { value: 0.42 } };
 function buildBulbGlow(at) {
   BULB.at.value.copy(at);
@@ -5007,9 +5009,9 @@ function buildBulbGlow(at) {
       void main(){ if (gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 4e-6) discard;
         float t = uTime, b = 0.5 + 0.5 * (0.62 * sin(t * 1.653) + 0.38 * sin(t * 1.03 + 1.3));              // the breath, 0..1
         float s = 1.0 + 0.03 * sin(t * 23.0) * sin(t * 7.1 + 0.4) + 0.015 * sin(t * 41.3);                     // the shimmer
-        float q = length(vQ), r = q / (0.86 + 0.14 * b);
-        float core = exp(-r * r / 0.010), halo = 0.5 * exp(-r * r / 0.07), bloom = 0.16 * exp(-r * r / 0.35) * (0.35 + 1.3 * b);
-        vec3 col = vec3(1.0, 0.93, 0.8) * core * 0.45 + vec3(1.0, 0.74, 0.42) * halo * (0.62 + 0.6 * b) + vec3(1.0, 0.62, 0.3) * bloom;
+        float q = length(vQ), r = q / (0.92 + 0.08 * b);
+        float core = exp(-r * r / 0.010), halo = 0.2 * exp(-r * r / 0.07), bloom = 0.07 * exp(-r * r / 0.35) * (0.6 + 0.8 * b);
+        vec3 col = vec3(1.0, 0.93, 0.8) * core * 0.18 + vec3(1.0, 0.74, 0.42) * halo * (0.75 + 0.4 * b) + vec3(1.0, 0.62, 0.3) * bloom;
         col *= s * uOn * smoothstep(1.0, 0.85, q); if (max(col.r, max(col.g, col.b)) < 0.002) discard;
         gl_FragColor = vec4(col, 1.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
@@ -7163,7 +7165,7 @@ function clockHit(ray) {
      textures in one atlas; each vertex carries its texture's place there and the range of its own texture coordinates,
      and the shader repeats each texture inside its cell as the model did (issPatch). No normals: shaded flat, as its
      panels and trusses are.
-   - 79 cm across its arrays (88 at first, 10 % smaller: G, 18/10/2026), its face to the room (the truss over the modules, the Russian segment above), leaning back
+   - 71 cm across its arrays (88 at first, 10 % smaller twice: G, 18/10/2026), its face to the room (the truss over the modules, the Russian segment above), leaning back
      12° to look down at the room's eye, turned 18° toward it. The rod meets the back of the US laboratory, under the
      truss's middle.
    - Drawn sharp over the painted room as the 747 is (pets.js crispPass, on a layer of its own), outlined under the
@@ -7171,12 +7173,12 @@ function clockHit(ray) {
 const ISS = { ok: false, layer: 6, url: 'https://michaeltran75.github.io/iss-station/', hover: false, out: 0, fade: 0, holder: null, mesh: null, box: null, vox: null, hitBoxes: null,
   P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 6, toneK: 1, outline: true, pad: 12 } };
 const IS = {
-  span: 0.88 * 0.9,                          // across its arrays (m): 79 cm
+  span: 0.88 * 0.9 * 0.9,                    // across its arrays (m): 71 cm
   lean: 12 * Math.PI / 180,                  // its face tipped down toward the room's eye
   yaw: -18 * Math.PI / 180,                  // and turned toward it (the room's eye is to its left)
   mid: [1.68, 3.51],                         // the middle of it (x, y): the middle of G's box, over the Geography bay
   attach: [7.0, -2.3, -4.0],                 // where the rod meets it, in the model's units: the back of the US lab, under the truss's middle
-  stand: 1.5 * 0.9,                          // the stand: the 747's (as it was at first) 1.35 times
+  stand: 1.5 * 0.9 * 0.9,                    // the stand: the 747's (as it was at first) 1.2 times
   light: 1.6,                                // its display light
 };
 
@@ -8098,7 +8100,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, PLANE, CLOCK, ISS, RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
+window.__lib3d = { PETS, PLANE, CLOCK, ISS, BULB, RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
   atlas: (which, lang, w = 1024, h = 1371) => { const c = canvas(w, h), t0 = performance.now(); drawAtlas(c, which, lang); return { url: c.toDataURL('image/png'), ms: performance.now() - t0 }; } };   // (tests: the Geography books' page on its own)
 // The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
 // the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page
