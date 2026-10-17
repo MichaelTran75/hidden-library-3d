@@ -533,6 +533,7 @@ function placeMoon() {   // in the left glass, between the posts at z −6.6 and
   const upper = 12.3 * Math.PI / 180, yUp = REF.py - REF.f * Math.tan(upper) / Math.cos(az);   // its lower edge clears the transom's inner top
   const el = yUp - 21 - 5 >= top ? upper : 7.4 * Math.PI / 180, dir = new V3(-Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
   OVER.moon.position.copy(REF.eye).addScaledVector(dir, 240); OVER.moon.lookAt(REF.eye);
+  if (window.HL_SUN.place.lat < 0) OVER.moon.rotateZ(Math.PI);   // (seen from south of the equator the moon is turned over, as the clock's is: src/sun)
 }
 
 export { METEOR, SKYCLEAR, SKYSET, STARU, buildNightSky, loadMoon, moonAge, placeMoon, stepMeteors };

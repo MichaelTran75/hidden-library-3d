@@ -106,7 +106,8 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const fl = floorLamp(); fl.position.set(R.xS - 0.28, 0, R.zB + R.caseD + 0.16); fl.rotation.y = -0.15; F.add(fl); LIGHTS.floor = fl;
   paintLightly(fl);   // (75 % less watercolour on it: G, 16/10/2026)
   // ---- a bare bulb hanging over the front of the sofa's seat: from the room's first view it is seen above the RESEARCH
-  // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up
+  // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up;
+  // the page's sky clock is centred over it (build.py: 39.92 painting px right of the middle; moved with it)
   const pd = pendantLamp(R.H - 3.27); pd.position.set(0.43, R.H, -7.2); F.add(pd); LIGHTS.pendant = pd;
   paintLightly(pd, 0.875);   // (75 % less watercolour, then half of what was left: G, 17/10/2026)
   // ---- stump side table + plant

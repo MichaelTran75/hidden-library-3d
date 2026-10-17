@@ -14,11 +14,12 @@ import { REVEAL, clock, ready, setNeeds } from '../core/loop.js';
 import { setHenAway } from '../world/pets.js';
 
 /* ---------------------------------------------------------------- rain
-   Rain outside the glass when it rains at Pleiku now (G, 16/10/2026: "làm mưa ngoài kính khi (local time) có mưa"): the
-   page's live weather (weather/sky-weather.js: Open-Meteo, the 3D garden's source and place; window.HL_WEATHER and its
-   'hl-weather' event), how hard from its WMO code and the last quarter hour's rain, as the garden reads it.
+   Rain outside the glass when it rains where the visitor is now (G, 16/10/2026: "làm mưa ngoài kính khi (local time) có
+   mưa"; 17/10/2026: the weather of the visitor's place, as the page's sun is worked out for it: src/sun): the page's live
+   weather (weather/sky-weather.js: Open-Meteo, the 3D garden's source; window.HL_WEATHER and its 'hl-weather' event),
+   how hard from its WMO code and the last quarter hour's rain, as the garden reads it.
    - The rain itself: thousands of drops falling past the glass at their terminal speed (6.5 to 9 m/s for 2 to 4 mm
-     drops: Gunn & Kinzer 1949), slanting with the wind (blowing as it does at Pleiku, turned into the room's compass),
+     drops: Gunn & Kinzer 1949), slanting with the wind (blowing as it does there, turned into the room's compass),
      each drawn as a camera sees a drop, a short streak (its fall in a 30th of a second) one or two pixels wide, nearer
      ones wider and brighter, thicker near the glass; light ones against the dark garden by day, and by night lit warm by
      the room's lamps where they pass close to the glass. Where one reaches the patio or the lawn it splashes, a small
@@ -49,7 +50,7 @@ function readWeather() {
   const W = window.HL_WEATHER, c = W && W.cur; if (!c) return;
   const code = c.weather_code, mmh = (c.precipitation || 0) * 4;   // (a quarter hour's rain: weather/sky-weather.js)
   let k = RAIN_K[code] || 0; if (mmh > 0.05) k = Math.max(k, Math.min(1, 0.28 + mmh / 9));
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) k = 0;   // (snow: never at Pleiku)
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) k = 0;   // (snow: the garden gets none; only its grey light)
   WX.kT = k; WX.storm = code >= 95; WX.cover = (c.cloud_cover ?? 0) / 100;
   WX.ovRain = k > 0 ? 0.82 + 0.18 * k : 0; WX.ovCloud = Math.max(THREE.MathUtils.smoothstep(WX.cover, 0.6, 1.0) * 0.6, code === 45 || code === 48 ? 0.7 : 0);
   WX.ovT = Math.max(WX.ovRain, WX.ovCloud * (1 - NIGHT.u.value));

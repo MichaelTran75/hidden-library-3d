@@ -128,6 +128,8 @@ STYLE = IMPORTMAP + """<script>
   body.dark-mode .chip:hover { border-color: rgba(var(--accent-rgb), .6); }
   .lang-switch button[aria-pressed="true"], .subtab[aria-current="page"], .np .np-play { color: var(--on-accent); }
   .np .np-play:hover { background: var(--accent-hover); }
+  /* the sky clock's moon as it is seen where the visitor is: turned over south of the equator (src/sun: html.hl-south) */
+  html.hl-south .sky .moon img { transform: rotate(180deg); }
   /* ---- 3D library: the room is the interface on wide screens (the old cards stay in the DOM, hidden) */
   #lib3d { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; opacity: 0; transition: opacity 1.6s var(--ease); touch-action: none; }
   body.lib3d-on #lib3d { opacity: 1; }
@@ -139,6 +141,13 @@ STYLE = IMPORTMAP + """<script>
     html.lib3d-capable:not(.lib3d-failed) .page .footer { display: none !important; }
     html.lib3d-capable:not(.lib3d-failed) .pages { pointer-events: none; }
     html.lib3d-capable:not(.lib3d-failed) .sky a, html.lib3d-capable:not(.lib3d-failed) .sky button { pointer-events: auto; }
+    /* the sky clock and its weather line on the room's middle: over the bulb that hangs above the sofa (G, 17/10/2026:
+       "align the clock to the middle", a line from the bulb up through the clock), not the middle of the page beside the
+       sidebar. The room's first view is its painting cropped like a cover, and the bulb stands 39.92 of the painting's
+       pixels right of its middle (1562 × 2000: lib3d/core/views.js homeView; measured): on the window at 50vw plus
+       max(2.556vw, 1.996vh). The page the clock sits in is centred at 50vw + sidebar / 2. On a narrow window it stops
+       clear of the sidebar. (Moving the bulb, world/furnish.js, moves this.) */
+    html.lib3d-capable:not(.lib3d-failed) .page .sky { left: calc(max(50vw + max(2.556vw, 1.996vh), var(--sidebar-w) + 16px + min(21vw, 210px)) - 50vw - var(--sidebar-w) / 2); }
     /* the sidebar floats on the room: no panel, a soft halo keeps the words readable */
     html.lib3d-capable:not(.lib3d-failed) .toc { background: none; border-right-color: transparent; text-shadow: var(--halo); --ink-soft: rgba(0, 0, 0, .8); }
     html.lib3d-capable:not(.lib3d-failed) body.dark-mode .toc { --ink-soft: rgba(255, 255, 255, .84); }

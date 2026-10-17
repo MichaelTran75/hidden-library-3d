@@ -1,6 +1,9 @@
 /* Live weather on the page's sky clock (G, 15/10/2026: "sun/moon có thêm live weather: gió, mưa, nhiệt độ, sấm sét").
-   The weather at Pleiku (Gia Lai), the same place as the 3D garden's, from Open-Meteo: model estimates, refreshed every
-   15 minutes, no account, key or location permission (kept 15 minutes in the browser, so a reload does not ask again).
+   The weather where the visitor is (G, 17/10/2026: "clock and weather base on local browser user"): at the place the
+   page's sun is worked out for (window.HL_SUN.place, src/sun: the principal city of their clock's time zone; Pleiku,
+   the room's own place, for a clock on Vietnam's time), so the weather and the sunrise and sunset over it are the same
+   place's, and the 3D garden's rain and light with them. From Open-Meteo: model estimates, refreshed every 15 minutes,
+   no account, key or location permission (kept 15 minutes in the browser for that place, so a reload does not ask again).
    - Under the clock: the weather's sign, the temperature, what the sky is doing, the wind (an arrow the way it blows,
      km/h), the rain of the last quarter hour, a storm when there is one; the rest (humidity, gusts, when it was
      measured) in its tooltip. In both of the page's languages.
@@ -12,10 +15,12 @@
    rest of the page: window.HL_WEATHER, the event 'hl-weather', and <html data-wx="clear | cloud | fog | rain | storm">. */
 (function () {
   'use strict';
-  var LOC = { lat: 13.98333, lon: 108.0, name: 'Pleiku' };
+  var P = (window.HL_SUN && window.HL_SUN.place) || { lat: 13.98, lon: 108.0, city: 'Pleiku' };
+  var LOC = { lat: Math.round(P.lat * 100) / 100, lon: Math.round(P.lon * 100) / 100, name: P.city || '' };
   var API = 'https://api.open-meteo.com/v1/forecast?latitude=' + LOC.lat + '&longitude=' + LOC.lon +
     '&current=temperature_2m,relative_humidity_2m,precipitation,rain,showers,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day&timezone=auto';
-  var REFRESH = 15 * 60 * 1000, KEY = 'hiddenLibrary.weather.v1';
+  var REFRESH = 15 * 60 * 1000, KEY = 'hiddenLibrary.weather.v2';   // ({ cur, at, lat, lon }: another place's is not used)
+  try { localStorage.removeItem('hiddenLibrary.weather.v1'); } catch (e) { /* storage blocked */ }   // (Pleiku's, from before)
   var FAKE = {   // (?wx=…: what each looks like)
     clear: { weather_code: 0, temperature_2m: 26, cloud_cover: 2, wind_speed_10m: 6, wind_direction_10m: 100, wind_gusts_10m: 12, precipitation: 0, relative_humidity_2m: 60 },
     wind: { weather_code: 2, temperature_2m: 22, cloud_cover: 45, wind_speed_10m: 34, wind_direction_10m: 250, wind_gusts_10m: 58, precipitation: 0, relative_humidity_2m: 70 },
@@ -92,13 +97,14 @@
   function load() {
     if (force) { var f = Object.assign({ time: '' }, FAKE[force]); take(f, Date.now()); return; }
     var cached = null; try { cached = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* storage blocked */ }
+    if (cached && (cached.lat !== LOC.lat || cached.lon !== LOC.lon)) cached = null;   // (kept for another place: the clock's zone has changed)
     if (cached && cached.cur && Date.now() - cached.at < REFRESH) { take(cached.cur, cached.at); return; }
     if (cached && cached.cur && Date.now() - cached.at < 6 * 3600 * 1000) take(cached.cur, cached.at);   // (shown while the new one comes)
     var ctl = window.AbortController ? new AbortController() : null, to = setTimeout(function () { if (ctl) ctl.abort(); }, 12000);
     fetch(API, { credentials: 'omit', signal: ctl ? ctl.signal : undefined }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
       clearTimeout(to);
       var c = d && d.current; if (!c || typeof c.weather_code !== 'number') return;
-      var at = Date.now(); try { localStorage.setItem(KEY, JSON.stringify({ cur: c, at: at })); } catch (e) { /* storage blocked */ }
+      var at = Date.now(); try { localStorage.setItem(KEY, JSON.stringify({ cur: c, at: at, lat: LOC.lat, lon: LOC.lon })); } catch (e) { /* storage blocked */ }
       take(c, at);
     }).catch(function () { clearTimeout(to); });
   }
@@ -116,8 +122,8 @@
       (k === 'storm' ? '<span class="wx-sep">·</span><span class="wx-storm">' + svg('bolt') + both('Lightning', 'Sấm sét') + '</span>' : '');
     var when = c.time ? c.time.slice(11, 16) : '';
     var tip = vi()
-      ? LOC.name + ' (Gia Lai) · ' + name[1] + ' · gió ' + d[1] + ' ' + num(c.wind_speed_10m || 0, 0) + ' km/h, giật ' + num(c.wind_gusts_10m || 0, 0) + ' km/h · độ ẩm ' + num(c.relative_humidity_2m || 0, 0) + '% · mây ' + num(c.cloud_cover || 0, 0) + '%' + (when ? ' · đo lúc ' + when : '') + ' (Open-Meteo)'
-      : LOC.name + ' (Gia Lai, Vietnam) · ' + name[0] + ' · wind ' + d[0] + ' ' + num(c.wind_speed_10m || 0, 0) + ' km/h, gusts ' + num(c.wind_gusts_10m || 0, 0) + ' km/h · humidity ' + num(c.relative_humidity_2m || 0, 0) + '% · cloud ' + num(c.cloud_cover || 0, 0) + '%' + (when ? ' · at ' + when : '') + ' (Open-Meteo)';
+      ? placeName(true) + ' · ' + name[1] + ' · gió ' + d[1] + ' ' + num(c.wind_speed_10m || 0, 0) + ' km/h, giật ' + num(c.wind_gusts_10m || 0, 0) + ' km/h · độ ẩm ' + num(c.relative_humidity_2m || 0, 0) + '% · mây ' + num(c.cloud_cover || 0, 0) + '%' + (when ? ' · đo lúc ' + when : '') + ' (Open-Meteo)'
+      : placeName(false) + ' · ' + name[0] + ' · wind ' + d[0] + ' ' + num(c.wind_speed_10m || 0, 0) + ' km/h, gusts ' + num(c.wind_gusts_10m || 0, 0) + ' km/h · humidity ' + num(c.relative_humidity_2m || 0, 0) + '% · cloud ' + num(c.cloud_cover || 0, 0) + '%' + (when ? ' · at ' + when : '') + ' (Open-Meteo)';
     skies().forEach(function (s) {
       var line = s.querySelector('.wx');
       if (!line) { line = document.createElement('div'); line.className = 'wx'; line.setAttribute('role', 'note'); s.appendChild(line); }
@@ -125,6 +131,13 @@
       s.classList.toggle('wx-grey', k === 'rain'); s.classList.toggle('wx-dark', k === 'storm'); s.classList.toggle('wx-fog', k === 'fog');
       s.classList.toggle('wx-dim', (c.cloud_cover || 0) > 80 || rainy || k === 'fog');
     });
+  }
+  function placeName(v) {   // (the tooltip's place: Pleiku with its province; a time zone's city, said to be taken from the clock; else where)
+    if (LOC.name === 'Pleiku') return v ? 'Pleiku (Gia Lai)' : 'Pleiku (Gia Lai, Vietnam)';
+    if (LOC.name) return LOC.name + (v ? ' (theo múi giờ máy bạn)' : ' (by your clock’s time zone)');
+    var deg = function (x) { return num(Math.abs(x), 1).replace('.', v ? ',' : '.') + '°'; };
+    return v ? deg(LOC.lat) + (LOC.lat < 0 ? ' Nam, ' : ' Bắc, ') + deg(LOC.lon) + (LOC.lon < 0 ? ' Tây' : ' Đông')
+      : deg(LOC.lat) + (LOC.lat < 0 ? ' S, ' : ' N, ') + deg(LOC.lon) + (LOC.lon < 0 ? ' W' : ' E');
   }
   function skies() { return Array.prototype.slice.call(document.querySelectorAll('.sky')).filter(function (s) { return s.querySelector('.sky-box'); }); }
 

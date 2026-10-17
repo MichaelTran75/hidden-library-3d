@@ -79,7 +79,7 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
 
 ### Thời tiết trực tiếp (`src/weather/`)
 
-- `sky-weather.js` + `.css`: thời tiết Pleiku (Open-Meteo, 15 phút) dưới đồng hồ mặt trời/mặt trăng của trang; mây theo độ phủ và hướng/tốc độ gió, mưa, chớp khi dông. Script thường (không thuộc lib3d), nên điện thoại cũng có. `build.py` chèn vào cả hai bản. Xem thử: `?wx=clear|wind|fog|drizzle|rain|storm`.
+- `sky-weather.js` + `.css`: thời tiết nơi người xem (Open-Meteo, 15 phút; từ 17/10 lấy đúng chỗ `HL_SUN.place` mà giờ mặt trời mọc/lặn dùng: thành phố chính của múi giờ máy họ, giờ Việt Nam → Pleiku; bộ nhớ đệm `hiddenLibrary.weather.v2` ghi kèm lat/lon, đổi chỗ thì bỏ) dưới đồng hồ mặt trời/mặt trăng của trang; mây theo độ phủ và hướng/tốc độ gió, mưa, chớp khi dông. Script thường (không thuộc lib3d), nên điện thoại cũng có. `build.py` chèn vào cả hai bản. Xem thử: `?wx=clear|wind|fog|drizzle|rain|storm`.
 - Trạng thái cho phần còn lại của trang: `window.HL_WEATHER`, sự kiện `hl-weather`, `<html data-wx>`.
 
 ### Mặt trời theo giờ địa phương (`src/sun/`, 17/10/2026)

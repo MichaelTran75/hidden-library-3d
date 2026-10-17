@@ -2155,7 +2155,8 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const fl = floorLamp(); fl.position.set(R.xS - 0.28, 0, R.zB + R.caseD + 0.16); fl.rotation.y = -0.15; F.add(fl); LIGHTS.floor = fl;
   paintLightly(fl);   // (75 % less watercolour on it: G, 16/10/2026)
   // ---- a bare bulb hanging over the front of the sofa's seat: from the room's first view it is seen above the RESEARCH
-  // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up
+  // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up;
+  // the page's sky clock is centred over it (build.py: 39.92 painting px right of the middle; moved with it)
   const pd = pendantLamp(R.H - 3.27); pd.position.set(0.43, R.H, -7.2); F.add(pd); LIGHTS.pendant = pd;
   paintLightly(pd, 0.875);   // (75 % less watercolour, then half of what was left: G, 17/10/2026)
   // ---- stump side table + plant
@@ -2523,7 +2524,7 @@ function buildNightLights() {
    - Twilight: civil (0 to −6°) brings an orange band on the sun's side under a sky turning violet, then deep blue
      (the blue hour, around −4°); in nautical twilight (−6 to −12°) the stars come out and the night look takes over.
    - The lamps come on as the daylight goes (sun from 6° to −4°), as someone reading there would switch them on.
-   - The weather (fx/rain.js WX.ov, from the live weather at Pleiku): under an overcast or in rain the sun goes behind
+   - The weather (fx/rain.js WX.ov, from the live weather where the visitor is): under an overcast or in rain the sun goes behind
      the cloud (no direct light, no shadows, no golden hour), the skylight dims a little and turns grey, the sky dome is
      one grey layer and the rain's haze takes the far trees.
    The page's day/night switch still wins when it is used by hand: the room then goes to the painting's afternoon or
@@ -4890,6 +4891,7 @@ function placeMoon() {   // in the left glass, between the posts at z −6.6 and
   const upper = 12.3 * Math.PI / 180, yUp = REF.py - REF.f * Math.tan(upper) / Math.cos(az);   // its lower edge clears the transom's inner top
   const el = yUp - 21 - 5 >= top ? upper : 7.4 * Math.PI / 180, dir = new V3(-Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
   OVER.moon.position.copy(REF.eye).addScaledVector(dir, 240); OVER.moon.lookAt(REF.eye);
+  if (window.HL_SUN.place.lat < 0) OVER.moon.rotateZ(Math.PI);   // (seen from south of the equator the moon is turned over, as the clock's is: src/sun)
 }
 /* ---- fireflies: from dusk on, three drift through the room and seven through the garden outside, and flash, drawn sharp over the picture like the stars
    (the paint pass would smear points this small) and hidden behind whatever the room puts in front of them. Each one
@@ -4939,11 +4941,12 @@ function buildFireflies() {
   pts.frustumCulled = false; pts.visible = false; OVER.scene.add(pts); FLY.pts = pts;
 }
 /* ---------------------------------------------------------------- rain
-   Rain outside the glass when it rains at Pleiku now (G, 16/10/2026: "làm mưa ngoài kính khi (local time) có mưa"): the
-   page's live weather (weather/sky-weather.js: Open-Meteo, the 3D garden's source and place; window.HL_WEATHER and its
-   'hl-weather' event), how hard from its WMO code and the last quarter hour's rain, as the garden reads it.
+   Rain outside the glass when it rains where the visitor is now (G, 16/10/2026: "làm mưa ngoài kính khi (local time) có
+   mưa"; 17/10/2026: the weather of the visitor's place, as the page's sun is worked out for it: src/sun): the page's live
+   weather (weather/sky-weather.js: Open-Meteo, the 3D garden's source; window.HL_WEATHER and its 'hl-weather' event),
+   how hard from its WMO code and the last quarter hour's rain, as the garden reads it.
    - The rain itself: thousands of drops falling past the glass at their terminal speed (6.5 to 9 m/s for 2 to 4 mm
-     drops: Gunn & Kinzer 1949), slanting with the wind (blowing as it does at Pleiku, turned into the room's compass),
+     drops: Gunn & Kinzer 1949), slanting with the wind (blowing as it does there, turned into the room's compass),
      each drawn as a camera sees a drop, a short streak (its fall in a 30th of a second) one or two pixels wide, nearer
      ones wider and brighter, thicker near the glass; light ones against the dark garden by day, and by night lit warm by
      the room's lamps where they pass close to the glass. Where one reaches the patio or the lawn it splashes, a small
@@ -4974,7 +4977,7 @@ function readWeather() {
   const W = window.HL_WEATHER, c = W && W.cur; if (!c) return;
   const code = c.weather_code, mmh = (c.precipitation || 0) * 4;   // (a quarter hour's rain: weather/sky-weather.js)
   let k = RAIN_K[code] || 0; if (mmh > 0.05) k = Math.max(k, Math.min(1, 0.28 + mmh / 9));
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) k = 0;   // (snow: never at Pleiku)
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) k = 0;   // (snow: the garden gets none; only its grey light)
   WX.kT = k; WX.storm = code >= 95; WX.cover = (c.cloud_cover ?? 0) / 100;
   WX.ovRain = k > 0 ? 0.82 + 0.18 * k : 0; WX.ovCloud = Math.max(THREE.MathUtils.smoothstep(WX.cover, 0.6, 1.0) * 0.6, code === 45 || code === 48 ? 0.7 : 0);
   WX.ovT = Math.max(WX.ovRain, WX.ovCloud * (1 - NIGHT.u.value));

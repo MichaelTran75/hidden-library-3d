@@ -26,7 +26,7 @@ import { WX } from './rain.js';
    - Twilight: civil (0 to −6°) brings an orange band on the sun's side under a sky turning violet, then deep blue
      (the blue hour, around −4°); in nautical twilight (−6 to −12°) the stars come out and the night look takes over.
    - The lamps come on as the daylight goes (sun from 6° to −4°), as someone reading there would switch them on.
-   - The weather (fx/rain.js WX.ov, from the live weather at Pleiku): under an overcast or in rain the sun goes behind
+   - The weather (fx/rain.js WX.ov, from the live weather where the visitor is): under an overcast or in rain the sun goes behind
      the cloud (no direct light, no shadows, no golden hour), the skylight dims a little and turns grey, the sky dome is
      one grey layer and the rain's haze takes the far trees.
    The page's day/night switch still wins when it is used by hand: the room then goes to the painting's afternoon or

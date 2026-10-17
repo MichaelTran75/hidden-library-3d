@@ -1,7 +1,10 @@
 /* The sun where the visitor is, by their own clock (G, 17/10/2026: "do research và cho mặt trời mọc và mặt trời lặn
    depend on local time"): window.HL_SUN, for the page (its day/night theme, its sky clock's sunrise and sunset, the
-   weather's sign) and the 3D room (fx/hour.js: its light; fx/sky.js: the real sky). Put in the page's <head> by
-   build.py, after zones.js, so the theme is right from the first paint.
+   weather's sign; and the weather itself is that place's: weather/sky-weather.js, G, 17/10/2026: "clock and weather
+   base on local browser user") and the 3D room (fx/hour.js: its light; fx/sky.js: the real sky). Put in the page's
+   <head> by build.py, after zones.js, so the theme is right from the first paint. South of the equator <html> gets the
+   class hl-south: the moon, the clock's and the room's, is seen from there turned over (its lit side on the left as it
+   waxes), so its picture (taken from the north) is turned half round.
    - Where: the time zone the browser's clock keeps (Intl.DateTimeFormat().resolvedOptions().timeZone), at the zone's
      principal city (zones.js: the IANA time zone database's zone.tab). No permission is asked: inside the Wix frame
      the page could not ask for the visitor's position anyway (a cross-origin frame gets no geolocation unless the page
@@ -110,4 +113,5 @@
   var P;
   try { P = where(); } catch (e) { P = { lat: PLEIKU.lat, lon: PLEIKU.lon, zone: '', city: 'Pleiku' }; }   // (the place unreadable: the room's own)
   window.HL_SUN = { place: P, at: at, times: times, minutes: minutes, isDay: isDay };
+  if (P.lat < 0) document.documentElement.classList.add('hl-south');
 })();
