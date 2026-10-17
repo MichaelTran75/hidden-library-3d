@@ -8,7 +8,6 @@ import * as THREE from 'three';
    ≤ 20 fps otherwise, and rests while the page is idle.                                                          */
 const $ = id => document.getElementById(id);
 const body = document.body;
-const setLoad = () => {};
 const CANVAS = document.createElement('canvas'); CANVAS.id = 'lib3d'; CANVAS.setAttribute('aria-hidden', 'true'); body.prepend(CANVAS);
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // a pause in the long build, so the page stays responsive: a message to itself (unlike a timer or scheduler.yield it is
@@ -30,4 +29,4 @@ const R = {
 };
 const REF = { w: 1562, h: 2000, f: 1520, px: 730, py: 960, eye: new THREE.Vector3(0, 1.75, 0) };
 
-export { CANVAS, R, REF, body, reduceMotion, setLoad, tick };
+export { CANVAS, R, REF, body, reduceMotion, tick };

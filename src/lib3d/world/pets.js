@@ -7,12 +7,13 @@ import { reduceMotion } from '../core/base.js';
 import { canvas, ctex } from '../core/utils.js';
 import { camera, renderer, scene, setShadowsDirty } from '../core/renderer.js';
 import { room } from './room.js';
+import { outside } from './outside.js';
 import { PAINT_GLSL, POST, QUAD_VS, paintUniforms, setPaint } from '../fx/post.js';
 import { HOUR } from '../fx/hour.js';
 import { OVER } from '../ui/words.js';
 import { HERO, heroKey } from '../ui/hero-books.js';
 import { DECKR } from '../ui/deck.js';
-import { clock, on, setNeeds } from '../core/loop.js';
+import { REVEAL, clock, on, setNeeds } from '../core/loop.js';
 import { CATR, CGAIT, catAxis, catGait, catKeep, catLook, catReach, catSnap, catStride, catTail, catToward, catTurn, rigCat } from './cat.js';
 import { FUR, furComb, furCoat, furLight } from './fur.js';
 import { SOFT } from './velvet.js';
@@ -244,7 +245,7 @@ async function loadPets() {
     const mat = petMaterial(mesh.material, { roughness: 0.8, sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xffefd8) }); mat.onBeforeCompile = henPatch; mat.fog = true;
     const bird = new THREE.Mesh(g, mat); bird.frustumCulled = false; bird.layers.set(L);
     PETS.chicken = new THREE.Group(); PETS.chicken.add(bird);
-    PETS.henShadow = contactShadow(0.36, 0.22); PETS.henShadow.material.fog = true; scene.add(PETS.henShadow);
+    PETS.henShadow = contactShadow(0.36, 0.22); PETS.henShadow.material.fog = true; outside.add(PETS.henShadow);   // (with the garden: hidden until it is in)
     Object.assign(HEN, { x: -2.0, z: -5.0, yaw: 0.25, act: null, queue: null, t: 0, look: 0, tilt: 0, lookT: 0, tiltT: 0, phase: 0, v: 0, feet: [0, 0, 0, 0, 0, 0] });
   }
   // the room's lights light them too (they are on their own layer, which only the crisp pass sees)
@@ -644,7 +645,9 @@ function drawPets() {
   else if (CAT.mode === 'trip') settle(PETS.state);
   stepDent(reduceMotion ? 1 : dt);
   const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
-  // the chicken first (beyond the glass, so the cat is never behind it), then the cat and its Zzz, each alone
+  // the chicken first (beyond the glass, so the cat is never behind it), then the cat and its Zzz, each alone; the
+  // chicken not before the garden is in (core/loop.js reveal)
+  const henOut = PETS.chicken && PETS.chicken.visible && REVEAL.stage < 1; if (henOut) PETS.chicken.visible = false;
   const hen = PETS.chicken && PETS.chicken.visible, zzz = ZZZ.grp && ZZZ.grp.visible, hp = PETS.holder.position;
   let henDrawn = false;
   if (hen) { PETS.holder.visible = false; if (zzz) ZZZ.grp.visible = false;
@@ -653,7 +656,7 @@ function drawPets() {
   const catDrawn = crispPass(SHARP.cat, [hp.x, hp.y - 0.04, hp.z, 0.5, zzz ? 0.8 : 0.55, 0.5], C => { if (PETS.fur && PETS.fur.visible) furLight(renderer, scene, C); });   // (high enough for the Zzz)
   // on screen and on the move (the hen always is; the cat on its way or busy): the sharp layer at 60 frames a second
   PETS.fast = henDrawn || (catDrawn && (CAT.mode === 'trip' || !!CAT.seq || CAT.ikW > 0.01));
-  if (hen) PETS.chicken.visible = true;
+  if (hen || henOut) PETS.chicken.visible = true;
 }
 // one crisp pass: what is shown on layer 1 inside a box (centre, half widths, height), into a target just covering it on
 // screen (the camera's projection narrowed to that rectangle, depth as in the picture), then laid over the picture

@@ -154,4 +154,4 @@ function lodLeaves(geo, keep, grow, seed = 5) {
   for (let i = 0; i < n; i++) { const root = find(i); if (!kept.get(root)) continue; const s = sum.get(root), cx = s[0] / s[3], cy = s[1] / s[3], cz = s[2] / s[3]; p2.setXYZ(i, cx + (p2.getX(i) - cx) * grow, cy + (p2.getY(i) - cy) * grow, cz + (p2.getZ(i) - cz) * grow); }
   g.setIndex(out); return g;
 }
-export { buildOutside };
+export { buildOutside, outside };

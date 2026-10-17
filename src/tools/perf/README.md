@@ -13,8 +13,12 @@ Headless Chrome with the Mac's real GPU (ANGLE Metal), through the Playwright fo
 | `node smoke.cjs URL` | desktop shows the room with no errors; a phone never fetches lib3d.js, lib.glb or three.js |
 | `node shelfshots.cjs URL prefix` | four views of the tall shelf's decor, by day (15:00) and by night (20:00) |
 
-Instrumenting a build for `marks.cjs`: build with `build.py --pages DIR`, then add marks around `main()`,
-`compileFor(scene)`, the first `draw()` and the end of `precompileLightStates()` in `DIR/lib3d.js`.
+The page marks its own start-up (since 17/10/2026, `core/loop.js`): `l3-room` (built), `l3-reveal0` and `l3-first-draw`
+(the room shown), `l3-reveal1` (the garden), `l3-reveal2` (the sky), `l3-reveal3` (the weather and the words) and
+`l3-precompiled` (the other light states compiled); `marks.cjs` waits for the last one.
+
+Measured 17/10/2026, same setup: room built 1.1–1.2 s, first draw 1.3–1.4 s (earlier that day: 2.9–4.1 s), garden
++0.6 s, sky +1.25 s, words +1.9 s, light states compiled ~3.7 s; no long task over 160 ms after the first draw.
 
 Measured 13/10/2026 on the M4 (1512×900 at 2×, cold browser, fast network):
 - room shown 2.3–2.4 s after navigation; FCP 0.5–0.6 s; 1.21 MB over the wire (2.5 MB decoded).

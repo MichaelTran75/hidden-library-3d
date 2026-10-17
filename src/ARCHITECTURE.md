@@ -8,7 +8,7 @@ Viết ngày 13/10/2026. Số liệu đo bằng `tools/perf/` (Chrome headless, 
 |---|---|
 | Thời điểm phòng hiện ra | 2,3–2,7 s (FCP 0,5–0,6 s) |
 | Tổng dung lượng tải | 1,21 MB nén (giải nén 2,5 MB) |
-| `lib.glb` | 621 KB |
+| `lib.glb` | 621 KB (17/10: 535 KB, texture còn một nửa; ngay trước đó 722 KB) |
 | three.js + addon | 167 KB + 140 KB, trong đó riêng bảng LTC của RectAreaLight là 108 KB |
 | `index.html` | 144 KB nén, sau khi tách `lib3d.js` (95 KB nén) |
 | Dựng phòng bằng JS | 1,3 s: texture/kệ/sách 0,47 s; cây 0,23 s; nội thất, đồ trang trí và vườn 0,56 s |
@@ -25,12 +25,19 @@ Viết ngày 13/10/2026. Số liệu đo bằng `tools/perf/` (Chrome headless, 
   - `index.html` còn 144 KB nén; `lib3d.js` là 95 KB nén, điện thoại không tải phần này. Mỗi tệp được cache riêng.
   - Bản một tệp cho Wix vẫn nhúng thẳng như cũ.
 - **13/10:** đồ trang trí trên kệ cao là 25 món khác nhau, gộp theo chất liệu thành 5 lưới. Số lượt vẽ cho phần này giảm từ khoảng 60 xuống 8.
+- **17/10:** phòng hiện ở 1,3–1,4 s sau khi mở trang (trước đó 2,9–4,1 s, kèm một tác vụ chặn 0,6–1,2 s). Sau khung đầu không còn tác vụ nào dài quá 160 ms. Đo bằng `node tools/perf/marks.cjs URL`.
+  - **Thứ tự dựng** (`core/build.js` main, `core/loop.js` start): phòng, sách, nội thất, đồ trang trí, đèn, giao diện, biên dịch, rồi vẽ khung đầu. Vườn (cây dựng bằng code, bãi cỏ, bụi, rừng xa) và vòm trời dựng sau khung đó, ẩn tới khi được cho vào: vườn ở 0,6 s, trời ở 1,25 s, thời tiết và chữ ở 1,9 s. Mỗi phần chỉ vào khi shader của nó đã biên dịch nền xong.
+  - **Kính:** gán vật liệu từ đầu, nhưng ảnh phản chiếu phòng (6 góc nhìn) chỉ chụp khi trời đã vào (`GLASS.live`). Trước đây chụp trong main, trước khi shader biên dịch nền, nên mất khoảng 0,5 s biên dịch đồng bộ.
+  - **Thời tiết:** nếu đã biết trước khung đầu thì áp ngay. Nếu biết sau, ánh sáng trời âm u chờ `precompileLightStates` xong (`REVEAL.lit`) rồi mới chuyển dần. Trời âm u bật đèn, đổi số đèn, và trước khi có shader sẵn thì mọi shader có ánh sáng phải biên dịch lại cùng lúc (khung bị giữ khoảng 0,4 s).
+  - **Mèo và gà** nạp sau khi shader của vườn biên dịch xong. Gà và bóng của nó (thuộc nhóm `outside`) chỉ hiện khi vườn đã vào.
+  - **Gỗ vẽ trong Worker** (`world/textures.js`): sàn, trần, gỗ sồi, khung kính, 1,6 triệu điểm ảnh, chia cho tối đa 3 Worker. Worker nhận chính mã nguồn các hàm vẽ (`Function.toString`), nên ảnh ra giống từng byte với bản cũ (đã so trong trình duyệt). Không tạo được Worker thì vẽ ngay trên luồng chính như trước. Texture `fabric` không vật liệu nào dùng nên đã bỏ.
+  - **Texture trong `lib.glb` còn một nửa cạnh** (`tools/half-textures.py`, bản gốc ở `backup/lib.v5-full-textures.glb`): ảnh 1024 xuống 512, ảnh 512 xuống 256. Tệp từ 722 KB xuống 535 KB; RAM đồ hoạ cho texture từ khoảng 34 MB xuống 8 MB. Lưới meshopt giữ nguyên từng byte.
 
 ## 3. Lộ trình tối ưu (xếp theo lợi ích trên công sức)
 
 1. **Bỏ khoảng đứng hình sau khi phòng hiện.** Biên dịch trạng thái đèn chạng vạng và đêm theo kiểu lười: chỉ biên dịch khi mặt trời còn cách mốc đổi đèn khoảng 3°, hoặc khi người xem bấm công tắc ngày/đêm. Không biên dịch ngay lúc mở trang.
-2. **Nướng sẵn texture thủ tục khi build.** Gồm sàn, gỗ, trần, giấy và búi thảm, xuất ra WebP. Thay khoảng 0,3–0,4 s tính fbm trên luồng chính bằng vài chục KB tải về.
-   - Cách thay thế: tạo texture trong Worker bằng OffscreenCanvas, chạy song song lúc three.js đang tải.
+2. ~~**Nướng sẵn texture thủ tục khi build.**~~ Đã làm theo cách thay thế ngày 17/10: vẽ trong Worker, song song lúc dựng phòng (mục 2).
+   - Còn lại trên luồng chính: giấy và búi thảm (`world/rug.js`), cỏ ngoài vườn (`world/outside.js`, sau khung đầu).
 3. **Nướng sẵn hình học tĩnh vào GLB khi build.** Gồm pouf, thảm, AO tiếp xúc và vỏ nhung, ước tính tiết kiệm 0,2–0,3 s.
    - Mã sinh vẫn giữ trong `tools/` để sửa và nướng lại.
 4. **Gộp vật liệu theo lớp hoàn thiện,** như đã làm cho đồ trang trí. Số shader và số lượt vẽ cùng giảm.

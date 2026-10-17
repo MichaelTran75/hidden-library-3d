@@ -1,22 +1,23 @@
 import '../core/renderer.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
-import { tick } from '../core/base.js';
 import { ctex } from '../core/utils.js';
-import { grainTex, noiseTex, woodPlanks } from './textures.js';
+import { paintPictures } from './textures.js';
 
 /* ---------------------------------------------------------------- materials */
+// the wood is painted in workers (textures.js) while the room is built: the textures are made at once, for the
+// materials, and their pixels come in later (the promise returned, awaited before the room is first drawn)
 const TEX = {};
-async function buildTextures() {
-  TEX.floor = ctex(woodPlanks({ hue: 28, sat: .55, light: .5, vary: .06, seed: 3 }));
-  TEX.floor.repeat.set(1 / 1.08, 1 / 4.32);
-  await tick();
-  TEX.ceil = ctex(woodPlanks({ w: 256, h: 1024, planks: 8, hue: 27, sat: .5, light: .42, vary: .035, seed: 11, gap: .6, grain: 1.4 }));   // mostly out of view: half size
-  TEX.ceil.repeat.set(1 / 1.08, 1 / 4.32);
-  await tick();
-  TEX.oak = ctex(grainTex({ hue: 29, sat: .5, light: .5 }));
-  TEX.frame = ctex(grainTex({ hue: 25, sat: .52, light: .42, seed: 4 }));
-  await tick();
-  TEX.fabric = ctex(noiseTex(256, 256, 64, { base: [128, 128, 128], amp: 90, oct: 3 }), { srgb: false });
+function buildTextures() {
+  const PICS = [
+    ['floor', 'planks', { w: 512, h: 2048, hue: 28, sat: .55, light: .5, vary: .06, seed: 3 }, 4],   // (in four bands: the largest)
+    ['ceil', 'planks', { w: 256, h: 1024, planks: 8, hue: 27, sat: .5, light: .42, vary: .035, seed: 11, gap: .6, grain: 1.4 }],   // mostly out of view: half size
+    ['oak', 'grain', { w: 256, h: 1024, hue: 29, sat: .5, light: .5 }],
+    ['frame', 'grain', { w: 256, h: 1024, hue: 25, sat: .52, light: .42, seed: 4 }],
+  ];
+  for (const [k] of PICS) TEX[k] = ctex();
+  TEX.floor.repeat.set(1 / 1.08, 1 / 4.32); TEX.ceil.repeat.set(1 / 1.08, 1 / 4.32);
+  return paintPictures(PICS.map(([, kind, o, bands]) => ({ kind, o, bands })))
+    .then(px => PICS.forEach(([k, , o], i) => { TEX[k].image = new ImageData(px[i], o.w, o.h); TEX[k].needsUpdate = true; }));
 }
 const MAT = {};
 function buildMaterials() {

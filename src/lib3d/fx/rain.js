@@ -10,7 +10,7 @@ import { NIGHT } from './night.js';
 import { OVER } from '../ui/words.js';
 import { SKYCLEAR } from './sky.js';
 import { FLY } from './fireflies.js';
-import { REVEAL, clock, setNeeds } from '../core/loop.js';
+import { REVEAL, clock, ready, setNeeds } from '../core/loop.js';
 import { setHenAway } from '../world/pets.js';
 
 /* ---------------------------------------------------------------- rain
@@ -55,7 +55,7 @@ function readWeather() {
   WX.ovT = Math.max(WX.ovRain, WX.ovCloud * (1 - NIGHT.u.value));
   const to = ((c.wind_direction_10m || 0) + 180 - 103.7) * Math.PI / 180, v = (c.wind_speed_10m || 0) / 3.6;   // (the compass of fx/hour.js sunDirAt)
   WX.windT.set(Math.cos(to), Math.sin(to)).multiplyScalar(Math.min(8, v * 0.55));   // (near the ground the wind is less; the drops take up most of it)
-  if (WX.first) { WX.first = false; WX.k = WX.kT; WX.ov = WX.ovT; WX.wind.copy(WX.windT); WX.wet = k > 0 ? 1 : 0; }   // (raining when the page opens: raining at once)
+  if (WX.first) { WX.first = false; WX.k = WX.kT; WX.wind.copy(WX.windT); WX.wet = k > 0 ? 1 : 0; if (!ready) WX.ov = WX.ovSet = WX.ovT; }   // (raining when the page opens: raining at once; its grey light too, if it is known before the room is first drawn)
   setNeeds(true);
 }
 addEventListener('hl-weather', readWeather);
@@ -179,7 +179,10 @@ function stepRain(t) {
   const dt = Math.min(0.25, Math.max(0, t - WX.last)); WX.last = t;
   WX.k += (WX.kT - WX.k) * Math.min(1, dt / 10); if (Math.abs(WX.k - WX.kT) < 0.002) WX.k = WX.kT;   // (rain comes on and eases off over some seconds)
   WX.ovT = Math.max(WX.ovRain, WX.ovCloud * (1 - NIGHT.u.value));   // (a cloudy day goes grey; a cloudy night keeps its stars: G, 16/10/2026)
-  WX.ov += (WX.ovT - WX.ov) * Math.min(1, dt / 8); if (Math.abs(WX.ov - WX.ovT) < 0.002) WX.ov = WX.ovT;
+  // an overcast's light comes in (or goes) once the shaders for every state of the lights are made (core/loop.js
+  // precompileLightStates): on a dark day it switches the lamps on, and before that every lit shader would be made
+  // again at once, holding a frame some 0.4 s
+  if (REVEAL.lit) { WX.ov += (WX.ovT - WX.ov) * Math.min(1, dt / 8); if (Math.abs(WX.ov - WX.ovT) < 0.002) WX.ov = WX.ovT; }
   WX.wind.lerp(WX.windT, Math.min(1, dt / 4));
   WX.wet = WX.k > 0.02 ? Math.min(1, WX.wet + dt / 8) : Math.max(0, WX.wet - dt / 150);   // (the beaded drops dry over a few minutes)
   if (Math.abs(WX.ov - WX.ovSet) > 0.012 && HOUR.e !== null) { WX.ovSet = WX.ov; applyHour(HOUR.e, HOUR.az); setNeeds(true); }   // (the light of an overcast)
@@ -209,4 +212,4 @@ function drawRain() {
   renderer.autoClear = false; renderer.render(RAIN.scene, camera); renderer.autoClear = true;
 }
 
-export { RAIN, WX, drawRain };
+export { RAIN, WX, drawRain, readWeather };

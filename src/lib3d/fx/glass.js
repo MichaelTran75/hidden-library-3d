@@ -22,7 +22,7 @@ import { NIGHT } from './night.js';
      sky through it is clear (G, 16/10/2026).
    The cube map is taken again whenever the light changes (the hour, day to night), at most once a second; the panes
    are hidden while it is taken. They write no depth: where the sky shows through them, the stars still show. */
-const GLASS = { mat: null, cube: null, cam: null, at: new THREE.Vector3((R.xL + R.xS) / 2, 1.6, (R.zB + R.zF) / 2), last: { n: -1, s: -1, x: 0, t: -1e9 } };
+const GLASS = { mat: null, cube: null, cam: null, live: false, at: new THREE.Vector3((R.xL + R.xS) / 2, 1.6, (R.zB + R.zF) / 2), last: { n: -1, s: -1, x: 0, t: -1e9 } };
 function glassMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: { uEnv: { value: GLASS.cube.texture }, uBoxMin: { value: new THREE.Vector3(R.xL, 0, R.zB) }, uBoxMax: { value: new THREE.Vector3(R.xW, R.H, R.zF) }, uCap: { value: GLASS.at }, uDay: { value: 1 } },
@@ -54,19 +54,21 @@ function glassMaterial() {
       }`,
     transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide });
 }
-// once the room is built: the cube map, the panes given their glass, and the first look at the room
+// once the room is built: the cube map and the panes given their glass. The room is first looked at once the garden and
+// the sky are in (GLASS.live, set as the sky is let in: core/loop.js reveal), so that they are seen in it too; until then
+// the panes reflect nothing (an unfilled map reads black), and the first picture waits for no extra six views
 function buildGlass() {
   GLASS.cube = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
   GLASS.cam = new THREE.CubeCamera(0.05, 120, GLASS.cube); GLASS.cam.position.copy(GLASS.at); GLASS.cam.updateMatrixWorld(true);
   GLASS.mat = glassMaterial();
   const pane = room.userData.glass; if (pane) pane.material = GLASS.mat;
-  stepGlass(true);
 }
 // before the room is drawn: the room looked at again if its light has changed since (the hour, day to night)
 function stepGlass(force) {
   if (!GLASS.cam) return;
   const n = NIGHT.u.value, sun = LIGHTS.sun, si = sun ? sun.intensity : 0, sx = sun ? sun.position.x + sun.position.y * 0.37 + sun.position.z * 0.11 : 0, L = GLASS.last, now = performance.now();
   GLASS.mat.uniforms.uDay.value = 1 - n;
+  if (!GLASS.live) return;
   if (!force && (now - L.t < 1000 || (Math.abs(n - L.n) < 0.03 && Math.abs(si - L.s) < 0.06 * Math.max(0.3, L.s) && Math.abs(sx - L.x) < 0.3))) return;
   L.n = n; L.s = si; L.x = sx; L.t = now;
   const pane = room.userData.glass, vis = pane ? pane.visible : false; if (pane) pane.visible = false;

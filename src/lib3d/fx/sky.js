@@ -288,7 +288,7 @@ const SKY_COVER = `float skyCover() {
 function buildNightSky() {
   const eye = REF.eye, far = 240, sky = new THREE.Group(); sky.visible = false; OVER.sky = sky;
   OVER.skyScene = new THREE.Scene(); OVER.skyScene.add(sky);   // (a scene of its own, drawn before the rest of the sharp layer: its dark is laid over the dome, so all else goes in front of it)
-  OVER.u.uTime = { value: 0 }; OVER.u.uPR = { value: 1 }; OVER.moonAge = { value: moonAge() };
+  OVER.moonAge = { value: moonAge() };
   buildStars(sky);
   // the moon: the page's own moon picture for tonight's phase (the one its sky clock shows), 1.6° across (the real one is
   // 0.5°), with a soft halo

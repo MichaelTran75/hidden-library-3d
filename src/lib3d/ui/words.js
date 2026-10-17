@@ -18,7 +18,7 @@ import { drawRain } from '../fx/rain.js';
 /* ---- the titles on the shelves' spines: drawn after the watercolour pass so they stay sharp, and hidden wherever the
    room stands in front of the book (each pixel is tested against the room's depth); shown only once its section is
    opened and the camera has come close. (A book out of the shelf has its words printed on itself: hero-books.js.) */
-const OVER = { scene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) } } };
+const OVER = { scene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uPR: { value: 1 } } };   // (shared by the sharp layer's parts, whenever each is built)
 function crispMaterial(map) {
   return new THREE.ShaderMaterial({
     uniforms: { map: { value: map }, uDepth: OVER.u.uDepth, uRes: OVER.u.uRes },

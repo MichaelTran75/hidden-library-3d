@@ -86,7 +86,7 @@ function applyHour(e, az) {
   tint3(scene.fog.color, D.fog, TINT.warm.fog, TINT.blue.fog, NC.fog, S);
   if (ov > 0.001) scene.fog.color.lerp(_ovf.copy(OVC.fog).multiplyScalar(lerp(1, 0.18, n)), 0.5 * ov);
   scene.fog.density = 0.03 * (1 + 0.45 * WX.k);   // (the rain's haze)
-  if (L.ring) { tint3(L.ring.material.color, D.ring, TINT.warm.ring, TINT.blue.ring, NC.ring, S); L.ring.material.color.multiplyScalar(lerp(0.55 + 0.45 * Math.min(amb, 1), 1, n)); }
+  if (L.ring && D.ring) { tint3(L.ring.material.color, D.ring, TINT.warm.ring, TINT.blue.ring, NC.ring, S); L.ring.material.color.multiplyScalar(lerp(0.55 + 0.45 * Math.min(amb, 1), 1, n)); }
   // the lamps
   const k = S.lamps;
   L.table.userData.light.intensity = lerp(D.table, 7, k); L.table.userData.glow.material.opacity = lerp(D.tableGlow, 0.9, k);

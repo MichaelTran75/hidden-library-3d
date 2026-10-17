@@ -6,7 +6,7 @@ function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79
 const rand = rng(20261012);
 const rr = (a, b) => a + (b - a) * rand();
 const pick = arr => arr[Math.floor(rand() * arr.length)];
-// value noise (tileable over period p)
+// value noise (tileable over period p); the wood's painters run these in workers too, as their source (world/textures.js)
 const PERM = new Uint8Array(512); { const r = rng(7); const p = [...Array(256).keys()]; for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; } for (let i = 0; i < 512; i++) PERM[i] = p[i & 255]; }
 const fade = t => t * t * (3 - 2 * t);
 function vnoise(x, y, px = 256, py = 256) {
@@ -19,7 +19,6 @@ function fbm(x, y, oct = 4, px = 256, py = 256) { let s = 0, a = 0.5, f = 1, n =
 function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 function ctex(c, { srgb = true, rep = true } = {}) { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
 const hsl = (h, s, l) => new THREE.Color().setHSL(h / 360, s, l);
-const _px = new THREE.Color(), hslPx = (h, s, l) => _px.setHSL(h / 360, s, l);   // per-pixel painters: no allocation
 
 /* Box with world-scaled UVs: v runs along the longest in-plane side, 1 UV = `tile` metres */
 function boardGeo(w, h, d, tile = 1) {
@@ -34,4 +33,4 @@ function boardGeo(w, h, d, tile = 1) {
 }
 function place(geo, x, y, z, ry = 0) { const g = geo.clone(); if (ry) g.rotateY(ry); g.translate(x, y, z); return g; }
 
-export { boardGeo, canvas, ctex, fbm, hsl, hslPx, pick, place, rand, rng, rr };
+export { PERM, boardGeo, canvas, ctex, fade, fbm, hsl, pick, place, rand, rng, rr, vnoise };

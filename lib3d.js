@@ -13,7 +13,6 @@ const [THREE, { RoomEnvironment }, { MeshoptDecoder }, { RectAreaLightUniformsLi
    ≤ 20 fps otherwise, and rests while the page is idle.                                                          */
 const $ = id => document.getElementById(id);
 const body = document.body;
-const setLoad = () => {};
 const CANVAS = document.createElement('canvas'); CANVAS.id = 'lib3d'; CANVAS.setAttribute('aria-hidden', 'true'); body.prepend(CANVAS);
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // a pause in the long build, so the page stays responsive: a message to itself (unlike a timer or scheduler.yield it is
@@ -39,7 +38,7 @@ function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79
 const rand = rng(20261012);
 const rr = (a, b) => a + (b - a) * rand();
 const pick = arr => arr[Math.floor(rand() * arr.length)];
-// value noise (tileable over period p)
+// value noise (tileable over period p); the wood's painters run these in workers too, as their source (world/textures.js)
 const PERM = new Uint8Array(512); { const r = rng(7); const p = [...Array(256).keys()]; for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; } for (let i = 0; i < 512; i++) PERM[i] = p[i & 255]; }
 const fade = t => t * t * (3 - 2 * t);
 function vnoise(x, y, px = 256, py = 256) {
@@ -52,7 +51,6 @@ function fbm(x, y, oct = 4, px = 256, py = 256) { let s = 0, a = 0.5, f = 1, n =
 function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 function ctex(c, { srgb = true, rep = true } = {}) { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
 const hsl = (h, s, l) => new THREE.Color().setHSL(h / 360, s, l);
-const _px = new THREE.Color(), hslPx = (h, s, l) => _px.setHSL(h / 360, s, l);   // per-pixel painters: no allocation
 
 /* Box with world-scaled UVs: v runs along the longest in-plane side, 1 UV = `tile` metres */
 function boardGeo(w, h, d, tile = 1) {
@@ -66,12 +64,23 @@ function boardGeo(w, h, d, tile = 1) {
   return g;
 }
 function place(geo, x, y, z, ry = 0) { const g = geo.clone(); if (ry) g.rotateY(ry); g.translate(x, y, z); return g; }
-/* ---------------------------------------------------------------- textures */
-function woodPlanks({ w = 512, h = 2048, planks = 6, hue = 33, sat = .52, light = .60, vary = .07, seed = 3, gap = 0.42, grain = 1 } = {}) {
-  const c = canvas(w, h), g = c.getContext('2d'), img = g.createImageData(w, h), d = img.data; const r = rng(seed);
-  const pw = w / planks, segs = [];
+/* ---------------------------------------------------------------- textures
+   The room's wood (floor, ceiling, oak, frames) is painted pixel by pixel, 1.6 million of them: in workers while the
+   room is built (G, 17/10/2026: the room shows sooner; on the page's own thread they held it up about 0.35 s). Where a
+   worker cannot be started, or fails, what is left is painted here as before. Both run the same painters (the workers
+   are given this file's functions as their source), so the pictures come out the same to the byte. */
+function hue2rgb(p, q, t) { if (t < 0) t += 1; if (t > 1) t -= 1; if (t < 1 / 6) return p + (q - p) * 6 * t; if (t < 1 / 2) return q; if (t < 2 / 3) return p + (q - p) * 6 * (2 / 3 - t); return p; }
+function hslRgb(h, s, l, o) {   // HSL (hue in degrees) to RGB 0..1, into o: three's Color.setHSL in the working space (no transfer), without three
+  h = (h / 360 % 1 + 1) % 1; s = Math.max(0, Math.min(1, s)); l = Math.max(0, Math.min(1, l));
+  if (s === 0) { o[0] = o[1] = o[2] = l; return o; }
+  const p = l <= 0.5 ? l * (1 + s) : l + s - l * s, q = 2 * l - p;
+  o[0] = hue2rgb(q, p, h + 1 / 3); o[1] = hue2rgb(q, p, h); o[2] = hue2rgb(q, p, h - 1 / 3); return o;
+}
+// the painters: RGBA into d, the rows y0 to y1 of a w × h picture (a band of it: the floor is shared out among the workers)
+function paintPlanks(d, { w = 512, h = 2048, planks = 6, hue = 33, sat = .52, light = .60, vary = .07, seed = 3, gap = 0.42, grain = 1, y0 = 0, y1 = h } = {}) {
+  const r = rng(seed), pw = w / planks, segs = [], col = [0, 0, 0];
   for (let i = 0; i < planks; i++) { const list = []; let v = r() * h; const start = v; while (v < start + h) { const len = (0.22 + r() * 0.35) * h; list.push({ a: v, b: v + len, l: light + (r() - .5) * 2 * vary, hu: hue + (r() - .5) * 6, s: sat + (r() - .5) * .12, k: r() * 100 }); v += len; } segs.push(list); }
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+  for (let y = y0; y < y1; y++) for (let x = 0; x < w; x++) {
     const i = Math.floor(x / pw), lx = x - i * pw; let seg = null, yy = y;
     for (const s of segs[i]) { let t = yy; if (t < s.a) t += h; if (t >= s.a && t < s.b) { seg = s; yy = t; break; } }
     if (!seg) seg = segs[i][0];
@@ -82,25 +91,51 @@ function woodPlanks({ w = 512, h = 2048, planks = 6, hue = 33, sat = .52, light 
     let l = seg.l * (0.86 + 0.22 * streak) * (0.93 + 0.08 * ring);
     const edge = Math.min(lx, pw - lx), endD = Math.min(Math.abs(yy - seg.a), Math.abs(seg.b - yy));
     if (edge < 1.2 || endD < 1.2) l *= gap; else if (edge < 4) l *= 0.94 + 0.015 * edge;
-    const col = hslPx(seg.hu + (streak - .5) * 4, seg.s, Math.min(.92, l));
-    const o = (y * w + x) * 4; d[o] = col.r * 255; d[o + 1] = col.g * 255; d[o + 2] = col.b * 255; d[o + 3] = 255;
+    hslRgb(seg.hu + (streak - .5) * 4, seg.s, Math.min(.92, l), col);
+    const o = ((y - y0) * w + x) * 4; d[o] = col[0] * 255; d[o + 1] = col[1] * 255; d[o + 2] = col[2] * 255; d[o + 3] = 255;
   }
-  g.putImageData(img, 0, 0); return c;
+  return d;
 }
-function grainTex({ w = 256, h = 1024, hue = 32, sat = .55, light = .58, seed = 9 } = {}) {
-  const c = canvas(w, h), g = c.getContext('2d'), img = g.createImageData(w, h), d = img.data;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+function paintGrain(d, { w = 256, h = 1024, hue = 32, sat = .55, light = .58, seed = 9, y0 = 0, y1 = h } = {}) {
+  const col = [0, 0, 0];
+  for (let y = y0; y < y1; y++) for (let x = 0; x < w; x++) {
     const u = x / w, v = y / h; const wob = fbm(u * 3 + seed, v * 2, 3, 3, 2) * 2.2;
     const s = fbm(u * 18 + wob, v * 3, 4, 18, 3); const ring = 0.5 + 0.5 * Math.sin((u * 7 + wob * 1.6) * 6.283);
-    const col = hslPx(hue + (s - .5) * 5, sat, light * (0.84 + 0.24 * s) * (0.94 + 0.07 * ring));
-    const o = (y * w + x) * 4; d[o] = col.r * 255; d[o + 1] = col.g * 255; d[o + 2] = col.b * 255; d[o + 3] = 255;
+    hslRgb(hue + (s - .5) * 5, sat, light * (0.84 + 0.24 * s) * (0.94 + 0.07 * ring), col);
+    const o = ((y - y0) * w + x) * 4; d[o] = col[0] * 255; d[o + 1] = col[1] * 255; d[o + 2] = col[2] * 255; d[o + 3] = 255;
   }
-  g.putImageData(img, 0, 0); return c;
+  return d;
 }
-function noiseTex(w, h, f, { base = [235, 228, 214], amp = 30, oct = 5, seed = 0 } = {}) {
-  const c = canvas(w, h), g = c.getContext('2d'), img = g.createImageData(w, h), d = img.data;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const n = fbm(x / w * f + seed, y / h * f, oct, f, f) - .5; const o = (y * w + x) * 4; d[o] = base[0] + n * amp; d[o + 1] = base[1] + n * amp; d[o + 2] = base[2] + n * amp * 1.1; d[o + 3] = 255; }
-  g.putImageData(img, 0, 0); return c;
+const PAINTERS = { planks: paintPlanks, grain: paintGrain };
+function painterSource() {   // a worker's script: the painters and the noise they draw on, as written here
+  return [`const PERM = new Uint8Array([${PERM}]), fade = ${fade};`, rng, vnoise, fbm, hue2rgb, hslRgb, paintPlanks, paintGrain,
+    'const PAINTERS = { planks: paintPlanks, grain: paintGrain };',
+    'onmessage = e => { const { kind, o } = e.data, d = PAINTERS[kind](new Uint8ClampedArray(o.w * (o.y1 - o.y0) * 4), o); postMessage(d, [d.buffer]); };'].join('\n');
+}
+// pictures [{ kind, o: { w, h, …painter's options }, bands }] → a promise of their pixels (RGBA, top row first), each
+// painted in `bands` bands of rows, shared out among up to three workers as they come free
+function paintPictures(list) {
+  const jobs = [], out = list.map(p => p.bands > 1 ? new Uint8ClampedArray(p.o.w * p.o.h * 4) : null);
+  list.forEach((p, k) => { const n = p.bands || 1; for (let b = 0; b < n; b++) jobs.push({ k, kind: p.kind, o: { ...p.o, y0: Math.round(p.o.h * b / n), y1: Math.round(p.o.h * (b + 1) / n) } }); });
+  return new Promise(done => {
+    let next = 0, left = jobs.length, url = null, alive = 0, here = false;
+    const finish = (j, d) => { if (out[j.k]) out[j.k].set(d, j.o.y0 * j.o.w * 4); else out[j.k] = d; if (--left === 0) { if (url) URL.revokeObjectURL(url); done(out); } };
+    const paintHere = async () => {   // (no worker: the rest on this thread, a pause between pictures)
+      if (here) return; here = true;
+      while (next < jobs.length) { const j = jobs[next++]; finish(j, PAINTERS[j.kind](new Uint8ClampedArray(j.o.w * (j.o.y1 - j.o.y0) * 4), j.o)); await tick(); }
+    };
+    const n = Math.min(3, Math.max(1, (navigator.hardwareConcurrency || 2) - 1)), workers = [];
+    try { url = URL.createObjectURL(new Blob([painterSource()], { type: 'text/javascript' })); for (let i = 0; i < n; i++) workers.push(new Worker(url)); }
+    catch (e) { for (const w of workers) w.terminate(); workers.length = 0; }
+    alive = workers.length; if (!alive) { paintHere(); return; }
+    for (const w of workers) {
+      let cur = null;
+      const give = () => { cur = next < jobs.length ? jobs[next++] : null; if (cur) w.postMessage({ kind: cur.kind, o: cur.o }); else { w.terminate(); alive--; } };
+      w.onmessage = e => { const j = cur; give(); finish(j, e.data); };
+      w.onerror = e => { e.preventDefault(); w.terminate(); if (cur) jobs.push(cur); cur = null; if (--alive === 0 && left) paintHere(); };   // (its picture to another, or here)
+      give();
+    }
+  });
 }
 /* ---------------------------------------------------------------- renderer */
 // the canvas itself needs no depth or stencil buffer: the scene renders into its own target, everything after is flat
@@ -133,18 +168,20 @@ const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 400);
 function setShadowsDirty(v) { shadowsDirty = v; }
 function setRtScale(v) { RT_SCALE = v; }
 /* ---------------------------------------------------------------- materials */
+// the wood is painted in workers (textures.js) while the room is built: the textures are made at once, for the
+// materials, and their pixels come in later (the promise returned, awaited before the room is first drawn)
 const TEX = {};
-async function buildTextures() {
-  TEX.floor = ctex(woodPlanks({ hue: 28, sat: .55, light: .5, vary: .06, seed: 3 }));
-  TEX.floor.repeat.set(1 / 1.08, 1 / 4.32);
-  await tick();
-  TEX.ceil = ctex(woodPlanks({ w: 256, h: 1024, planks: 8, hue: 27, sat: .5, light: .42, vary: .035, seed: 11, gap: .6, grain: 1.4 }));   // mostly out of view: half size
-  TEX.ceil.repeat.set(1 / 1.08, 1 / 4.32);
-  await tick();
-  TEX.oak = ctex(grainTex({ hue: 29, sat: .5, light: .5 }));
-  TEX.frame = ctex(grainTex({ hue: 25, sat: .52, light: .42, seed: 4 }));
-  await tick();
-  TEX.fabric = ctex(noiseTex(256, 256, 64, { base: [128, 128, 128], amp: 90, oct: 3 }), { srgb: false });
+function buildTextures() {
+  const PICS = [
+    ['floor', 'planks', { w: 512, h: 2048, hue: 28, sat: .55, light: .5, vary: .06, seed: 3 }, 4],   // (in four bands: the largest)
+    ['ceil', 'planks', { w: 256, h: 1024, planks: 8, hue: 27, sat: .5, light: .42, vary: .035, seed: 11, gap: .6, grain: 1.4 }],   // mostly out of view: half size
+    ['oak', 'grain', { w: 256, h: 1024, hue: 29, sat: .5, light: .5 }],
+    ['frame', 'grain', { w: 256, h: 1024, hue: 25, sat: .52, light: .42, seed: 4 }],
+  ];
+  for (const [k] of PICS) TEX[k] = ctex();
+  TEX.floor.repeat.set(1 / 1.08, 1 / 4.32); TEX.ceil.repeat.set(1 / 1.08, 1 / 4.32);
+  return paintPictures(PICS.map(([, kind, o, bands]) => ({ kind, o, bands })))
+    .then(px => PICS.forEach(([k, , o], i) => { TEX[k].image = new ImageData(px[i], o.w, o.h); TEX[k].needsUpdate = true; }));
 }
 const MAT = {};
 function buildMaterials() {
@@ -2407,27 +2444,36 @@ function resize() {
   POST.out.setSize(w, h); POST.mat.uniforms.res.value.set(w, h); bakePaper(w, h);                                  // the watercolour, at CSS px
   placeMoon();
 }
-/* ---------------------------------------------------------------- main */
+/* ---------------------------------------------------------------- main
+   The room first: all its first picture shows (G, 17/10/2026: "phòng trước, sau đó mới đến cây, rồi mới đến trời"). The
+   wood is painted in workers meanwhile and the models download; the garden and the sky's dome are built after that
+   picture (buildGarden, called from loop.js), each part let in when it is ready.                                    */
 let A = null, booksMesh, motes;
 async function main() {
   const bufP = getLibBuffer(); bufP.catch(() => {});   // the models download while the room is built
-  setLoad(0.05); await tick();
-  await buildTextures(); setLoad(0.25); buildMaterials();
-  buildRoom(); setLoad(0.3);
-  BOOK.atlas = buildSpineAtlas(); buildShelves(); booksMesh = buildBookInstances(); paintLightly(booksMesh, 0.1); setLoad(0.45); await tick();   // (the shelves' books: 10 % less watercolour, G, 17/10/2026)
+  const texP = buildTextures();   // (the wood, painted in workers: materials.js)
+  buildMaterials();
+  buildRoom();
+  BOOK.atlas = buildSpineAtlas(); buildShelves(); booksMesh = buildBookInstances(); paintLightly(booksMesh, 0.1); await tick();   // (the shelves' books: 10 % less watercolour, G, 17/10/2026)
   buildLights(); buildPost();
-  const trees = await makeTrees(); await tick();   // built in code while the models download
-  // they sway as the GLB trees did: the sway grows with the square of the height in model units, and those models were
-  // drawn at scales 0.82, 23 and 0.024, so the same motion in metres takes the inverse
-  for (const [k, t] of Object.entries(trees)) for (const p of t.parts) { windify(p.material, p.leaf, { windScale: 1 / { A: 0.82, B: 23, C: 0.024 }[k] }); p.material.fog = true; }
-  const buf = await bufP; setLoad(0.7); await tick();
-  A = await loadAssets(buf); A.trees = trees; setLoad(0.85);
-  await buildFurniture(A); await tick(); buildDecor(A); buildOutside(A); motes = dust(); await tick();
+  A = await loadAssets(await bufP); await tick();
+  await buildFurniture(A); await tick(); buildDecor(A); motes = dust(); await tick();
   // interior materials ignore fog
   scene.fog = new THREE.FogExp2(0xd6e2e6, 0.03);   // a light blue haze over the far trees, matching the sky
   room.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.fog = false); });
-  buildGlass();   // (the panes' glass: it looks at the finished room)
-  setLoad(1);
+  buildGlass();   // (the panes' glass: the room is first seen in it once the garden and the sky are in, loop.js)
+  await texP;
+}
+// after the room's first picture: the garden (its trees built in code, the lawn, the shrubs, the far woods) and the
+// sky's dome, hidden until they are let in (loop.js: reveal). Of all that is built only the shelves, their books and
+// the decor draw from the room's random sequence before the garden does (utils.js rand), and they are built in main:
+// so the garden still stands where it always has.
+async function buildGarden() {
+  const trees = await makeTrees(); await tick();
+  // they sway as the GLB trees did: the sway grows with the square of the height in model units, and those models were
+  // drawn at scales 0.82, 23 and 0.024, so the same motion in metres takes the inverse
+  for (const [k, t] of Object.entries(trees)) for (const p of t.parts) { windify(p.material, p.leaf, { windScale: 1 / { A: 0.82, B: 23, C: 0.024 }[k] }); p.material.fog = true; }
+  A.trees = trees; buildOutside(A);
 }
 async function getLibBuffer() {   // the models: inline (base64) in the one-file build, a file next to the page on GitHub Pages
   const el = document.getElementById('lib-glb');
@@ -2537,7 +2583,7 @@ function applyHour(e, az) {
   tint3(scene.fog.color, D.fog, TINT.warm.fog, TINT.blue.fog, NC.fog, S);
   if (ov > 0.001) scene.fog.color.lerp(_ovf.copy(OVC.fog).multiplyScalar(lerp(1, 0.18, n)), 0.5 * ov);
   scene.fog.density = 0.03 * (1 + 0.45 * WX.k);   // (the rain's haze)
-  if (L.ring) { tint3(L.ring.material.color, D.ring, TINT.warm.ring, TINT.blue.ring, NC.ring, S); L.ring.material.color.multiplyScalar(lerp(0.55 + 0.45 * Math.min(amb, 1), 1, n)); }
+  if (L.ring && D.ring) { tint3(L.ring.material.color, D.ring, TINT.warm.ring, TINT.blue.ring, NC.ring, S); L.ring.material.color.multiplyScalar(lerp(0.55 + 0.45 * Math.min(amb, 1), 1, n)); }
   // the lamps
   const k = S.lamps;
   L.table.userData.light.intensity = lerp(D.table, 7, k); L.table.userData.glow.material.opacity = lerp(D.tableGlow, 0.9, k);
@@ -2588,7 +2634,7 @@ function stepHour(dt) {   // the light toward the hour: at once when it creeps, 
      sky through it is clear (G, 16/10/2026).
    The cube map is taken again whenever the light changes (the hour, day to night), at most once a second; the panes
    are hidden while it is taken. They write no depth: where the sky shows through them, the stars still show. */
-const GLASS = { mat: null, cube: null, cam: null, at: new THREE.Vector3((R.xL + R.xS) / 2, 1.6, (R.zB + R.zF) / 2), last: { n: -1, s: -1, x: 0, t: -1e9 } };
+const GLASS = { mat: null, cube: null, cam: null, live: false, at: new THREE.Vector3((R.xL + R.xS) / 2, 1.6, (R.zB + R.zF) / 2), last: { n: -1, s: -1, x: 0, t: -1e9 } };
 function glassMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: { uEnv: { value: GLASS.cube.texture }, uBoxMin: { value: new THREE.Vector3(R.xL, 0, R.zB) }, uBoxMax: { value: new THREE.Vector3(R.xW, R.H, R.zF) }, uCap: { value: GLASS.at }, uDay: { value: 1 } },
@@ -2620,19 +2666,21 @@ function glassMaterial() {
       }`,
     transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide });
 }
-// once the room is built: the cube map, the panes given their glass, and the first look at the room
+// once the room is built: the cube map and the panes given their glass. The room is first looked at once the garden and
+// the sky are in (GLASS.live, set as the sky is let in: core/loop.js reveal), so that they are seen in it too; until then
+// the panes reflect nothing (an unfilled map reads black), and the first picture waits for no extra six views
 function buildGlass() {
   GLASS.cube = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
   GLASS.cam = new THREE.CubeCamera(0.05, 120, GLASS.cube); GLASS.cam.position.copy(GLASS.at); GLASS.cam.updateMatrixWorld(true);
   GLASS.mat = glassMaterial();
   const pane = room.userData.glass; if (pane) pane.material = GLASS.mat;
-  stepGlass(true);
 }
 // before the room is drawn: the room looked at again if its light has changed since (the hour, day to night)
 function stepGlass(force) {
   if (!GLASS.cam) return;
   const n = NIGHT.u.value, sun = LIGHTS.sun, si = sun ? sun.intensity : 0, sx = sun ? sun.position.x + sun.position.y * 0.37 + sun.position.z * 0.11 : 0, L = GLASS.last, now = performance.now();
   GLASS.mat.uniforms.uDay.value = 1 - n;
+  if (!GLASS.live) return;
   if (!force && (now - L.t < 1000 || (Math.abs(n - L.n) < 0.03 && Math.abs(si - L.s) < 0.06 * Math.max(0.3, L.s) && Math.abs(sx - L.x) < 0.3))) return;
   L.n = n; L.s = si; L.x = sx; L.t = now;
   const pane = room.userData.glass, vis = pane ? pane.visible : false; if (pane) pane.visible = false;
@@ -4064,7 +4112,7 @@ function relabelRead(bk) { const R = bk.read; if (!R || !R.painting) return; tit
 /* ---- the titles on the shelves' spines: drawn after the watercolour pass so they stay sharp, and hidden wherever the
    room stands in front of the book (each pixel is tested against the room's depth); shown only once its section is
    opened and the camera has come close. (A book out of the shelf has its words printed on itself: hero-books.js.) */
-const OVER = { scene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) } } };
+const OVER = { scene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uPR: { value: 1 } } };   // (shared by the sharp layer's parts, whenever each is built)
 function crispMaterial(map) {
   return new THREE.ShaderMaterial({
     uniforms: { map: { value: map }, uDepth: OVER.u.uDepth, uRes: OVER.u.uRes },
@@ -4597,7 +4645,7 @@ const SKY_COVER = `float skyCover() {
 function buildNightSky() {
   const eye = REF.eye, far = 240, sky = new THREE.Group(); sky.visible = false; OVER.sky = sky;
   OVER.skyScene = new THREE.Scene(); OVER.skyScene.add(sky);   // (a scene of its own, drawn before the rest of the sharp layer: its dark is laid over the dome, so all else goes in front of it)
-  OVER.u.uTime = { value: 0 }; OVER.u.uPR = { value: 1 }; OVER.moonAge = { value: moonAge() };
+  OVER.moonAge = { value: moonAge() };
   buildStars(sky);
   // the moon: the page's own moon picture for tonight's phase (the one its sky clock shows), 1.6° across (the real one is
   // 0.5°), with a soft halo
@@ -4932,7 +4980,7 @@ function readWeather() {
   WX.ovT = Math.max(WX.ovRain, WX.ovCloud * (1 - NIGHT.u.value));
   const to = ((c.wind_direction_10m || 0) + 180 - 103.7) * Math.PI / 180, v = (c.wind_speed_10m || 0) / 3.6;   // (the compass of fx/hour.js sunDirAt)
   WX.windT.set(Math.cos(to), Math.sin(to)).multiplyScalar(Math.min(8, v * 0.55));   // (near the ground the wind is less; the drops take up most of it)
-  if (WX.first) { WX.first = false; WX.k = WX.kT; WX.ov = WX.ovT; WX.wind.copy(WX.windT); WX.wet = k > 0 ? 1 : 0; }   // (raining when the page opens: raining at once)
+  if (WX.first) { WX.first = false; WX.k = WX.kT; WX.wind.copy(WX.windT); WX.wet = k > 0 ? 1 : 0; if (!ready) WX.ov = WX.ovSet = WX.ovT; }   // (raining when the page opens: raining at once; its grey light too, if it is known before the room is first drawn)
   setNeeds(true);
 }
 addEventListener('hl-weather', readWeather);
@@ -5056,7 +5104,10 @@ function stepRain(t) {
   const dt = Math.min(0.25, Math.max(0, t - WX.last)); WX.last = t;
   WX.k += (WX.kT - WX.k) * Math.min(1, dt / 10); if (Math.abs(WX.k - WX.kT) < 0.002) WX.k = WX.kT;   // (rain comes on and eases off over some seconds)
   WX.ovT = Math.max(WX.ovRain, WX.ovCloud * (1 - NIGHT.u.value));   // (a cloudy day goes grey; a cloudy night keeps its stars: G, 16/10/2026)
-  WX.ov += (WX.ovT - WX.ov) * Math.min(1, dt / 8); if (Math.abs(WX.ov - WX.ovT) < 0.002) WX.ov = WX.ovT;
+  // an overcast's light comes in (or goes) once the shaders for every state of the lights are made (core/loop.js
+  // precompileLightStates): on a dark day it switches the lamps on, and before that every lit shader would be made
+  // again at once, holding a frame some 0.4 s
+  if (REVEAL.lit) { WX.ov += (WX.ovT - WX.ov) * Math.min(1, dt / 8); if (Math.abs(WX.ov - WX.ovT) < 0.002) WX.ov = WX.ovT; }
   WX.wind.lerp(WX.windT, Math.min(1, dt / 4));
   WX.wet = WX.k > 0.02 ? Math.min(1, WX.wet + dt / 8) : Math.max(0, WX.wet - dt / 150);   // (the beaded drops dry over a few minutes)
   if (Math.abs(WX.ov - WX.ovSet) > 0.012 && HOUR.e !== null) { WX.ovSet = WX.ov; applyHour(HOUR.e, HOUR.az); setNeeds(true); }   // (the light of an overcast)
@@ -5670,7 +5721,7 @@ async function loadPets() {
     const mat = petMaterial(mesh.material, { roughness: 0.8, sheen: 0.35, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xffefd8) }); mat.onBeforeCompile = henPatch; mat.fog = true;
     const bird = new THREE.Mesh(g, mat); bird.frustumCulled = false; bird.layers.set(L);
     PETS.chicken = new THREE.Group(); PETS.chicken.add(bird);
-    PETS.henShadow = contactShadow(0.36, 0.22); PETS.henShadow.material.fog = true; scene.add(PETS.henShadow);
+    PETS.henShadow = contactShadow(0.36, 0.22); PETS.henShadow.material.fog = true; outside.add(PETS.henShadow);   // (with the garden: hidden until it is in)
     Object.assign(HEN, { x: -2.0, z: -5.0, yaw: 0.25, act: null, queue: null, t: 0, look: 0, tilt: 0, lookT: 0, tiltT: 0, phase: 0, v: 0, feet: [0, 0, 0, 0, 0, 0] });
   }
   // the room's lights light them too (they are on their own layer, which only the crisp pass sees)
@@ -6070,7 +6121,9 @@ function drawPets() {
   else if (CAT.mode === 'trip') settle(PETS.state);
   stepDent(reduceMotion ? 1 : dt);
   const U = POST.mat.uniforms; SHARP.u.uExp.value = U.exposure.value; SHARP.u.uLift.value = U.lift.value; SHARP.u.uVeil.value = U.veil.value;
-  // the chicken first (beyond the glass, so the cat is never behind it), then the cat and its Zzz, each alone
+  // the chicken first (beyond the glass, so the cat is never behind it), then the cat and its Zzz, each alone; the
+  // chicken not before the garden is in (core/loop.js reveal)
+  const henOut = PETS.chicken && PETS.chicken.visible && REVEAL.stage < 1; if (henOut) PETS.chicken.visible = false;
   const hen = PETS.chicken && PETS.chicken.visible, zzz = ZZZ.grp && ZZZ.grp.visible, hp = PETS.holder.position;
   let henDrawn = false;
   if (hen) { PETS.holder.visible = false; if (zzz) ZZZ.grp.visible = false;
@@ -6079,7 +6132,7 @@ function drawPets() {
   const catDrawn = crispPass(SHARP.cat, [hp.x, hp.y - 0.04, hp.z, 0.5, zzz ? 0.8 : 0.55, 0.5], C => { if (PETS.fur && PETS.fur.visible) furLight(renderer, scene, C); });   // (high enough for the Zzz)
   // on screen and on the move (the hen always is; the cat on its way or busy): the sharp layer at 60 frames a second
   PETS.fast = henDrawn || (catDrawn && (CAT.mode === 'trip' || !!CAT.seq || CAT.ikW > 0.01));
-  if (hen) PETS.chicken.visible = true;
+  if (hen || henOut) PETS.chicken.visible = true;
 }
 // one crisp pass: what is shown on layer 1 inside a box (centre, half widths, height), into a target just covering it on
 // screen (the camera's projection narrowed to that rectangle, depth as in the picture), then laid over the picture
@@ -6817,29 +6870,45 @@ function adaptQuality(now, smooth) {
 }
 /* the room comes in by parts as the page opens (G, 17/10/2026: "phòng trước, sau đó mới đến cây, rồi mới đến trời, và
    cuối cùng là thời tiết và text"): 0 the room alone (the garden's haze behind the glass), 1 the garden (trees, shrubs,
-   ground), 2 the sky (its dome; by night the stars and the moon), 3 the weather (rain, drops, lightning) and the words
-   over the room (its labels; the page's weather line) */
-const REVEAL = { stage: 3, hid: null };
+   ground), 2 the sky (its dome; by night the stars and the moon; the room, the garden and the sky seen in the glass),
+   3 the weather (rain, drops, lightning) and the words over the room (its labels; the page's weather line). The room
+   is drawn as soon as it is built; the garden and the sky are built after that, each let in when it is ready and not
+   before its time (start) */
+const REVEAL = { stage: 3, lit: false };   // (lit: the shaders for every state of the lights made, precompileLightStates)
 function reveal(stage) {
-  REVEAL.stage = stage; const sky = LIGHTS.sky, out = sky && sky.parent;
-  if (out) { if (!REVEAL.hid) REVEAL.hid = out.children.filter(o => o.visible); for (const o of REVEAL.hid) o.visible = o === sky ? stage >= 2 : stage >= 1; }
+  REVEAL.stage = stage; mark('reveal' + stage);
+  outside.visible = stage >= 1; if (LIGHTS.sky) LIGHTS.sky.visible = stage >= 2;
   if (stage < 2) { scene.background = (scene.background && scene.background.isColor ? scene.background : new THREE.Color()).copy(scene.fog.color); } else if (scene.background && scene.background.isColor) scene.background = null;
+  if (stage >= 2) GLASS.live = true;   // (fx/glass.js: the next picture takes the room into the glass)
   document.documentElement.classList.toggle('l3-wait', stage < 3);
   setShadowsDirty(true); needs = true;
 }
+const mark = name => { try { performance.mark('l3-' + name); } catch (e) { /* no User Timing */ } };   // start-up marks (tools/perf/marks.cjs)
 async function start() {
-  await main();
-  buildNightLights(); buildNightSky(); buildFireflies();
+  await main(); mark('room');
+  buildNightLights();
   const at = /[?&]at=(\d{1,2}):(\d{2})/.exec(location.search); if (at) { const d = new Date(); d.setHours(+at[1], +at[2], 0, 0); HOUR.pin = d; }
-  { const t = hourTarget(); applyHour(t.e, t.az); }
+  { const t = hourTarget(); applyHour(t.e, t.az); readWeather(); applyHour(t.e, t.az); }   // (the weather if it is known: an overcast's grey light and its lamps in the first shaders made)
   resize(); applyRefCamera();
   buildInterface();
-  await compileFor(scene);   // (everything compiled while shown; then let in by parts)
+  await compileFor(scene);   // (compiled while hidden: the first picture comes whole)
   reveal(0);
-  ready = true; draw(); updateOn(); startedAt = performance.now();
-  if (!reduceMotion) [[1, 600], [2, 1250], [3, 1900]].forEach(([s, ms]) => setTimeout(() => reveal(s), ms)); else reveal(3);
+  ready = true; draw(); updateOn(); startedAt = performance.now(); mark('first-draw');
   renderer.setAnimationLoop(loop);
-  loadPets().catch(e => console.warn('pets unavailable', e));   // the cat and the chicken, once the room shows
+  // then the rest, each part when it is built (its shaders made in the background) and no sooner than its time after
+  // that first picture
+  const t0 = performance.now(), notBefore = ms => new Promise(r => setTimeout(r, reduceMotion ? 0 : Math.max(0, t0 + ms - performance.now())));
+  await buildGarden();
+  if (NIGHT.day && LIGHTS.ring) NIGHT.day.ring = LIGHTS.ring.material.color.clone();   // (the far woods' own colour, before the hour tints it)
+  applyHour(HOUR.e, HOUR.az);
+  await compileFor(scene);
+  // the cat and the chicken (it stays out of sight until the garden is in), once the garden's shaders are made: a first
+  // use of one of theirs while those were still being made held a frame up to 0.4 s
+  loadPets().catch(e => console.warn('pets unavailable', e));
+  await notBefore(600); reveal(1);
+  buildNightSky(); buildFireflies(); await compileFor(OVER.skyScene, null); await compileFor(OVER.scene, null);   // (the sharp layer: drawn on the page's own canvas)
+  await notBefore(1250); reveal(2);
+  await notBefore(1900); reveal(3);
   (window.requestIdleCallback || (fn => setTimeout(fn, 500)))(() => precompileLightStates(), { timeout: 3000 });
 }
 // As night falls the lights change three ways (the ceiling spots come on, the sun goes down, then the window lights go out),
@@ -6847,14 +6916,14 @@ async function start() {
 // compile), so the switch does not stall the page later. Nothing is drawn meanwhile (hold).
 // shaders are compiled for the target the scene really renders into (its colour space differs from the canvas'),
 // in parallel threads where the browser supports it
-async function compileFor(sc) {
+async function compileFor(sc, target = POST.rt) {
   if (!renderer.compileAsync) return;
-  renderer.setRenderTarget(POST.rt);
+  renderer.setRenderTarget(target);
   try { await renderer.compileAsync(sc, camera); } catch (e) { /* compiled on first use instead */ }
   renderer.setRenderTarget(null);
 }
 async function precompileLightStates() {
-  if (!renderer.compileAsync) return;
+  if (!renderer.compileAsync) { REVEAL.lit = true; return; }
   const L = LIGHTS, spl = [...NIGHT.spots.map(s => s.sp), ...(L.pendant ? [L.pendant.userData.light] : [])];   // (the bulb over the sofa comes on with the ceiling spots)
   const was = { sun: L.sun.visible, rects: L.rects.map(r => r.visible), spots: spl.map(s => s.visible) };
   hold = true;
@@ -6865,7 +6934,7 @@ async function precompileLightStates() {
     }
   } catch (e) { /* compiled on first use instead */ }
   L.sun.visible = was.sun; L.rects.forEach((r, i) => { r.visible = was.rects[i]; }); spl.forEach((s, i) => { s.visible = was.spots[i]; });
-  hold = false; needs = true;
+  hold = false; needs = true; REVEAL.lit = true; mark('precompiled');
 }
 
 // other modules change these through a setter (an imported binding is read-only)
