@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { reduceMotion } from '../core/base.js';
+import { CANVAS, reduceMotion } from '../core/base.js';
 import { canvas, ctex } from '../core/utils.js';
 import { camera, renderer, scene, setShadowsDirty } from '../core/renderer.js';
 import { room } from './room.js';
@@ -255,20 +255,20 @@ async function loadPets() {
   // their shaders compiled in the background (for a linear target like theirs) before they appear
   scene.add(holder); if (PETS.chicken) scene.add(PETS.chicken);
   if (renderer.compileAsync) { renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(holder, SHARP.cam, scene); if (PETS.chicken) await renderer.compileAsync(PETS.chicken, SHARP.cam, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
-  PETS.ok = true; PETS.state = null; petsForHour(HOUR.S); setNeeds(true);
+  bindTouch(); PETS.ok = true; PETS.state = null; petsForHour(HOUR.S); setNeeds(true);
 }
 /* ---- the cat's life: in its place (lying, with its small life and its acts) or on its way between its places. Each
    frame its wishes are gathered (W: the pose to go toward and how fast, its legs on the ground or in the pose, its speed
    and turning, how it looks, its lids), then its body is moved by them (moveCat). */
 const CAT = { mode: 'still', place: 'day', seq: null, G: null, v: 0, ikW: 0, lid: 0, look: null, blinkT: 3, blinkK: 0, slow: 0, earT: [1, 2.5], ear: [0, 0],
-  tailT: 2, kick: 0, sigh: 0, sighT: 20, glance: 0, glanceT: 6, actT: 20, huntT: 30, twitchT: 30, prev: null,
+  tailT: 2, kick: 0, lashP: 0, sigh: 0, sighT: 20, glance: 0, glanceT: 6, actT: 20, huntT: 30, twitchT: 30, prev: null,
   sleep: 'light', sleepT: 45 };   // (asleep: dozing in a ball first, then deeply on its side, sleepT seconds later)
 const sleepPose = () => CAT.sleep === 'deep' ? 'curl' : 'nest';
 PETS.CAT = CAT; PETS.act = k => dayActs(k);   // (for tests: an act can be started by hand)
 const rnd = (a, b) => a + (b - a) * Math.random();
 const ease = k => k * k * (3 - 2 * k), angTo = (a, b) => ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
 const W = {};
-function wishes() { Object.assign(W, { pose: 'stand', half: 0.3, ik: false, v: 0, w: 0, dy: 0, pitch: 0, roll: 0, look: null, lookK: 0, lid: null, sway: 0, hindUp: 0, knead: -1, wiggle: 0, ears: 0, walk: 0, lick: 0, wipe: 0, lash: 0 }); }
+function wishes() { Object.assign(W, { pose: 'stand', half: 0.3, ik: false, v: 0, w: 0, dy: 0, pitch: 0, roll: 0, look: null, lookK: 0, lid: null, sway: 0, hindUp: 0, knead: -1, wiggle: 0, ears: 0, walk: 0, lick: 0, wipe: 0, lash: 0, lashF: 1.3 }); }
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _hp = new THREE.Vector3(), _ax = new THREE.Vector3(), _e3 = new THREE.Euler(), _UP = new THREE.Vector3(0, 1, 0);
 const henHead = v => v.set(HEN.x + Math.cos(HEN.yaw) * 0.12, 0.25, HEN.z - Math.sin(HEN.yaw) * 0.12);
 const henBusy = () => !!(PETS.chicken && PETS.chicken.visible && HEN.act && /peck|scratch/.test(HEN.act.kind));
@@ -447,11 +447,189 @@ function startTrip(to) {
        walkTo(S1.x, S1.z), turnTo(S1.yaw), lieDown('sphinx', S1, 1.5)];
   play(steps, () => settle(to, true));
 }
+/* ---- the pointer (G, 17/10/2026: "do research cat behaviour khi hover chuột vào"). What a cat does when a hand, or
+   something small that moves, comes near it, from what has been watched and measured of cats:
+   - It turns to it first: its ears swivel toward it, then its head and eyes follow it (a cat's ears turn to what it
+     hears even while it dozes).
+   - Something small darting about near it is prey: its eyes lock on it, its ears go forward and the tip of its tail
+     twitches; kept up, it bats at it with a forepaw from where it lies, and kept up still it gets up into a crouch, its
+     haunches wiggling as it sets its hind feet, and strikes (the hunt's stare, stalk and pounce, which cats play
+     through with toys they know are not alive).
+   - A hand by its face it sniffs, its head stretched out to it and its ears forward, then rubs, its cheek and the side
+     of its head pushed along it, eyes half shut (rubbing leaves the scent of the glands there on a friend). Cats are
+     best touched round the cheeks and between the eyes and ears (Soennichsen & Chamove 2002; Ellis et al. 2015). Held
+     still by its face a while, it narrows its eyes slowly at it: the slow blink, a friendly sign cats give and answer
+     (Humphrey et al. 2020).
+   - Stroked along the back it half shuts its eyes. But stroking adds up, fastest at the base of the tail and on the
+     legs (where cats like being touched least: Ellis et al. 2015): its tail begins to swish, then lashes, faster; its
+     skin twitches; its ears turn back and flatten; its eyes open and it turns its head quickly to the hand; and if the
+     stroking goes on, it bats at it (the signs of petting-induced aggression, in the order shelters list them). Then
+     it turns away, washes, and pays the hand no attention for a while.
+   - Asleep it keeps listening: an ear swivels to the pointer and flicks, the tip of its tail flicks; held on it a while
+     it opens its eyes a slit, lifts its head to look, blinks slowly and settles again. From deep sleep it first comes
+     up into a doze, curled up again.
+   What is under the pointer is found on the cat's own skinned mesh (965 vertices, as posed this frame): the part is the
+   bone its hit corners hang on most. */
+const TOUCH = { x: 0, y: 0, in: false, moved: 0, speed: 0, ndc: new THREE.Vector2(), ray: new THREE.Raycaster(), p: new THREE.Vector3(), near: 0, on: null, headC: null,
+  awake: false, onT: 0, offT: 9, restT: 0, prey: 0, preyN: 0, over: 0, sniff: 0, rub: 0, rubBlink: false, wake: 0, away: 0, cool: 0, twitch: 0, twitchT: 0, earT: 0, swiv: 0, flat: 0, swat: null, active: false };
+PETS.touch = TOUCH; PETS.swat = r => swatAt(r);   // (for tests)
+const T_PART = n => /^(head|neck|ear)/.test(n) ? 'head' : /^tail[12]$/.test(n) ? 'base' : /^tail/.test(n) ? 'tail' : /^(arm|fore|paw|thigh|shin|foot|toe)/.test(n) ? 'leg' : 'back';
+const T_OVER = { head: 0.025, back: 0.085, leg: 0.12, base: 0.22, tail: 0.15 };   // how fast stroking there adds up (a second of it)
+const _tv = new THREE.Vector3(), _tf = new THREE.Vector3(), _tl = new THREE.Vector3(), _tu = new THREE.Vector3(), _tq = new THREE.Quaternion(), _tpl = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+function bindTouch() {
+  TOUCH.ray.layers.set(PETS.layer);   // (the cat is on its own layer)
+  CANVAS.addEventListener('pointermove', e => {   // (where it is on the canvas read here, as picking does, not every frame: that would force a layout)
+    const T = TOUCH, r = CANVAS.getBoundingClientRect(); if (T.in) T.moved += Math.hypot(e.clientX - T.x, e.clientY - T.y);
+    T.x = e.clientX; T.y = e.clientY; T.in = true; T.ndc.set((T.x - r.left) / r.width * 2 - 1, -((T.y - r.top) / r.height) * 2 + 1);
+  }, { passive: true });
+  CANVAS.addEventListener('pointerleave', () => { TOUCH.in = false; });
+}
+function senseTouch(dt) {   // where the pointer is: how fast it moves, how near the cat's head it passes, what part of it is under it
+  const T = TOUCH, m = CATR.mesh, B = CATR.bones;
+  T.speed += (T.moved / Math.max(dt, 1e-3) - T.speed) * Math.min(1, dt / 0.1); T.moved = 0;   // (screen px a second, over a tenth)
+  if (!T.headC) {   // the middle of its head in the head's own frame (the head's joint is at the back of the skull)
+    const J = m.geometry.attributes.skinIndex, Wt = m.geometry.attributes.skinWeight, c = new THREE.Vector3(); let n = 0;
+    for (let i = 0; i < J.count; i++) { let best = 0, bw = -1; for (let k = 0; k < 4; k++) { const w = Wt.getComponent(i, k); if (w > bw) { bw = w; best = J.getComponent(i, k); } }
+      if (/^(head|ear)/.test(m.skeleton.bones[best].name)) { c.add(m.getVertexPosition(i, _tv).applyMatrix4(m.matrixWorld)); n++; } }
+    T.headC = c.divideScalar(Math.max(n, 1)).applyMatrix4(_m4.copy(B.head.matrixWorld).invert());
+  }
+  T.on = null; T.near = 0;
+  if (!T.in || !PETS.holder.visible) return;
+  T.ray.setFromCamera(T.ndc, camera);
+  const hc = _tv.copy(T.headC).applyMatrix4(B.head.matrixWorld);
+  T.ray.ray.closestPointToPoint(hc, T.p);   // what it looks at: the pointer's line where it passes nearest its head
+  T.near = 1 - THREE.MathUtils.smoothstep(T.p.distanceTo(hc), 0.1, 0.75);
+  if (T.near > 0.15) {
+    m.computeBoundingSphere();   // (as it is posed now)
+    const hit = T.ray.intersectObject(m, false)[0];
+    if (hit) {
+      const J = m.geometry.attributes.skinIndex, Wt = m.geometry.attributes.skinWeight, f = hit.face; let best = 0, bw = -1;
+      for (const i of [f.a, f.b, f.c]) for (let k = 0; k < 4; k++) { const w = Wt.getComponent(i, k); if (w > bw) { bw = w; best = J.getComponent(i, k); } }
+      T.on = T_PART(m.skeleton.bones[best].name);
+    }
+  }
+}
+function slowBlink() { if (CAT.blinkK > 0) return; CAT.blinkK = 1e-3; CAT.slow = true; CAT.blinkT = rnd(4, 8); }
+const lookP = k => { if (TOUCH.in) { W.look = _w.copy(TOUCH.p); W.lookK = k; } };
+// what the pointer makes it wish for, on top of what it is doing (only in its place and doing nothing else: on its way,
+// washing or after the chicken it keeps to that, though its ears still turn)
+function touchWishes(dt, night) {
+  const T = TOUCH, free = CAT.mode === 'still' && !CAT.seq, on = T.on, clamp = THREE.MathUtils.clamp;
+  T.awake = free && !night && !reduceMotion; T.cool = Math.max(0, T.cool - dt); T.away = Math.max(0, T.away - dt);
+  if (on) { T.onT += dt; T.offT = 0; } else { T.offT += dt; if (T.offT > 0.5) { T.onT = 0; T.sniff = 0; } }
+  if (!on && T.near <= 0.4) T.wake = T.wake > 0 ? Math.max(0, T.wake - 0.25 * dt) : Math.min(0, T.wake + 0.3 * dt);   // (left alone it settles: the urge to wake goes, and after a rousing, the reluctance)
+  T.restT = T.in && T.speed < 30 && T.near > 0.5 && !on ? T.restT + dt : Math.min(T.restT, 0) + dt;   // (negative: a while since its last slow blink)
+  const stroking = !!on && T.speed > 40 && T.speed < 1100, fast = !on && T.speed > 520 && T.near > 0.15;
+  T.prey = clamp(T.prey + (fast ? 1.3 : -0.45) * dt, 0, 3);
+  T.over = clamp(T.over + (stroking ? T_OVER[on] : on ? -0.01 : -0.07) * dt, 0, 1);
+  if (!stroking || on !== 'head') T.rub = Math.max(0, T.rub - dt * 1.5);
+  T.active = T.near > 0.05 || T.prey > 0.02 || T.over > 0.02 || T.rub > 0.01 || !!T.swat;
+  if (!T.active || reduceMotion) return;
+  if (night) { touchAsleep(dt, free); return; }
+  if (!free) return;
+  // its eyes on it (unless it has had enough of it)
+  if (T.away <= 0 && (on || T.near > 0.35 || (T.near > 0.1 && T.speed > 60) || T.prey > 0.3)) { lookP(1); W.ears = T.prey > 0.3 ? 1 : 0.5; }
+  // prey: eyes wide on it, the tail's tip twitching (idleLife); a bat at it, and kept up, the crouch and the strike
+  if (T.prey > 0.3) W.lid = 0;
+  if (T.prey > 1.5 && T.cool <= 0 && !T.swat) {
+    T.cool = 1.7; T.preyN++;
+    if (T.preyN >= 3 && T.prey > 2.2) { T.preyN = 0; pounceAct(); return; }
+    swatAt();
+  }
+  if (T.prey < 0.05) T.preyN = 0;
+  // a hand by its face: sniffed, then rubbed; and when the rubbing has settled, a slow blink
+  if (on === 'head' && T.speed < 400 && T.away <= 0 && T.over < 0.5) {
+    T.sniff += dt; W.ears = 1;
+    if (T.sniff > 0.8) { T.rub = Math.min(1, T.rub + dt * 2); W.lid = 0.55; }
+    if (T.rub > 0.6 && !T.rubBlink) { T.rubBlink = true; slowBlink(); }
+  } else if (T.rub < 0.05) T.rubBlink = false;
+  // stroked: content, until it adds up
+  if (stroking && on !== 'head' && T.over < 0.35) W.lid = 0.45;
+  if (T.over > 0.35) { W.lash = THREE.MathUtils.smoothstep(T.over, 0.35, 0.8) * 1.3; W.lashF = 1.2 + 1.8 * T.over; }
+  if (T.over > 0.5) {
+    T.twitchT -= dt; if (T.twitchT <= 0) { T.twitch = 1; T.twitchT = rnd(0.7, 1.6) * (1.4 - T.over); }
+    W.lid = 0; if (T.away <= 0) { lookP(1); W.ears = 0; }
+  }
+  if (T.over > 0.88 && stroking && T.cool <= 0 && !T.swat) {   // enough: a bat at the hand, then it turns away and washes
+    swatAt(); T.cool = 3; T.over = 0.55; T.away = 6;
+    play([stay('sphinx', 0.7, { half: 0.25 }), ...groomSteps().slice(0, 3), stay('sphinx', 1.2, { half: 0.35 })], () => { CAT.actT = rnd(25, 50); });
+  }
+  // the pointer held still by its face (not on it), calm: now and then it narrows its eyes slowly at it
+  if (T.restT > 1.4 && T.prey < 0.2 && T.over < 0.3) { slowBlink(); T.restT = -rnd(5, 9); }
+}
+function touchAsleep(dt, free) {   // asleep: listening to it, and roused by it a little
+  const T = TOUCH, deep = CAT.sleep === 'deep';
+  T.earT -= dt * (T.near * (T.speed > 30 ? 1 : 0.35) + (T.on ? 0.8 : 0));   // (an ear flicks to it, oftener the nearer it is and the more it moves)
+  if (T.earT <= 0) { CAT.ear[T.swiv > 0 ? 0 : 1] = 1; T.earT = deep ? rnd(1.6, 3.2) : rnd(0.8, 2); if (Math.random() < 0.35) CAT.kick = (Math.random() < 0.5 ? -1 : 1) * 0.3; }
+  if (!free) { T.wake = Math.min(T.wake, 0); return; }   // (roused, or rolling over: it starts again from there)
+  if (T.on || T.near > 0.4) T.wake = Math.min(2, T.wake + (T.on ? (deep ? 0.35 : 0.7) : 0.12) * dt);
+  if (deep && T.wake > 1) {   // up from deep sleep into a doze, curled up again
+    CAT.sleep = 'light'; CAT.sleepT = rnd(35, 55); T.wake = 0.6;
+    play([{ dur: 2.6, run: () => { Object.assign(W, { pose: 'nest', half: 0.6, lid: 1 }); } }]);
+  } else if (!deep && T.wake > 1.3) { T.wake = -1.5; rouse(); }   // (and a while before it rouses again)
+}
+function rouse() {   // dozing, touched a while: its eyes open a slit, its head comes up to look, a slow blink, and down again
+  CAT.actT = Math.max(CAT.actT, rnd(25, 45));
+  play([{ dur: 9, run: (k, dt, st, t) => {
+    const T = TOUCH, there = T.in && (!!T.on || T.near > 0.3); W.pose = sleepPose();
+    if (!st.end && ((!there && t > 2.4) || t > 6.5)) st.end = t;   // (the pointer gone, or long enough)
+    const out = st.end ? Math.min(1, (t - st.end) / 1.4) : 0, up = Math.min(1, t / 0.9) * (1 - out);
+    W.lid = 1 - 0.5 * up; if (there) lookP(0.42 * up); else { W.look = _w.copy(camera.position); W.lookK = 0.42 * up; } W.ears = 0.7 * up;
+    if (t > 1.7 && !st.blink) { st.blink = true; slowBlink(); }
+    return out >= 1;
+  } }]);
+}
+function pounceAct() {   // prey kept up: up into a crouch, eyes on it, haunches wiggling, a strike at it; then it sits and washes
+  TOUCH.prey = 0.6; TOUCH.cool = 5; CAT.huntT = Math.max(CAT.huntT, 20);
+  play([stay('stand', 0.6, { half: 0.2 }),
+    { dur: 0.8, run: k => { Object.assign(W, { pose: 'stalk', ik: true, dy: -0.038 * ease(k), pitch: 0.06 * ease(k), lid: 0 }); lookP(1); W.ears = 1; W.lash = 1; } },
+    { dur: 1.1, run: (k, dt, st, t) => { Object.assign(W, { pose: 'stalk', ik: true, dy: -0.038, pitch: 0.06, wiggle: Math.sin(Math.PI * 2 * 3.4 * t) * Math.sin(Math.PI * k), lid: 0 }); lookP(1); W.ears = 1; W.lash = 1; } },
+    { dur: 0.6, run: (k, dt, st) => { if (!st.go) { st.go = true; swatAt(0.3); } Object.assign(W, { pose: 'stalk', ik: true, dy: -0.03, pitch: 0.03 }); lookP(1); W.ears = 1; if (k >= 1) st.go = false; } },
+    { dur: 1.0, run: k => { Object.assign(W, { pose: 'stalk', ik: true, dy: -0.038 * (1 - ease(k)), pitch: 0.06 * (1 - k) }); lookP(0.8); } },
+    ...groomSteps().slice(0, 2), stay('sit', 0.5), stay('sphinx', 1.5, { half: 0.35 })], () => { CAT.actT = rnd(30, 70); });
+}
+function swatAt(reach = 0.22) {   // a bat with the forepaw on the pointer's side: up and out to where it is, a moment there, back (claws in: play)
+  const T = TOUCH, G = CAT.G; if (!G) return;
+  const y = G.y - DENT.give + 0.045; _tpl.constant = -y;   // (a plane just over what it lies on)
+  const p = T.ray.ray.intersectPlane(_tpl, _tv) || _tv.copy(T.p).setY(y);
+  const fx = Math.sin(G.yaw), fz = Math.cos(G.yaw), lx = fz, lz = -fx;   // its forward and its left
+  const f = (p.x - G.x) * lx + (p.z - G.z) * lz > 0 ? 'lf' : 'rf', A = CATR.legs[f].up.getWorldPosition(_tu);
+  // within the paw's reach of its shoulder, and ahead of it
+  let dx = p.x - A.x, dz = p.z - A.z; const ahead = dx * fx + dz * fz; if (ahead < 0.05) { dx += (0.05 - ahead) * fx; dz += (0.05 - ahead) * fz; }
+  const d = Math.hypot(dx, dz); if (d > reach) { dx *= reach / d; dz *= reach / d; }
+  T.swat = { f, to: new THREE.Vector3(A.x + dx, y, A.z + dz), t: 0, dur: 0.55 };
+}
+// the body's share: the head rubbing, sniffing, a twitch of the skin, the bat (after the head has been turned to look)
+function touchBody(t, dt) {
+  const T = TOUCH, B = CATR.bones;
+  if (T.awake && (T.rub > 0.01 || (T.on === 'head' && T.sniff > 0 && T.sniff < 0.8))) {
+    // the head reaching to the hand (sniffing: stretched out; rubbing: pushed along it, rolled to bring a cheek to it)
+    B.neck.getWorldPosition(_tl); const hc = _tu.copy(T.headC).applyMatrix4(B.head.matrixWorld), from = _tf.copy(hc).sub(_tl).normalize(), to = _tv.copy(T.p).sub(_tl).normalize();
+    const reach = T.rub > 0.01 ? 0.12 * T.rub * (0.55 + 0.45 * Math.sin(t * Math.PI * 2 * 0.85 + 1.2)) : 0.16 * Math.sin(Math.PI * T.sniff / 0.8);
+    _tq.setFromUnitVectors(from, to); const a = 2 * Math.acos(Math.min(1, Math.abs(_tq.w))); if (a > 1e-4) catTurn(B.neck, _q.identity().slerp(_tq, Math.min(1, reach / a)));
+    if (T.rub > 0.01) { B.head.getWorldQuaternion(_tq); _tf.copy(CATR.gaze).applyQuaternion(_tq).normalize(); catTurn(B.head, _q.setFromAxisAngle(_tf, 0.24 * T.rub * Math.sin(t * Math.PI * 2 * 0.85))); }
+  }
+  if (T.twitch > 0) {   // the skin along its back twitching: a quick shiver of the trunk
+    T.twitch = Math.max(0, T.twitch - dt / 0.3); catAxis('z', _tf); const a = 0.035 * Math.sin(Math.PI * 2 * 12 * t) * Math.sin(Math.PI * T.twitch);
+    catTurn(B.spine, _q.setFromAxisAngle(_tf, a)); catTurn(B.chest, _q.setFromAxisAngle(_tf, -0.7 * a));
+  }
+  if (T.swat) {
+    const S = T.swat; S.t += dt; const k = S.t / S.dur;
+    if (k >= 1) T.swat = null;
+    else {
+      const w = k < 0.28 ? ease(k / 0.28) : k < 0.42 ? 1 : 1 - ease((k - 0.42) / 0.58), L = CATR.legs[S.f], bones = L.bones || (L.bones = [L.up, L.mid, L.end, L.toe].filter(Boolean));
+      for (const b of bones) { let q = _ikq.get(b); if (!q) _ikq.set(b, q = new THREE.Quaternion()); q.copy(b.quaternion); }
+      _tv.copy(S.to); _tv.y += 0.05 * Math.sin(Math.PI * Math.min(1, k / 0.42));   // (up over the line to it, and down onto it)
+      catReach(S.f, _tv, 0.3 * (1 - w), PETS.holder.getWorldQuaternion(_yawQ));
+      for (const b of bones) { _q.copy(b.quaternion); b.quaternion.copy(_ikq.get(b)).slerp(_q, w); b.updateWorldMatrix(false, true); }
+    }
+  }
+}
 /* ---- every frame */
 const _ikq = new Map(), FEET = ['lh', 'rh', 'lf', 'rf'], _yawQ = new THREE.Quaternion(), _tgt = new THREE.Vector3(), _nv = new THREE.Vector3(), _acc = new THREE.Vector3();
 function stepCat(t, dt) {
   const night = CAT.place === 'night' && CAT.mode === 'still';
-  wishes();
+  wishes(); senseTouch(dt);
   if (CAT.mode === 'trip' || CAT.seq) { if (CAT.seq) stepSeq(dt); }
   if (!CAT.seq && CAT.mode === 'trip') return;   // (settled by the sequence's end)
   if (!CAT.seq) {   // in its place
@@ -468,6 +646,7 @@ function stepCat(t, dt) {
       W.look = hen && !CAT.glance ? henHead(_w) : _w.copy(camera.position); W.lookK = 1; W.ears = hen && !CAT.glance ? 0.8 : 0;
     }
   }
+  touchWishes(dt, night);
   moveCat(t, dt, night);
 }
 function moveCat(t, dt, night) {
@@ -523,6 +702,7 @@ function moveCat(t, dt, night) {
     const a = CAT.look.angleTo(want); if (a > 1e-4) CAT.look.lerp(want, Math.min(1, dt * 5 / Math.max(a, 0.25))).normalize();
     catLook(CAT.look, M.lookK, 1.2);
   } else CAT.look = null;
+  touchBody(t, dt);
   idleLife(t, dt, night);
   stepZzz(t, dt, night && !CAT.seq && CAT.sleep === 'deep' && CAT_EYE.u.uBlink.value > 0.9);   // Zzz while it sleeps deeply
   // its tail: pushed by the body's own moves (and swinging once a stride as it walks, lashing as it stalks)
@@ -531,7 +711,8 @@ function moveCat(t, dt, night) {
   const yw = angTo(prev.yaw, G.yaw) / Math.max(dt, 1e-3), yawAcc = THREE.MathUtils.clamp((yw - prev.w) / Math.max(dt, 1e-3), -40, 40);
   prev.p.copy(vel); prev.v.copy(nv); prev.yaw = G.yaw; prev.w = yw;
   acc.applyQuaternion(_q.copy(H.quaternion).invert());
-  const sway = W.walk * 0.05 * Math.sin(Math.PI * 2 * (G.phase + 0.3)) + (W.lash ? 0.22 * Math.sin(t * Math.PI * 2 * 1.3) : 0) + CAT.kick;
+  CAT.lashP += dt * Math.PI * 2 * W.lashF;   // (lashing faster as it gets crosser: the phase kept, so the tail never jumps)
+  const sway = W.walk * 0.05 * Math.sin(Math.PI * 2 * (G.phase + 0.3)) + (W.lash ? 0.22 * W.lash * Math.sin(CAT.lashP) : 0) + CAT.kick;
   catTail(dt, acc, yawAcc, sway);
   placeShadow(G, W.pose);
 }
@@ -541,22 +722,33 @@ function idleLife(t, dt, night) {
   // lids: as wished (asleep shut), else open, with blinks: quick ones every few seconds, and a slow one when it looks at you
   const lid = W.lid !== null ? W.lid : night ? 1 : 0; CAT.lid += (lid - CAT.lid) * Math.min(1, dt * (lid > CAT.lid ? 5 : 3));
   CAT.blinkT -= dt; let bk = 0;
-  if (CAT.blinkK <= 0 && CAT.blinkT <= 0 && CAT.lid < 0.5) { CAT.blinkK = 1e-3; CAT.slow = CAT.glance && Math.random() < 0.5; CAT.blinkT = rnd(3.5, 9); }
+  if (CAT.blinkK <= 0 && CAT.blinkT <= 0 && CAT.lid < 0.5) { CAT.blinkK = 1e-3; CAT.slow = CAT.glance && Math.random() < 0.5 && TOUCH.prey < 0.2 && TOUCH.over < 0.3; CAT.blinkT = rnd(3.5, 9); }
   if (CAT.blinkK > 0) { CAT.blinkK += dt / (CAT.slow ? 2.2 : 0.2);
     if (CAT.blinkK >= 1) CAT.blinkK = 0; else bk = CAT.slow ? Math.min(1, 1.6 * Math.sin(Math.PI * CAT.blinkK)) * 0.9 : Math.sin(Math.PI * CAT.blinkK); }
   CAT_EYE.u.uBlink.value = Math.max(CAT.lid, bk);
   // a deeper breath now and then, asleep
   CAT.sighT -= dt; if (night && CAT.sighT <= 0) { CAT.sigh = 1; CAT.sighT = rnd(25, 60); } CAT.sigh = Math.max(0, CAT.sigh - dt / 4.5);
   // ears: forward when it is intent, a flick now and then, each on its own (rarer asleep)
-  const side = _ax.copy(CATR.gaze).applyQuaternion(B.head.getWorldQuaternion(_q)); side.crossVectors(_UP, side).normalize();   // the head's left
+  const fwd = _tf.copy(CATR.gaze).applyQuaternion(B.head.getWorldQuaternion(_q)).normalize(), side = _ax.crossVectors(_UP, fwd).normalize();   // the head's left
+  const up = _tu.copy(_UP).addScaledVector(fwd, -fwd.y).normalize();   // and its up
+  // toward the pointer: both ears swivel to it (the far one less), as far as a cat's turn (they face behind it too);
+  // flattened, out to the sides and back, as it gets cross (TOUCH)
+  const T = TOUCH; let aim = 0;
+  if (T.in && (T.near > 0.05 || T.on) && !reduceMotion && T.headC) {   // (from the middle of its head; the closer to that, the less they turn: on its face they stay forward)
+    const d = _tv.copy(T.p).sub(_hp.copy(T.headC).applyMatrix4(B.head.matrixWorld)), r = d.length();
+    let ang = Math.atan2(d.dot(side), d.dot(fwd)); if (Math.abs(ang) > 2 && Math.abs(T.swiv) > 0.3 && Math.sign(ang) !== Math.sign(T.swiv)) ang = -ang;   // (behind it: kept on the side it was)
+    aim = THREE.MathUtils.clamp(ang, -1.4, 1.4) * Math.max(T.near, T.on ? 1 : 0) * THREE.MathUtils.smoothstep(r, 0.07, 0.2); }
+  T.swiv += (aim - T.swiv) * Math.min(1, dt * 9); T.flat += (THREE.MathUtils.smoothstep(T.over, 0.55, 0.85) - T.flat) * Math.min(1, dt * 6);
   for (let e = 0; e < 2; e++) {
     CAT.earT[e] -= dt; if (CAT.earT[e] <= 0) { CAT.ear[e] = 1; CAT.earT[e] = night ? rnd(6, 18) : rnd(2, 7); }
     CAT.ear[e] = Math.max(0, CAT.ear[e] - dt / 0.24);
     const b = B[e ? 'ear_R' : 'ear_L'];
-    catTurn(b, _q.setFromAxisAngle(side, 0.2 * (CAT.sm ? CAT.sm.ears : W.ears) - 0.45 * Math.sin(Math.PI * CAT.ear[e])));
+    catTurn(b, _q.setFromAxisAngle(side, 0.2 * (CAT.sm ? CAT.sm.ears : W.ears) - 0.45 * Math.sin(Math.PI * CAT.ear[e]) - 0.4 * T.flat));
+    if (Math.abs(T.swiv) > 1e-3) catTurn(b, _q.setFromAxisAngle(up, T.swiv * ((T.swiv > 0) === !e ? 1 : 0.6)));
+    if (T.flat > 1e-3) catTurn(b, _q.setFromAxisAngle(fwd, (e ? 0.75 : -0.75) * T.flat));
   }
   // the tail's tip: a flick, often while the chicken is busy (asleep, rarely)
-  CAT.tailT -= dt; if (CAT.tailT <= 0) { CAT.kick = (Math.random() < 0.5 ? -1 : 1) * 0.35; CAT.tailT = night ? rnd(8, 20) : henBusy() ? rnd(0.6, 1.8) : rnd(2.5, 6); }
+  CAT.tailT -= dt; if (CAT.tailT <= 0) { CAT.kick = (Math.random() < 0.5 ? -1 : 1) * 0.35; CAT.tailT = night ? rnd(8, 20) : TOUCH.prey > 0.3 ? rnd(0.25, 0.6) : henBusy() ? rnd(0.6, 1.8) : rnd(2.5, 6); }
   CAT.kick *= Math.max(0, 1 - dt * 6);
 }
 function placeShadow(G, pose) {   // the contact shadow: its shape (lying, sitting, curled, standing) and where the cat is
@@ -655,7 +847,7 @@ function drawPets() {
     PETS.holder.visible = true; if (zzz) ZZZ.grp.visible = true; PETS.chicken.visible = false; }
   const catDrawn = crispPass(SHARP.cat, [hp.x, hp.y - 0.04, hp.z, 0.5, zzz ? 0.8 : 0.55, 0.5], C => { if (PETS.fur && PETS.fur.visible) furLight(renderer, scene, C); });   // (high enough for the Zzz)
   // on screen and on the move (the hen always is; the cat on its way or busy): the sharp layer at 60 frames a second
-  PETS.fast = henDrawn || (catDrawn && (CAT.mode === 'trip' || !!CAT.seq || CAT.ikW > 0.01));
+  PETS.fast = henDrawn || (catDrawn && (CAT.mode === 'trip' || !!CAT.seq || CAT.ikW > 0.01 || TOUCH.active));
   if (hen || henOut) PETS.chicken.visible = true;
 }
 // one crisp pass: what is shown on layer 1 inside a box (centre, half widths, height), into a target just covering it on
