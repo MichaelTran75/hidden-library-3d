@@ -175,7 +175,7 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   - 36 texture gộp trong atlas 1024×512, thuộc tính `_CELL`/`_UVT`, shader `issPatch` lặp vân trong ô;
   - không có pháp tuyến, đổ bóng phẳng.
 - Kích thước và tư thế:
-  - Rộng 71 cm (lúc đầu 88 cm, ngày 18/10 G cho nhỏ đi 10 % hai lần), mặt quay vào phòng, ngả sau 12°, xoay 18° về phía mắt người xem, tâm ở (1,68; 3,51).
+  - Rộng 71 cm (lúc đầu 88 cm, ngày 18/10 G cho nhỏ đi 10 % hai lần), tấm pin gần nằm ngang, nghiêng 30° (đầu Nga ở phía sau, nâng lên; `IS.tilt`, G 18/10 — trước đó đứng thẳng ngả 12°), xoay 18° về phía mắt người xem, tâm ở (1,68; 3,51), cần đỡ chống từ dưới vào lưng phòng thí nghiệm Mỹ.
   - Giá đỡ `standParts(rodTop, 1.215)` (hàm của `b747.js`, có thêm hệ số kích thước). Cần cao khoảng 0,86 m.
   - Đế đặt giữa nóc kệ. Lưng trạm cách kính ít nhất 4 cm, đế cách thanh ngang chân kính.
 - Vẽ sắc nét trên lớp 6 qua `crispPass`, có viền chọn như 747. Có đèn trưng bày riêng chỉ trên lớp 6 (`ISS.key`, cường độ 1,6) vì nó đứng xa các đèn của phòng.

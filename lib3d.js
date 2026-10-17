@@ -7174,7 +7174,7 @@ const ISS = { ok: false, layer: 6, url: 'https://michaeltran75.github.io/iss-sta
   P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 6, toneK: 1, outline: true, pad: 12 } };
 const IS = {
   span: 0.88 * 0.9 * 0.9,                    // across its arrays (m): 71 cm
-  lean: 12 * Math.PI / 180,                  // its face tipped down toward the room's eye
+  tilt: 30 * Math.PI / 180,                  // its arrays from level: near level, raised 30° at the back toward the room's eye (G, 18/10/2026)
   yaw: -18 * Math.PI / 180,                  // and turned toward it (the room's eye is to its left)
   mid: [1.68, 3.51],                         // the middle of it (x, y): the middle of G's box, over the Geography bay
   attach: [7.0, -2.3, -4.0],                 // where the rod meets it, in the model's units: the back of the US lab, under the truss's middle
@@ -7244,11 +7244,12 @@ async function buildIss() {
   mat.onBeforeCompile = issPatch; mat.customProgramCacheKey = () => 'iss-crisp';
   mesh.layers.set(ISS.layer); mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false;
   // the model in its file's frame, the rod's meeting point at the origin; tipped up to face the room (its +y), the
-  // Russian segment (its −z) above, leaning back a little; scaled to its span
+  // Russian segment (its −z) at the back, raised so the face is 30° from level (it stood upright, leaning back 12°, until
+  // G, 18/10/2026: "cho solar panel nằm gần như song song với mặt đất, chỉ nghiêng 1 góc 30 độ"); scaled to its span
   const model = g.scene; model.updateMatrixWorld(true);
   const fb = new THREE.Box3().setFromObject(model, true), s = IS.span / (fb.max.x - fb.min.x);
   model.position.fromArray(IS.attach).negate();
-  const lean = new THREE.Group(); lean.add(model); lean.rotation.x = Math.PI / 2 + IS.lean; lean.scale.setScalar(s);
+  const lean = new THREE.Group(); lean.add(model); lean.rotation.x = IS.tilt; lean.scale.setScalar(s);
   // the stand: the base on the bookcase's top, the rod up to the meeting point, the base along the truss
   const holder = new THREE.Group(), rodTop = new THREE.Vector3(0, 1, 0);
   holder.add(lean); holder.rotation.y = IS.yaw; holder.updateMatrixWorld(true);
