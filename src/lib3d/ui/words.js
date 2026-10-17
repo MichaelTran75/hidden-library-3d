@@ -15,6 +15,7 @@ import { REVEAL, clock } from '../core/loop.js';
 import { drawPets, drawSharpBooks } from '../world/pets.js';
 import { drawRain } from '../fx/rain.js';
 import { drawPlane } from '../world/b747.js';
+import { drawClock } from '../world/clock.js';
 
 /* ---- the titles on the shelves' spines: drawn after the watercolour pass so they stay sharp, and hidden wherever the
    room stands in front of the book (each pixel is tested against the room's depth); shown only once its section is
@@ -88,7 +89,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   // the night sky first: it darkens the dome behind it (fx/sky.js), so the rain, the deck, the animals and the rest stand in front of it
   if (OVER.sky && OVER.sky.visible) { renderer.autoClear = false; renderer.render(OVER.skyScene, camera); renderer.autoClear = true; }
-  drawRain(); drawDeck(); drawPlane(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
+  drawRain(); drawDeck(); drawPlane(); drawClock(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
   // the shelves' titles and the fireflies, then the book out of the shelf over them (sharp: it is not in the picture, so the
   // room's depth does not hide the titles behind it)
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }

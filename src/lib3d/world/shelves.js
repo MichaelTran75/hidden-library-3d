@@ -18,14 +18,20 @@ function buildShelves() {
   const backPanel = new THREE.Mesh(boardGeo(0.02, R.H, z1 - z0, 1), MAT.shelfBack); backPanel.position.set(R.xW - 0.01, R.H / 2, (z0 + z1) / 2); backPanel.receiveShadow = true; room.add(backPanel);
   for (let i = 0; i <= ncol; i++) parts.push(place(boardGeo(dep, R.H, th, 1), R.xS + dep / 2, R.H / 2, z0 + i * cw));
   parts.push(place(boardGeo(dep + 0.01, 0.1, z1 - z0, 1), R.xS + dep / 2, 0.05, (z0 + z1) / 2)); // plinth
-  for (let j = 1; j <= nrow; j++) parts.push(place(boardGeo(dep, th, z1 - z0, 1), R.xS + dep / 2, 0.1 + j * rh - (j === nrow ? 0.02 : 0), (z0 + z1) / 2));
+  for (let j = 1; j <= nrow; j++) {
+    const y = 0.1 + j * rh - (j === nrow ? 0.02 : 0);
+    if (j === CLOCK_CELL.j + 1) {   // (the board over the clock's lower cell: out of its column, the two cells one: clock.js)
+      const za = z0 + CLOCK_CELL.i * cw, zb = z0 + (CLOCK_CELL.i + 1) * cw;
+      parts.push(place(boardGeo(dep, th, za - z0, 1), R.xS + dep / 2, y, (z0 + za) / 2), place(boardGeo(dep, th, z1 - zb, 1), R.xS + dep / 2, y, (zb + z1) / 2));
+    } else parts.push(place(boardGeo(dep, th, z1 - z0, 1), R.xS + dep / 2, y, (z0 + z1) / 2));
+  }
   const along = new THREE.Vector3(0, 0, 1), out = new THREE.Vector3(-1, 0, 0);
   SHELF.R = { z0, cw, rh, th, dep, ncol, nrow };
   const decorRows = [6, 7, 8, 9];
   for (let i = 0; i < ncol; i++) for (let j = 0; j < nrow; j++) {
     const yb = 0.1 + j * rh + th / 2, len = cw - th, o = new THREE.Vector3(R.xS + 0.01, yb, z0 + i * cw + th / 2);
     const hgt = rh - th;
-    if (decorRows.includes(j) && rand() < 0.42) { DECOR.push({ o, along, out, len, hgt, dep, kind: Math.floor(rand() * 6) }); continue; }
+    if (decorRows.includes(j) && rand() < 0.42) { DECOR.push({ o, along, out, len, hgt, dep, kind: Math.floor(rand() * 6), skip: i === CLOCK_CELL.i && (j === CLOCK_CELL.j || j === CLOCK_CELL.j + 1) }); continue; }   // (skip: the clock's cells, clock.js)
     if (j === nrow - 1 && rand() < .3) continue;
     fillCell(o, along, out, len, hgt, dep - 0.03, PAL.modern, { stack: j > 9 ? .08 : .05, cell: { shelf: 'R', i, j } });
   }
@@ -52,6 +58,7 @@ function buildShelves() {
   const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.oak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
 }
 
-const B7_CELL = { i: 0, j: 4, books: 0.4 };   // the cell the 747 stands in (the back bookcase's left bay, its middle row: b747.js), and the books kept at its left end (m)
+const B7_CELL = { i: 0, j: 4, books: 0.4 };
+const CLOCK_CELL = { i: 3, j: 6 };   // the medieval clock's place: the tall shelf's 4th column, rows 6 and 7 made one cell (clock.js)   // the cell the 747 stands in (the back bookcase's left bay, its middle row: b747.js), and the books kept at its left end (m)
 
-export { B7_CELL, SHELF, buildShelves };
+export { B7_CELL, CLOCK_CELL, SHELF, buildShelves };

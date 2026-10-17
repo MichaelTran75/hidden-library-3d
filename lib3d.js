@@ -427,14 +427,20 @@ function buildShelves() {
   const backPanel = new THREE.Mesh(boardGeo(0.02, R.H, z1 - z0, 1), MAT.shelfBack); backPanel.position.set(R.xW - 0.01, R.H / 2, (z0 + z1) / 2); backPanel.receiveShadow = true; room.add(backPanel);
   for (let i = 0; i <= ncol; i++) parts.push(place(boardGeo(dep, R.H, th, 1), R.xS + dep / 2, R.H / 2, z0 + i * cw));
   parts.push(place(boardGeo(dep + 0.01, 0.1, z1 - z0, 1), R.xS + dep / 2, 0.05, (z0 + z1) / 2)); // plinth
-  for (let j = 1; j <= nrow; j++) parts.push(place(boardGeo(dep, th, z1 - z0, 1), R.xS + dep / 2, 0.1 + j * rh - (j === nrow ? 0.02 : 0), (z0 + z1) / 2));
+  for (let j = 1; j <= nrow; j++) {
+    const y = 0.1 + j * rh - (j === nrow ? 0.02 : 0);
+    if (j === CLOCK_CELL.j + 1) {   // (the board over the clock's lower cell: out of its column, the two cells one: clock.js)
+      const za = z0 + CLOCK_CELL.i * cw, zb = z0 + (CLOCK_CELL.i + 1) * cw;
+      parts.push(place(boardGeo(dep, th, za - z0, 1), R.xS + dep / 2, y, (z0 + za) / 2), place(boardGeo(dep, th, z1 - zb, 1), R.xS + dep / 2, y, (zb + z1) / 2));
+    } else parts.push(place(boardGeo(dep, th, z1 - z0, 1), R.xS + dep / 2, y, (z0 + z1) / 2));
+  }
   const along = new THREE.Vector3(0, 0, 1), out = new THREE.Vector3(-1, 0, 0);
   SHELF.R = { z0, cw, rh, th, dep, ncol, nrow };
   const decorRows = [6, 7, 8, 9];
   for (let i = 0; i < ncol; i++) for (let j = 0; j < nrow; j++) {
     const yb = 0.1 + j * rh + th / 2, len = cw - th, o = new THREE.Vector3(R.xS + 0.01, yb, z0 + i * cw + th / 2);
     const hgt = rh - th;
-    if (decorRows.includes(j) && rand() < 0.42) { DECOR.push({ o, along, out, len, hgt, dep, kind: Math.floor(rand() * 6) }); continue; }
+    if (decorRows.includes(j) && rand() < 0.42) { DECOR.push({ o, along, out, len, hgt, dep, kind: Math.floor(rand() * 6), skip: i === CLOCK_CELL.i && (j === CLOCK_CELL.j || j === CLOCK_CELL.j + 1) }); continue; }   // (skip: the clock's cells, clock.js)
     if (j === nrow - 1 && rand() < .3) continue;
     fillCell(o, along, out, len, hgt, dep - 0.03, PAL.modern, { stack: j > 9 ? .08 : .05, cell: { shelf: 'R', i, j } });
   }
@@ -461,7 +467,8 @@ function buildShelves() {
   const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.oak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
 }
 
-const B7_CELL = { i: 0, j: 4, books: 0.4 };   // the cell the 747 stands in (the back bookcase's left bay, its middle row: b747.js), and the books kept at its left end (m)
+const B7_CELL = { i: 0, j: 4, books: 0.4 };
+const CLOCK_CELL = { i: 3, j: 6 };   // the medieval clock's place: the tall shelf's 4th column, rows 6 and 7 made one cell (clock.js)   // the cell the 747 stands in (the back bookcase's left bay, its middle row: b747.js), and the books kept at its left end (m)
 /* ---------------------------------------------------------------- decor on shelves
    Every decorated cell of the tall shelf holds a piece of its own, no two alike: a catalogue of vessels, pictures,
    figures, instruments, plants and small things is shuffled and dealt one per cell. Each piece is built in its own
@@ -871,6 +878,7 @@ function buildDecor(assets) {
     const c = d.o.clone().addScaledVector(d.along, d.len / 2).addScaledVector(d.out, -d.dep / 2 + 0.05);
     const yaw = Math.atan2(d.out.x, d.out.z), it = decorItem();
     const model = deck[k](it, rnd, { assets, len: d.len, hgt: d.hgt });
+    if (d.skip) return;   // (a cell given to something else, the clock: its piece made all the same, so the random draws after it stay as they were)
     W.compose(c, Q.setFromAxisAngle(DK_Y, yaw + rnd(-0.12, 0.12)), one);
     for (const p of it.parts) {
       const geo = p.geo; geo.applyMatrix4(W);
@@ -4211,7 +4219,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   // the night sky first: it darkens the dome behind it (fx/sky.js), so the rain, the deck, the animals and the rest stand in front of it
   if (OVER.sky && OVER.sky.visible) { renderer.autoClear = false; renderer.render(OVER.skyScene, camera); renderer.autoClear = true; }
-  drawRain(); drawDeck(); drawPlane(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
+  drawRain(); drawDeck(); drawPlane(); drawClock(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
   // the shelves' titles and the fireflies, then the book out of the shelf over them (sharp: it is not in the picture, so the
   // room's depth does not hide the titles behind it)
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
@@ -5188,7 +5196,7 @@ function drawRain() {
    short-legged cat that is a stride of ~0.16 m in 0.6 s. Walking, its head is
    held steady and a little nose-down while the trunk rises and falls twice a stride and sways once (Zubair et al.);
    its shoulder blades ride up over each forepaw in stance; its tail, carried up, follows the body as a damped chain. */
-const CATR = { bones: {}, rest: null, body: null, mesh: null, ground: null, gaze: null, poses: {}, legs: null, S: null, scale: 1.375, tail: null };
+const CATR = { bones: {}, rest: null, body: null, mesh: null, ground: null, gaze: null, poses: {}, legs: null, S: null, scale: 1.5125, tail: null };   // (10 % larger twice: G, 17/10/2026)
 const C_SIDED = /^(scap|arm|fore|paw|thigh|shin|foot|toe|ear)$/;   // (a pose op ['tailArc', from, step, dip] lays the tail on an arc)
 const C_AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
 const C_TAIL = ['tail1', 'tail2', 'tail3', 'tail4', 'tail5', 'tail6', 'tail7'];
@@ -5555,7 +5563,7 @@ const PETS = { ok: false, cat: null, holder: null, chicken: null, layer: 1, last
 // where the cat stays (by day the floor between the stump table and the glass, by night the chaise: on the flat of its
 // cushion, back from the front edge where it rounds off), and where it jumps. sink: how far it presses into what it
 // lies on (a soft cushion gives ~1 cm under a cat; the floor none)
-const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12, sink: 0 }, night: { x: 1.62, z: -6.1, yaw: -1.83, sink: 0.024 } };   // (night: into the ~3 cm hollow it makes)   // (asleep on its side, its face and paws toward the room)
+const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12, sink: 0 }, night: { x: 1.62, z: -6.1, yaw: -1.83, sink: 0.026 } };   // (night: into the ~3 cm hollow it makes)   // (asleep on its side, its face and paws toward the room)
 const CAT_WAY = { floor: [1.22, -5.22], seat: [1.5, -6.02] };   // the floor left of the deck, the chaise's cushion
 // the chicken's patch of lawn outside the left glass (it wanders in it), and its height
 const HEN_AREA = { x0: -2.45, x1: -1.85, z0: -5.7, z1: -4.5, h: 0.42 };   // clear of the sill, so its legs show
@@ -5864,8 +5872,8 @@ function stepDent(dt) {
     Bn.hips.getWorldPosition(_dh); Bn.chest.getWorldPosition(_dc);
     const ax = _dc.x - _dh.x, az = _dc.z - _dh.z, len = Math.hypot(ax, az) || 1, k = B.d < 1e-4 ? 1 : 1 - Math.exp(-dt / 0.08);
     let x = (_dh.x + _dc.x) / 2, z = (_dh.z + _dc.z) / 2, ra, rb;
-    if (lying) { goal = 0.03; if (/curl|nest/.test(pose)) ra = rb = 0.187; else if (pose === 'side') { ra = len / 2 + 0.14; rb = 0.143; } else { ra = len / 2 + 0.11; rb = 0.132; } }   // (the cat 10 % larger: G, 17/10/2026)
-    else if (sitting) { goal = 0.026; x = _dh.x; z = _dh.z; ra = rb = 0.132; }
+    if (lying) { goal = 0.03; if (/curl|nest/.test(pose)) ra = rb = 0.206; else if (pose === 'side') { ra = len / 2 + 0.154; rb = 0.157; } else { ra = len / 2 + 0.121; rb = 0.145; } }   // (the cat 10 % larger, twice: G, 17/10/2026)
+    else if (sitting) { goal = 0.026; x = _dh.x; z = _dh.z; ra = rb = 0.145; }
     else { goal = 0.006; ra = len / 2 + 0.08; rb = 0.1; }
     B.x += (x - B.x) * k; B.z += (z - B.z) * k; B.ca += (ax / len - B.ca) * k; B.sa += (az / len - B.sa) * k; B.ra += (ra - B.ra) * k; B.rb += (rb - B.rb) * k;
     const n = Math.hypot(B.ca, B.sa) || 1; B.ca /= n; B.sa /= n;
@@ -6756,6 +6764,152 @@ function drawPlane() {   // over the picture, before the animals (the shelf is b
   SHARP.u.uExp.value = PU.exposure.value; SHARP.u.uLift.value = PU.lift.value; SHARP.u.uVeil.value = PU.veil.value;
   crispPass(PLANE.P, PLANE.box);
 }
+/* ---------------------------------------------------------------- the medieval clock on the tall shelf
+   "Ardavin's Medieval Clock. Model Completorium" by Miguel Garcia (CC BY 4.0), 68 cm tall, in two cells of the tall
+   shelf made one (their board taken out: shelves.js CLOCK_CELL), drawn sharp over the painted room, not watercoloured
+   (G, 17/10/2026: "phá vách giữa 2 ô, và đặt glb clock vào, và cho realtime clock + accurate gear animation and add
+   Chime for every hour. (no water color for this clock)"). Its parts were measured on the model and cut from it
+   (tools/clock: segment.py, make.mjs), each turning about its own axis:
+   - The going train, as the model has it (its teeth counted on the model): the hour wheel (56) carries the hand and the
+     12-tooth star that trips the hammer each hour; a pinion of 7 on the great wheel's arbor drives it, so that arbor
+     turns 8 times in 12 hours; the great wheel (56) drives the second arbor's pinion (7), the second wheel (56) the
+     crown wheel's pinion (7): the crown wheel turns 512 times in 12 hours, 42⅔ an hour. Its 25 teeth ckEscape one a
+     swing pair of the foliot: a beat (a swing one way) every 1.6875 s, the half tooth it lets go each time.
+   - All of it from the visitor's clock: the hand shows the local time (one turn in 12 hours, as its dial), and every
+     wheel's turn is the hand's times its ratio, so the train stays in mesh. The crown wheel goes as a verge escapement
+     goes: pushed on while a pallet is driven (the foliot leaving the end of its swing), a drop as the tooth escapes,
+     then a little back (the recoil) as the foliot runs on against the other pallet; the train behind it moves with it,
+     by the same ratios. The foliot swings ±32° about its middle.
+   - At each hour the hammer strikes the bell as many times as the hour (one to twelve), lifted and let fall, with a
+     little rebound; the sound is a small bell's (its partials: hum, prime, tierce, quint, nominal and above, each dying
+     at its own rate), made in the page (Web Audio) once the visitor has touched the page (browsers allow sound only
+     after that), not while the tab is hidden. */
+const CLOCK = { ok: false, layer: 5, nodes: {}, holder: null, box: null, ctx: null, strikes: null, lastHour: -1, armed: false,
+  P: { rt: null, quad: null, paint: 0, wash: 0, layer: 5, toneK: 1, pad: 8 } };
+const CK = {
+  height: 0.68,                     // the clock's height in the room (m): the model is 33.35 of its units
+  hand0: 44.27 * Math.PI / 180,     // where the model's hand points (clockwise from XII)
+  verge0: -7.5 * Math.PI / 180,     // the foliot's middle (its pose in the model is 7.5° from it)
+  swing: 32 * Math.PI / 180,        // the foliot's swing either side
+  half: Math.PI * 2 / 25 / 2,       // the crown wheel's turn a beat: half a tooth of 25
+  ratio: { dial: 1, great: -8, second: 64, crown: -512 },   // turns for one of the hand's (the sign: the sense about +x)
+  hammerLift: 0.2,                  // how far the hammer is drawn back (rad), and the strike's timing (s)
+  strikeGap: 1.9, lift: 0.62, fall: 0.09,
+};
+
+async function clockBytes() {   // inline (base64) in the one-file build, a file next to the page on GitHub Pages
+  const el = document.getElementById('clock-glb'); if (!el) return null;
+  if (el.dataset.src) { const r = await fetch(el.dataset.src); if (!r.ok) throw new Error('clock ' + r.status); return r.arrayBuffer(); }
+  if (el.textContent.trim().length > 100) return (await fetch('data:application/octet-stream;base64,' + el.textContent.trim())).arrayBuffer();
+  return null;
+}
+async function buildClock() {
+  const buf = await clockBytes(); if (!buf) return;
+  const g = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(buf, '');
+  const root = g.scene.getObjectByName('clock') || g.scene;
+  const src = root.getObjectByName('static').material;
+  // its own finish: the model's picture, wrought iron and old brass with a little sheen, lit by the room
+  const mat = new THREE.MeshStandardMaterial({ map: src.map, roughness: 0.58, metalness: 0.35, envMapIntensity: 0.8, side: THREE.DoubleSide, fog: false });
+  if (mat.map) { mat.map.anisotropy = 8; mat.map.colorSpace = THREE.SRGBColorSpace; }
+  mat.onBeforeCompile = crispPatch;   // (hidden where the room is nearer, as the animals)
+  root.traverse(o => { if (o.isMesh) { o.material = mat; o.layers.set(CLOCK.layer); o.castShadow = false; o.receiveShadow = true; o.frustumCulled = false; } if (o.name) CLOCK.nodes[o.name] = o; });
+  // in the cell: its dial to the room (−x), its base on the lower board, its frame in the middle of the cell's width
+  const S = SHELF.R, s = CK.height / 33.35, zc = S.z0 + (CLOCK_CELL.i + 0.5) * S.cw, y0 = 0.1 + CLOCK_CELL.j * S.rh + S.th / 2;
+  const holder = new THREE.Group(); holder.add(root); root.scale.setScalar(s);
+  root.position.set(0, -0.1 * s, 0);   // (its base's underside at the holder's origin)
+  holder.position.set(R.xS + 0.02 + 6.45 * s, y0, zc + 0.3 * s);   // (the hand's nut 2 cm inside the shelf's face; the frame's middle, at −0.3 of its z, at the cell's)
+  CLOCK.holder = holder; scene.add(holder); holder.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(holder, true), bc = bb.getCenter(new THREE.Vector3());
+  CLOCK.box = [bc.x, bb.min.y - 0.01, bc.z, (bb.max.x - bb.min.x) / 2 + 0.03, bb.max.y - bb.min.y + 0.04, (bb.max.z - bb.min.z) / 2 + 0.05];   // (room for the foliot's swing and the hammer's)
+  // its shadow on the board: a soft patch under the base
+  {
+    const c2 = canvas(128, 128), gc = c2.getContext('2d'), gr = gc.createRadialGradient(64, 64, 4, 64, 64, 62);
+    gr.addColorStop(0, 'rgba(18,11,5,.55)'); gr.addColorStop(0.65, 'rgba(18,11,5,.22)'); gr.addColorStop(1, 'rgba(18,11,5,0)'); gc.fillStyle = gr; gc.fillRect(0, 0, 128, 128);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.3), new THREE.MeshBasicMaterial({ map: ctex(c2, { rep: false }), transparent: true, depthWrite: false, fog: false }));
+    m.rotation.x = -Math.PI / 2; m.position.set(holder.position.x - 0.7 * s, y0 + 0.001, holder.position.z - 0.3 * s); m.renderOrder = 1; room.add(m);
+  }
+  scene.traverse(o => { if (o.isLight) o.layers.enable(CLOCK.layer); });   // (the room's lights light it on its layer)
+  sharpQuad(CLOCK.P); await tick();
+  if (renderer.compileAsync) { SHARP.cam.layers.set(CLOCK.layer); renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(holder, SHARP.cam, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
+  CLOCK.lastHour = new Date().getHours(); CLOCK.ok = true; poseClock(); setNeeds(true);
+  // sound only after the visitor has touched the page; the hour watched once a second
+  for (const t of ['pointerdown', 'keydown', 'touchstart']) addEventListener(t, unlockSound, { capture: true, passive: true });
+  setInterval(watchHour, 1000);
+}
+
+// ---- the train, from the time: the hand's angle, the crown wheel's as its escapement steps it, the rest by ratio
+const ckEase = k => k * k * (3 - 2 * k);
+function ckEscape(p) {   // the crown wheel's share of a beat's half tooth through the beat: on while driven, the drop, back a little
+  return p < 0.6 ? 1.1 * ckEase(p / 0.6) : 1.1 - 0.1 * ckEase((p - 0.6) / 0.4);
+}
+function poseClock(now = new Date()) {
+  const N = CLOCK.nodes;
+  const hours = (now.getHours() % 12) + now.getMinutes() / 60 + (now.getSeconds() + now.getMilliseconds() / 1000) / 3600;
+  const turn = hours / 12 * Math.PI * 2 - CK.hand0;                        // the hand's turn from where the model has it (clockwise from XII: +x)
+  const beats = Math.abs(CK.ratio.crown) * turn / CK.half, k = Math.floor(beats), p = beats - k;
+  const crown = (k + ckEscape(p)) * CK.half;                                 // the crown wheel's turn from the model's pose, stepped (in its own sense)
+  if (N.dial) N.dial.rotation.x = turn;   // (every wheel turned from the model's pose by the same ratios: its teeth stay in mesh)
+  if (N.crown) N.crown.rotation.x = -crown;
+  if (N.second) N.second.rotation.x = crown / 8;
+  if (N.great) N.great.rotation.x = -crown / 64;
+  if (N.verge) N.verge.rotation.y = CK.verge0 + CK.swing * Math.cos(Math.PI * beats);   // (at an end of its swing as each beat begins)
+  if (N.hammer) N.hammer.rotation.x = hammerAngle(performance.now() / 1000);
+}
+// ---- the hour struck
+function watchHour() {
+  if (!CLOCK.ok) return;
+  const now = new Date(), h = now.getHours();
+  if (h === CLOCK.lastHour) return;
+  CLOCK.lastHour = h;
+  if (document.hidden || now.getMinutes() !== 0 || now.getSeconds() > 20) return;   // (missed while hidden: not struck late)
+  ckStrike(h % 12 || 12);
+}
+function ckStrike(n) {   // n blows: each drawn back, let fall onto the bell, a little rebound
+  const t0 = performance.now() / 1000 + 0.3;
+  CLOCK.strikes = { t0, n, end: t0 + (n - 1) * CK.strikeGap + CK.lift + CK.fall + 0.6 };
+  const ctx = CLOCK.ctx;
+  if (ctx && ctx.state === 'running') {   // (the blows' sound, set on the audio clock now)
+    const at = ctx.currentTime + 0.3;
+    for (let i = 0; i < n; i++) ckBell(ctx, at + i * CK.strikeGap + CK.lift + CK.fall);
+  }
+  setNeeds(true);
+}
+function hammerAngle(t) {
+  const S = CLOCK.strikes; if (!S) return 0;
+  if (t > S.end) { CLOCK.strikes = null; return 0; }
+  const u = t - S.t0; if (u < 0) return 0;
+  const i = Math.min(S.n - 1, Math.floor(u / CK.strikeGap)), v = u - i * CK.strikeGap;
+  if (v < CK.lift) return CK.hammerLift * ckEase(v / CK.lift);                               // drawn back
+  if (v < CK.lift + CK.fall) return CK.hammerLift * (1 - (v - CK.lift) / CK.fall) ** 2;     // falling
+  const w = v - CK.lift - CK.fall;                                                          // a rebound, dying
+  return w < 0.6 ? 0.035 * Math.sin(Math.PI * Math.min(1, w / 0.22)) * Math.exp(-w * 5) : 0;
+}
+function unlockSound() {
+  if (CLOCK.ctx) { if (CLOCK.ctx.state === 'suspended') CLOCK.ctx.resume().catch(() => {}); return; }
+  try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) { CLOCK.ctx = new AC(); CLOCK.ctx.resume().catch(() => {}); } } catch (e) { /* no audio */ }
+}
+// a small bell: its partials (as a ratio of the strike note, a level, how long it rings), a short clank of the hammer
+const CK_BELL = [[0.5, 0.55, 5.5], [1.0, 1.0, 4.0], [1.183, 0.45, 3.0], [1.506, 0.32, 2.4], [2.0, 0.6, 2.6], [2.514, 0.22, 1.6], [2.662, 0.18, 1.3], [3.011, 0.16, 1.1], [4.166, 0.07, 0.7]];
+function ckBell(ctx, t, f0 = 659.25, vol = 0.16) {
+  const out = ctx.createGain(); out.gain.value = vol; out.connect(ctx.destination);
+  for (const [r, a, d] of CK_BELL) for (const det of [-0.6, 0.6]) {   // (each partial a pair a little apart: the bell's slow beating)
+    const o = ctx.createOscillator(), gn = ctx.createGain(); o.frequency.value = f0 * r + det;
+    gn.gain.setValueAtTime(0.0001, t); gn.gain.exponentialRampToValueAtTime(a / 2, t + 0.003); gn.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(gn); gn.connect(out); o.start(t); o.stop(t + d + 0.05);
+  }
+  const len = Math.floor(ctx.sampleRate * 0.04), nb = ctx.createBuffer(1, len, ctx.sampleRate), ch = nb.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.18));
+  const ns = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), ng = ctx.createGain(); ns.buffer = nb; bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 1.2; ng.gain.value = 0.35;
+  ns.connect(bp); bp.connect(ng); ng.connect(out); ns.start(t);
+}
+function drawClock() {   // over the picture, sharp; posed for this very moment first
+  if (!CLOCK.ok) return;
+  poseClock(); CLOCK.holder.updateMatrixWorld(true);
+  const PU = POST.mat.uniforms; SHARP.u.uExp.value = PU.exposure.value; SHARP.u.uLift.value = PU.lift.value; SHARP.u.uVeil.value = PU.veil.value;
+  crispPass(CLOCK.P, CLOCK.box);
+}
+function stepClock() { return !!(CLOCK.ok && CLOCK.strikes); }   // (the hammer at work: every frame drawn)
+CLOCK.strike = n => ckStrike(n);   // (tests: the hour struck now)
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
   setShadowsDirty(true);
@@ -7407,14 +7561,14 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt);      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock();      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
     // between the room's own frames too), which costs a blit and a few points
-    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok || METEOR.on || METEOR.comet.on || RAIN.on);
+    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok || CLOCK.ok || METEOR.on || METEOR.comet.on || RAIN.on);
     if (still || now - lastDraw < FRAME_MS - 2) {
-      if (live && now - lastSharp >= (PETS.fast || METEOR.on ? 1000 / 60 : FLY.on || PETS.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }   // (animals on the move, a shooting star: 60 a second)
+      if (live && now - lastSharp >= (PETS.fast || METEOR.on ? 1000 / 60 : FLY.on || PETS.ok || CLOCK.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }   // (animals on the move, a shooting star: 60 a second)
       return;
     }
   }
@@ -7474,7 +7628,8 @@ async function start() {
   // the cat and the chicken (it stays out of sight until the garden is in), once the garden's shaders are made: a first
   // use of one of theirs while those were still being made held a frame up to 0.4 s
   loadPets().catch(e => console.warn('pets unavailable', e));
-  buildPlane().catch(e => console.warn('747 unavailable', e));   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
+  buildPlane().catch(e => console.warn('747 unavailable', e));
+  buildClock().catch(e => console.warn('clock unavailable', e));   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
   buildNightSky(); buildFireflies(); await compileFor(OVER.skyScene, null); await compileFor(OVER.scene, null);   // (the sharp layer: drawn on the page's own canvas)
   await notBefore(1250); reveal(2);
@@ -7520,7 +7675,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, PLANE, RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
+window.__lib3d = { PETS, PLANE, CLOCK, RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
   atlas: (which, lang, w = 1024, h = 1371) => { const c = canvas(w, h), t0 = performance.now(); drawAtlas(c, which, lang); return { url: c.toDataURL('image/png'), ms: performance.now() - t0 }; } };   // (tests: the Geography books' page on its own)
 // The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
 // the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page

@@ -21,7 +21,7 @@ import * as THREE from 'three';
    short-legged cat that is a stride of ~0.16 m in 0.6 s. Walking, its head is
    held steady and a little nose-down while the trunk rises and falls twice a stride and sways once (Zubair et al.);
    its shoulder blades ride up over each forepaw in stance; its tail, carried up, follows the body as a damped chain. */
-const CATR = { bones: {}, rest: null, body: null, mesh: null, ground: null, gaze: null, poses: {}, legs: null, S: null, scale: 1.375, tail: null };
+const CATR = { bones: {}, rest: null, body: null, mesh: null, ground: null, gaze: null, poses: {}, legs: null, S: null, scale: 1.5125, tail: null };   // (10 % larger twice: G, 17/10/2026)
 const C_SIDED = /^(scap|arm|fore|paw|thigh|shin|foot|toe|ear)$/;   // (a pose op ['tailArc', from, step, dip] lays the tail on an arc)
 const C_AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
 const C_TAIL = ['tail1', 'tail2', 'tail3', 'tail4', 'tail5', 'tail6', 'tail7'];

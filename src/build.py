@@ -91,6 +91,7 @@ module = bundle_lib3d()
 glb = base64.b64encode(open(os.path.join(HERE, 'lib.glb'), 'rb').read()).decode()
 cat_bin = base64.b64encode(open(os.path.join(HERE, 'cat.bin'), 'rb').read()).decode()   # the cat (tools/pets: rig_cat.py, pack.mjs)
 hen = base64.b64encode(open(os.path.join(HERE, 'hen.glb'), 'rb').read()).decode()   # the chicken (tools/pets/pack.mjs)
+clock = base64.b64encode(open(os.path.join(HERE, 'clock.glb'), 'rb').read()).decode()   # the medieval clock, its moving parts apart (tools/clock)
 import json   # the books' covers (tools/covers/make.py): the images themselves in the one-file page, files next to it on Pages
 COVER_DIR = os.path.join(HERE, 'covers'); cover_files = sorted(f for f in os.listdir(COVER_DIR) if f.endswith('.webp')) if os.path.isdir(COVER_DIR) else []
 covers_inline = json.dumps({f[:-5]: 'data:image/webp;base64,' + base64.b64encode(open(os.path.join(COVER_DIR, f), 'rb').read()).decode() for f in cover_files}, separators=(',', ':'))
@@ -285,6 +286,9 @@ CREDITS = """<!--
   https://sketchfab.com/3d-models/boeing-747-8i-61b531546bb242f690f87028e333aa5c (CC BY-NC-SA 4.0): its sections,
   planforms and where its paint changes colour were measured; no mesh or picture of it is shipped. Its paint is the
   747-8's rollout scheme in plain colours, without lettering or emblem.
+  The medieval clock on the tall shelf: "Ardavin's Medieval Clock. Model Completorium" by Miguel Garcia -
+  https://sketchfab.com/3d-models/ardavin-s-medieval-clock-model-completorium-108445a998254c2590ded1b7f900b5dd (CC BY 4.0;
+  modified: its moving parts cut apart and turned in code, the rest simplified, re-materialled, compressed; clock.glb)
   The cat and the chicken:
   - "cat" by artofaria - https://sketchfab.com/3d-models/cat-7e8cbcad506041dc9c3a0cb74edb3360 (Sketchfab Free Standard
     licence, https://sketchfab.com/licenses; rigged, re-materialled, posed and animated in code). Under that licence the
@@ -319,6 +323,7 @@ SCRIPTS = (CREDITS + '<script id="sky-weather-js">\n' + WX_JS + '</script>\n'
   + f'<script id="lib-glb" type="application/octet-stream">{glb}</script>\n'
   + f'<script id="cat-bin" type="application/octet-stream">{cat_bin}</script>\n'
   + f'<script id="hen-glb" type="application/octet-stream">{hen}</script>\n'
+  + f'<script id="clock-glb" type="application/octet-stream">{clock}</script>\n'
   + f'<script id="book-covers" type="application/json">{covers_inline}</script>\n'
   + '<script type="module">\n' + module + '</script>\n')
 
@@ -429,12 +434,14 @@ if pages_dir:   # the same page with the models as a separate file
     assert page.count('/*GLB_PRELOAD*/') == 1
     cat_inline = f'<script id="cat-bin" type="application/octet-stream">{cat_bin}</script>'
     hen_inline = f'<script id="hen-glb" type="application/octet-stream">{hen}</script>'
+    clock_inline = f'<script id="clock-glb" type="application/octet-stream">{clock}</script>'
     assert page.count(cat_inline) == 1 and page.count(hen_inline) == 1
     covers_el = f'<script id="book-covers" type="application/json">{covers_inline}</script>'
     assert page.count(covers_el) == 1
     out = (page.replace(inline, '<script id="lib-glb" type="application/octet-stream" data-src="lib.glb"></script>', 1)
                .replace(cat_inline, '<script id="cat-bin" type="application/octet-stream" data-src="cat.bin"></script>', 1)
                .replace(hen_inline, '<script id="hen-glb" type="application/octet-stream" data-src="hen.glb"></script>', 1)
+               .replace(clock_inline, '<script id="clock-glb" type="application/octet-stream" data-src="clock.glb"></script>', 1)
                .replace(covers_el, f'<script id="book-covers" type="application/json">{covers_files}</script>', 1)
                .replace('/*GLB_PRELOAD*/', preload, 1).replace(mod_inline, loader, 1))
     open(os.path.join(pages_dir, 'index.html'), 'w', encoding='utf-8').write(out)
@@ -445,7 +452,7 @@ if pages_dir:   # the same page with the models as a separate file
         open(os.path.join(pages_dir, 'dev.html'), 'w', encoding='utf-8').write(out.replace("'" + mod_name + "'", "'lib3d/main.js'"))
         print('dev  :', os.path.join(pages_dir, 'dev.html'), '(the modules unjoined)')
     shutil.copyfile(os.path.join(HERE, 'lib.glb'), os.path.join(pages_dir, 'lib.glb'))
-    for f in ('cat.bin', 'hen.glb'): shutil.copyfile(os.path.join(HERE, f), os.path.join(pages_dir, f))
+    for f in ('cat.bin', 'hen.glb', 'clock.glb'): shutil.copyfile(os.path.join(HERE, f), os.path.join(pages_dir, f))
     os.makedirs(os.path.join(pages_dir, 'covers'), exist_ok=True)
     for f in cover_files: shutil.copyfile(os.path.join(COVER_DIR, f), os.path.join(pages_dir, 'covers', f))
     if os.path.exists(os.path.join(pages_dir, 'pets.glb')): os.remove(os.path.join(pages_dir, 'pets.glb'))   # (the cat and hen were one file until 14/10)

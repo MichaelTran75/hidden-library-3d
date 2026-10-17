@@ -17,6 +17,7 @@ function buildDecor(assets) {
     const c = d.o.clone().addScaledVector(d.along, d.len / 2).addScaledVector(d.out, -d.dep / 2 + 0.05);
     const yaw = Math.atan2(d.out.x, d.out.z), it = decorItem();
     const model = deck[k](it, rnd, { assets, len: d.len, hgt: d.hgt });
+    if (d.skip) return;   // (a cell given to something else, the clock: its piece made all the same, so the random draws after it stay as they were)
     W.compose(c, Q.setFromAxisAngle(DK_Y, yaw + rnd(-0.12, 0.12)), one);
     for (const p of it.parts) {
       const geo = p.geo; geo.applyMatrix4(W);

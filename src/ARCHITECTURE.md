@@ -63,7 +63,7 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   core/   base.js (DOM, R, REF, tick)   utils.js (rng, noise, canvas…)   renderer.js   views.js (camera)
           build.js (main: dựng phòng)   loop.js (draw, loop, start, biên dịch shader)
   world/  textures materials room books shelves pouf rug furniture (đèn bàn, đèn cây, đèn treo bóng sợi đốt pendantLamp: dựng theo số đo mẫu CC BY) bush (bụi cây ngoài kính: thẻ chùm lá quay về người xem, pháp tuyến theo khối bụi, alpha-to-coverage) outside lights trees assets wind velvet furnish
-          decor/{kit, atlas, items, build}.js   cat.js (thân mèo: tư thế, lò xo, IK, dáng đi)   fur.js (lông: 20 lớp shell, ánh sáng nướng trong không gian texture)   pets.js (tập tính mèo, gà, lớp vẽ sắc nét)   b747.js (mô hình 747-8 1:200 trên kệ Research, dựng từ số đo; viền chọn, bấm mở link)
+          decor/{kit, atlas, items, build}.js   cat.js (thân mèo: tư thế, lò xo, IK, dáng đi)   fur.js (lông: 20 lớp shell, ánh sáng nướng trong không gian texture)   pets.js (tập tính mèo, gà, lớp vẽ sắc nét)   b747.js (mô hình 747-8 trên kệ Research, dựng từ số đo; viền chọn, bấm mở link)   clock.js (đồng hồ trung cổ trên kệ cao: bánh răng theo giờ thật, chuông mỗi giờ)
   fx/     dust post (màu nước: Kuwahara tổng quát, loang ướt ở mảng lá, sàn gỗ vẽ nhẹ tay hơn, FXAA) night hour (mặt trời, lấy từ `window.HL_SUN`) glass (kính: phản chiếu phòng bằng cubemap hiệu chỉnh thị sai, Fresnel, bụi, vệt sáng chéo) rain (mưa theo thời tiết thật Pleiku: vệt mưa ngoài kính, nước bắn trên sân, giọt nước đọng và chảy trên kính khúc xạ hình phía sau, trời u ám, chớp khi dông; ?wx=rain|drizzle|storm) star-catalog (danh mục sao Yale BSC5, 2887 sao) sky (trời sắp đặt: Ngân Hà xoay vào góc kính trái cạnh trăng ở góc nhìn đầu, SKYSET; ?sky=real: trời thật theo giờ sao tại nơi người xem (`HL_SUN.place`); sao chổi sau trăng, sao băng trước trăng; dò chỗ thấy trời trên GPU, probeSky) fireflies
   ui/     library sections hero-books (sách lấy ra: bìa cứng dựng như thợ đóng sách, gáy tròn, rãnh bản lề, ruột lùi vào, vân trang, headband, chữ dập; áo sách bóng; đèn chính riêng; giữ tối đa 5 cuốn) leaves (sách đọc được, 17/10/2026: ghi chú [Mô hình kinh tế] thành sách; mở ra trang tiêu đề + mục lục, mỗi nước một trang đôi, tờ giấy lật trong shader quanh bản lề bìa, chữ tự co cho vừa 2 trang; bấm mục lục/chip trong thẻ để lật tới, trang phải lật tiếp, trang trái lật lui) words (tên trên gáy sách ở kệ, bầu trời) flight deck overlay picking hooks (__lib3d, khởi động)
 ```
@@ -100,6 +100,26 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
 - Góc nhìn gần của ngăn có máy bay khung cả hàng 4 (`slotBox` → `viewY`, `viewH`).
 - Dựng sau khi vườn biên dịch xong. Trên M4: hình và sơn 24 ms, phần còn lại 8 ms, biên dịch song song khoảng 90 ms. Mốc thời gian: `l3-plane-start`, `l3-plane-model`, `l3-plane-built`, `l3-plane`.
 - Script đo nằm ở `tools/b747/` (README ở đó).
+
+### Đồng hồ trung cổ trên kệ cao (`lib3d/world/clock.js`, 17/10/2026)
+
+- Hai ô của kệ cao gộp làm một: cột thứ 4, hàng 6 và 7 (`CLOCK_CELL` trong `shelves.js`).
+  - Tấm ngăn giữa hai ô bị cắt khỏi cột đó.
+  - Đồ trang trí của hai ô (đèn lồng, chồng đá) vẫn được chia bài và dựng như cũ để giữ chuỗi số ngẫu nhiên, nhưng không được thêm vào cảnh (`d.skip`).
+- Mẫu "Ardavin's Medieval Clock" (Miguel Garcia, CC BY 4.0) cao 68 cm, file `clock.glb` 815 KB.
+  - Có 7 phần: tĩnh, mặt kim, trục bánh lớn, trục giữa, trục bánh hồi, verge + foliot, búa.
+  - Được vẽ sắc nét qua `crispPass`, trên lớp riêng 5, không màu nước.
+- Kim chỉ giờ máy người xem. Mọi bánh quay theo tỉ số đếm trên mẫu, tính từ tư thế gốc nên răng luôn ăn khớp: mặt kim +1, trục bánh lớn −8, trục giữa +64, bánh hồi −512 vòng cho mỗi vòng kim.
+- Bộ thoát verge:
+  - Bánh hồi 25 răng nhích nửa răng mỗi nhịp 1,6875 s.
+  - Trong một nhịp: đi tới trong 60 % đầu (lên 1,1), rồi giật lùi về 1,0 ở cuối.
+  - Cả bộ bánh phía sau đi theo đúng tỉ số. Foliot lắc ±32°.
+- Đầu mỗi giờ, búa gõ đúng số giờ (1–12): nhấc lên 0,62 s, rơi 0,09 s, nảy nhẹ, mỗi tiếng cách nhau 1,9 s.
+- Tiếng chuông tổng hợp bằng Web Audio, gồm 9 bội âm kiểu chuông nhỏ, mỗi bội âm hai dao động lệch nhau 1,2 Hz, cộng tiếng búa.
+  - Chỉ kêu sau khi người xem đã chạm vào trang lần đầu (luật trình duyệt). Không kêu khi tab đang ẩn.
+  - Giờ được canh mỗi giây (`setInterval`).
+- Cách tách bộ phận: xem `tools/clock/README.md`.
+- Mèo to thêm 10 % (`CATR.scale` 1,375 → 1,5125), vết lún nệm và độ chìm khi nằm đêm tăng theo.
 
 ### Thời tiết trực tiếp (`src/weather/`)
 

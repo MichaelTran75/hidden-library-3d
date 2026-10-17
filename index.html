@@ -1085,7 +1085,7 @@
      'examples/jsm/utils/BufferGeometryUtils.js', 'examples/jsm/postprocessing/Pass.js'].forEach(function (u) {
       var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = 'https://cdn.jsdelivr.net/npm/three@0.170.0/' + u; document.head.appendChild(l);
     });
-    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=aa9747a6fd'; document.head.appendChild(p);
+    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=62500122a6'; document.head.appendChild(p);
   }
   // the room replaces the painted backgrounds: drop them before anything paints, so they are never downloaded
   (function () {
@@ -3315,6 +3315,9 @@ var ZONES = 'Africa:Abidjan 53 -40,Accra 56 -2,Addis_Ababa 90 387,Algiers 368 30
   https://sketchfab.com/3d-models/boeing-747-8i-61b531546bb242f690f87028e333aa5c (CC BY-NC-SA 4.0): its sections,
   planforms and where its paint changes colour were measured; no mesh or picture of it is shipped. Its paint is the
   747-8's rollout scheme in plain colours, without lettering or emblem.
+  The medieval clock on the tall shelf: "Ardavin's Medieval Clock. Model Completorium" by Miguel Garcia -
+  https://sketchfab.com/3d-models/ardavin-s-medieval-clock-model-completorium-108445a998254c2590ded1b7f900b5dd (CC BY 4.0;
+  modified: its moving parts cut apart and turned in code, the rest simplified, re-materialled, compressed; clock.glb)
   The cat and the chicken:
   - "cat" by artofaria - https://sketchfab.com/3d-models/cat-7e8cbcad506041dc9c3a0cb74edb3360 (Sketchfab Free Standard
     licence, https://sketchfab.com/licenses; rigged, re-materialled, posed and animated in code). Under that licence the
@@ -3590,7 +3593,8 @@ var ZONES = 'Africa:Abidjan 53 -40,Accra 56 -2,Addis_Ababa 90 387,Algiers 368 30
 <script id="lib-glb" type="application/octet-stream" data-src="lib.glb"></script>
 <script id="cat-bin" type="application/octet-stream" data-src="cat.bin"></script>
 <script id="hen-glb" type="application/octet-stream" data-src="hen.glb"></script>
+<script id="clock-glb" type="application/octet-stream" data-src="clock.glb"></script>
 <script id="book-covers" type="application/json">{"80-20-principle":"covers/80-20-principle.webp","blind-watchmaker":"covers/blind-watchmaker.webp","brief-history-of-time":"covers/brief-history-of-time.webp","damn-right":"covers/damn-right.webp","deep-simplicity":"covers/deep-simplicity.webp","encouragement-of-learning":"covers/encouragement-of-learning.webp","guns-germs-and-steel":"covers/guns-germs-and-steel.webp","innovators-dilemma":"covers/innovators-dilemma.webp","laws-of-human-nature":"covers/laws-of-human-nature.webp","money-masters":"covers/money-masters.webp","motivation-and-personality":"covers/motivation-and-personality.webp","nvidia-way":"covers/nvidia-way.webp","paths-to-wealth":"covers/paths-to-wealth.webp","poor-charlies-almanack":"covers/poor-charlies-almanack.webp","power-game":"covers/power-game.webp","predictably-irrational":"covers/predictably-irrational.webp","prisoners-of-geography":"covers/prisoners-of-geography.webp","psychology-of-money":"covers/psychology-of-money.webp","quirkology":"covers/quirkology.webp","rise-and-fall-of-nations":"covers/rise-and-fall-of-nations.webp","think-again":"covers/think-again.webp","think-like-a-freak":"covers/think-like-a-freak.webp","wealth-and-poverty-of-nations":"covers/wealth-and-poverty-of-nations.webp","when-to-rob-a-bank":"covers/when-to-rob-a-bank.webp"}</script>
-<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=aa9747a6fd'; document.body.appendChild(m); }</script>
+<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=62500122a6'; document.body.appendChild(m); }</script>
 </body>
 </html>

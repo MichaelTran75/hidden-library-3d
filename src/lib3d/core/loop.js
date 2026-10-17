@@ -20,6 +20,7 @@ import { layoutOverlay, stepGlow } from '../ui/overlay.js';
 import { buildInterface } from '../ui/picking.js';
 import { PETS, loadPets } from '../world/pets.js';
 import { buildPlane, stepPlane } from '../world/b747.js';
+import { CLOCK, buildClock, stepClock } from '../world/clock.js';
 import { RAIN, readWeather } from '../fx/rain.js';
 
 /* ---------------------------------------------------------------- render loop */
@@ -60,14 +61,14 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt);      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock();      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
     // between the room's own frames too), which costs a blit and a few points
-    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok || METEOR.on || METEOR.comet.on || RAIN.on);
+    const live = !reduceMotion && !body.classList.contains('is-idle') && ((DECK.ok && DECK.speed > 0) || FLY.on || PETS.ok || CLOCK.ok || METEOR.on || METEOR.comet.on || RAIN.on);
     if (still || now - lastDraw < FRAME_MS - 2) {
-      if (live && now - lastSharp >= (PETS.fast || METEOR.on ? 1000 / 60 : FLY.on || PETS.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }   // (animals on the move, a shooting star: 60 a second)
+      if (live && now - lastSharp >= (PETS.fast || METEOR.on ? 1000 / 60 : FLY.on || PETS.ok || CLOCK.ok ? SHARP_MS : FRAME_MS) - 2) { lastSharp = now; drawSharp(); }   // (animals on the move, a shooting star: 60 a second)
       return;
     }
   }
@@ -127,7 +128,8 @@ async function start() {
   // the cat and the chicken (it stays out of sight until the garden is in), once the garden's shaders are made: a first
   // use of one of theirs while those were still being made held a frame up to 0.4 s
   loadPets().catch(e => console.warn('pets unavailable', e));
-  buildPlane().catch(e => console.warn('747 unavailable', e));   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
+  buildPlane().catch(e => console.warn('747 unavailable', e));
+  buildClock().catch(e => console.warn('clock unavailable', e));   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
   buildNightSky(); buildFireflies(); await compileFor(OVER.skyScene, null); await compileFor(OVER.scene, null);   // (the sharp layer: drawn on the page's own canvas)
   await notBefore(1250); reveal(2);

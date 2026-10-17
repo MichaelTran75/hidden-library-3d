@@ -1,4 +1,4 @@
-import '../world/b747.js';   // build order: the module before this one runs first
+import '../world/clock.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { reduceMotion } from '../core/base.js';
 import { camera, setShadowsDirty } from '../core/renderer.js';
