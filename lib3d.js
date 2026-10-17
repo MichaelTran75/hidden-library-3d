@@ -6154,10 +6154,13 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
   C.projectionMatrixInverse.copy(C.projectionMatrix).invert(); camera.matrixWorld.decompose(C.position, C.quaternion, C.scale); C.updateMatrixWorld(true);
   DECKR.u.uFull.value.set(W_, H); DECKR.u.uOff.value.set(x0, y0);
   const cc = renderer.getClearColor(_c), ca = renderer.getClearAlpha();
+  // no backdrop in these passes: until the sky is let in the room's is a plain colour (core/loop.js reveal), which filled
+  // the target, so an opaque box showed round the animals as they came in, and the fur's light (fur.js) went wrong
+  const bg = scene.background; scene.background = null;
   if (before) before(C);
   P.rt.viewport.set(0, 0, w, h); P.rt.scissor.set(0, 0, w, h); P.rt.scissorTest = true;
   renderer.setRenderTarget(P.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, C);
-  renderer.setRenderTarget(null); renderer.setClearColor(cc, ca);
+  renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); scene.background = bg;
   const Q = P.quad.material.uniforms; Q.uScale.value.set(w / P.rt.width, h / P.rt.height); setPaint(Q, P.rt, W_, H);
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true;
