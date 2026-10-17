@@ -10,7 +10,7 @@ import { POST } from '../fx/post.js';
 import { CAM, applyRefCamera, applyView, goView, homeView, resize } from '../core/views.js';
 import { NIGHT } from '../fx/night.js';
 import { HOUR, applyHour, sunPlace } from '../fx/hour.js';
-import { UIS, focusView, offMode, researchView } from './library.js';
+import { UIS, booksView, focusView, offMode, researchView } from './library.js';
 import { relabelBooks } from './words.js';
 import { HERO } from './hero-books.js';
 import { drawAtlas } from './atlas.js';
@@ -26,7 +26,7 @@ import { RAIN } from '../fx/rain.js';
 /* ---------------------------------------------------------------- page hooks */
 addEventListener('resize', () => {
   if (!ready) return; resize();
-  if (CAM.k >= 1) { CAM.cur = UIS.open ? focusView(UIS.open) : UIS.mode === 'research' ? researchView() : homeView(); applyView(CAM.cur); }
+  if (CAM.k >= 1) { CAM.cur = UIS.open ? focusView(UIS.open) : UIS.mode === 'research' ? researchView() : UIS.mode === 'books' ? (booksView() || homeView()) : homeView(); applyView(CAM.cur); }
   setNeeds(true); updateOn();
 });
 new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mode !== 'home') closeCard(); }).observe(body, { attributes: true, attributeFilter: ['class'] });

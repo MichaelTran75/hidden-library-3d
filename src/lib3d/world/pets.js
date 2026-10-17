@@ -46,7 +46,7 @@ const PETS = { ok: false, cat: null, holder: null, chicken: null, layer: 1, last
 // where the cat stays (by day the floor between the stump table and the glass, by night the chaise: on the flat of its
 // cushion, back from the front edge where it rounds off), and where it jumps. sink: how far it presses into what it
 // lies on (a soft cushion gives ~1 cm under a cat; the floor none)
-const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12, sink: 0 }, night: { x: 1.62, z: -6.1, yaw: -1.83, sink: 0.022 } };   // (night: into the ~3 cm hollow it makes)   // (asleep on its side, its face and paws toward the room)
+const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12, sink: 0 }, night: { x: 1.62, z: -6.1, yaw: -1.83, sink: 0.024 } };   // (night: into the ~3 cm hollow it makes)   // (asleep on its side, its face and paws toward the room)
 const CAT_WAY = { floor: [1.22, -5.22], seat: [1.5, -6.02] };   // the floor left of the deck, the chaise's cushion
 // the chicken's patch of lawn outside the left glass (it wanders in it), and its height
 const HEN_AREA = { x0: -2.45, x1: -1.85, z0: -5.7, z1: -4.5, h: 0.42 };   // clear of the sill, so its legs show
@@ -344,8 +344,8 @@ function stepDent(dt) {
     Bn.hips.getWorldPosition(_dh); Bn.chest.getWorldPosition(_dc);
     const ax = _dc.x - _dh.x, az = _dc.z - _dh.z, len = Math.hypot(ax, az) || 1, k = B.d < 1e-4 ? 1 : 1 - Math.exp(-dt / 0.08);
     let x = (_dh.x + _dc.x) / 2, z = (_dh.z + _dc.z) / 2, ra, rb;
-    if (lying) { goal = 0.03; if (/curl|nest/.test(pose)) ra = rb = 0.17; else if (pose === 'side') { ra = len / 2 + 0.13; rb = 0.13; } else { ra = len / 2 + 0.1; rb = 0.12; } }
-    else if (sitting) { goal = 0.026; x = _dh.x; z = _dh.z; ra = rb = 0.12; }
+    if (lying) { goal = 0.03; if (/curl|nest/.test(pose)) ra = rb = 0.187; else if (pose === 'side') { ra = len / 2 + 0.14; rb = 0.143; } else { ra = len / 2 + 0.11; rb = 0.132; } }   // (the cat 10 % larger: G, 17/10/2026)
+    else if (sitting) { goal = 0.026; x = _dh.x; z = _dh.z; ra = rb = 0.132; }
     else { goal = 0.006; ra = len / 2 + 0.08; rb = 0.1; }
     B.x += (x - B.x) * k; B.z += (z - B.z) * k; B.ca += (ax / len - B.ca) * k; B.sa += (az / len - B.sa) * k; B.ra += (ra - B.ra) * k; B.rb += (rb - B.rb) * k;
     const n = Math.hypot(B.ca, B.sa) || 1; B.ca /= n; B.sa /= n;

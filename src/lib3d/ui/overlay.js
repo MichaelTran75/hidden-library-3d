@@ -4,7 +4,7 @@ import { CANVAS, body } from '../core/base.js';
 import { camera } from '../core/renderer.js';
 import { V3, goView, homeView } from '../core/views.js';
 import { NIGHT } from '../fx/night.js';
-import { UIS, esc, focusView, offMode, researchView } from './library.js';
+import { UIS, booksView, esc, focusView, offMode, researchView } from './library.js';
 import { setSpine } from './picking.js';
 import { setNeeds } from '../core/loop.js';
 import { bookInfo, byOf, isMapItem, isReadItem, opensFlat, titleIn } from './book-data.js';
@@ -49,7 +49,8 @@ function buildOverlay() {
   for (const [g, en, vi] of [['books', 'Books', 'Sách'], ['research', 'Research', 'Nghiên cứu']]) {
     if (!UIS.secs.some(s => s.group === g)) continue;
     const h = document.querySelector(`.toc-group[data-group="${g}"] .toc-group-h`), txt = cls => { const n = h && h.querySelector('.' + cls); return n ? n.textContent.trim() : ''; };
-    const c = document.createElement('div'); c.className = 'l3-cap'; c.setAttribute('aria-hidden', 'true');
+    const c = document.createElement('button'); c.type = 'button'; c.className = 'l3-cap l3-cap-' + g;   // (a click: that part of the room, close: G, 17/10/2026)
+    c.addEventListener('click', () => (g === 'research' ? showResearch() : showBooks()));
     c.innerHTML = `<span class="en">${esc(txt('en') || en)}</span><span class="vi">${esc(txt('vi') || vi)}</span>`; UIEL.labels.appendChild(c); UIEL.caps[g] = c;
   }
   UIEL.card.querySelector('#l3-close').addEventListener('click', () => closeCard());
@@ -126,6 +127,7 @@ function closeCard(home = true) {
   if (UIS.active) UIS.touched.add(UIS.active); setNeeds(true); return was;
 }
 function showResearch() { closeCard(false); UIS.mode = 'research'; goView(researchView()); }
+function showBooks() { const v = booksView(); if (!v) return; closeCard(false); UIS.mode = 'books'; goView(v); }
 function stepGlow(dt) {
   let moving = false;
   for (const s of UIS.secs) {
@@ -160,7 +162,7 @@ function layoutOverlay() {
     boxes.push({ el, a, x, y, w, h, sec });
   };
   for (const s of UIS.secs) {
-    const vis = show && (home || (UIS.mode === 'research' && s.group === 'research'));
+    const vis = show && (home || UIS.mode === s.group);   // (in the close-up of its part of the room, its own labels)
     const lh = s.label.offsetHeight || 26;   // (the labels' size follows the window: build.py's CSS)
     if (s.group === 'books') place(s.label, s.box.plate, s.box.tag, 30 + lh * 0.4, 0, 'left', vis, s);   // on its row, just past the plate
     else place(s.label, s.box.plate, s.box.tag, 0, -31 - lh / 2, 'center', vis, s);                       // above its bay
@@ -263,4 +265,4 @@ function layoutOverlay() {
   UIEL.svg.innerHTML = lines.join('');
 }
 
-export { UIEL, buildOverlay, closeCard, layoutOverlay, openSection, refreshCard, setHover, setMapBook, setPeek, showResearch, showTip, stepGlow };
+export { UIEL, buildOverlay, closeCard, layoutOverlay, openSection, refreshCard, setHover, setMapBook, setPeek, showBooks, showResearch, showTip, stepGlow };

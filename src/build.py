@@ -173,7 +173,9 @@ STYLE = IMPORTMAP + """<script>
   .l3-label.is-off { opacity: 0; pointer-events: none; }
   .l3-cap { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap; color: #2a2118; text-shadow: var(--halo);
     font: 700 clamp(28px, 2.74vw, 42px)/1 var(--font); letter-spacing: .26em; text-transform: uppercase; transition: opacity .35s ease; }   /* (twice their first size: G, 15/10/2026) */
-  .l3-cap.is-off { opacity: 0; }
+  .l3-cap { pointer-events: auto; cursor: pointer; background: none; border: 0; padding: 0; }   /* (a click: that part of the room, close) */
+  .l3-cap:hover, .l3-cap:focus-visible { color: var(--accent); outline: none; }
+  .l3-cap.is-off { opacity: 0; pointer-events: none; }
   body.dark-mode .l3-cap { color: #f3ead9; }
   /* a book under the pointer, named beside it */
   .l3-tip { position: absolute; left: 0; top: 0; max-width: 300px; padding: 7px 11px 8px; border-radius: 10px; pointer-events: none; opacity: 0; transition: opacity .15s ease;

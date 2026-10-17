@@ -97,7 +97,8 @@ function pendantLamp(drop) {
   const cloth = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .0035, cord, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0x2b2420, roughness: .85 }));
   cloth.position.y = -.032 - cord / 2; g.add(cloth);
   // the bulb, in its own frame (y up from the tip of the base), turned base up
-  const b = new THREE.Group(); b.rotation.x = Math.PI; b.position.y = tipY; g.add(b);
+  // (the bulb and its socket 20 % larger than the model's: G, 17/10/2026; hung from the same cord grip)
+  const BS = 1.2, tipB = gripY - 0.058 * BS, b = new THREE.Group(); b.rotation.x = Math.PI; b.scale.setScalar(BS); b.position.y = tipB; g.add(b);
   b.add(lathe([[.0001, 0], [.0022, .0003], [.0086, .0028], [.0086, .0037]], new THREE.MeshStandardMaterial({ color: 0x141414, roughness: .3 }), 24));   // the insulator
   b.add(lathe([[.0086, .0037], [.0187, .0095], [.0200, .024], [.0207, .0255], [.0189, .0272], [.0207, .0289], [.0198, .0301], [.0191, .031], [.0184, .0326], [.0176, .0332]],
     new THREE.MeshStandardMaterial({ color: 0xc9c9c4, metalness: 1, roughness: .3 }), 32));   // the screw base
@@ -132,10 +133,10 @@ function pendantLamp(drop) {
     [.0247, -.002], [.0241, -.001], [.0247, 0], [.0247, .0225], [.0253, .0235], [.0253, .025], [.0213, .0252], [.0211, .02]], MAT.brass, 40));
   // its light: a spot straight down, from just under the glass (from the filament it would light the glass itself, 5 cm
   // away, white), and a glow round the bulb
-  const spotY = tipY - .162, light = new THREE.SpotLight(0xffc98f, 0, 9, 0.85, 0.8, 2); light.position.y = spotY; light.target.position.y = spotY - 2.5; light.visible = false; g.add(light, light.target);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffc98f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(.26); glow.position.y = tipY - .105; glow.renderOrder = 4; g.add(glow);
+  const spotY = tipB - .162 * BS, light = new THREE.SpotLight(0xffc98f, 0, 9, 0.85, 0.8, 2); light.position.y = spotY; light.target.position.y = spotY - 2.5; light.visible = false; g.add(light, light.target);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffc98f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(.26 * BS); glow.position.y = tipB - .105 * BS; glow.renderOrder = 4; g.add(glow);
   const at = new THREE.Vector3(), toCam = new THREE.Vector3();   // (drawn 7 cm toward the eye, in front of the glass that hides what is behind it)
-  glow.onBeforeRender = (r, s, cam) => { g.localToWorld(at.set(0, tipY - .105, 0)); toCam.setFromMatrixPosition(cam.matrixWorld).sub(at).normalize(); glow.matrixWorld.setPosition(at.addScaledVector(toCam, .07)); };
+  glow.onBeforeRender = (r, s, cam) => { g.localToWorld(at.set(0, tipB - .105 * BS, 0)); toCam.setFromMatrixPosition(cam.matrixWorld).sub(at).normalize(); glow.matrixWorld.setPosition(at.addScaledVector(toCam, .07)); };
   g.userData.light = light; g.userData.glow = glow; g.userData.coil = coil; g.userData.glass = glass;
   return g;
 }

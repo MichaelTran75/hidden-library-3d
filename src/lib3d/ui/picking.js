@@ -6,7 +6,7 @@ import { UIS, offMode } from './library.js';
 import { buildSections } from './sections.js';
 import { syncActive } from './flight.js';
 import { DECK, buildRecordPlayer, togglePlayer } from './deck.js';
-import { UIEL, buildOverlay, closeCard, openSection, refreshCard, setHover, setMapBook, setPeek, showResearch, showTip } from './overlay.js';
+import { UIEL, buildOverlay, closeCard, openSection, refreshCard, setHover, setMapBook, setPeek, showBooks, showResearch, showTip } from './overlay.js';
 import { ready, setNeeds } from '../core/loop.js';
 import { isMapItem, opensFlat } from './book-data.js';
 import { readClick, readHint, readHit } from './leaves.js';
@@ -110,7 +110,7 @@ function bindPicking() {
     const nav = e.target.closest('.toc-link[data-nav]');
     if (nav) { const s = UIS.byCat.get(nav.dataset.nav); if (s) { e.preventDefault(); openSection(s, s.group === 'research' ? nav.dataset.nav : null); } return; }
     const go = e.target.closest('.toc [data-goto]');   // Books: the whole room; Research: the back bookcase; a research topic: its bay
-    if (go) { e.preventDefault(); const g = go.dataset.goto, s = UIS.byId.get(g); if (g === 'books') closeCard(); else if (s && s.group === 'research') openSection(s); else showResearch(); return; }
+    if (go) { e.preventDefault(); const g = go.dataset.goto, s = UIS.byId.get(g); if (g === 'books') showBooks(); else if (s && s.group === 'research') openSection(s); else showResearch(); return; }
     if (e.target.closest('#np-info')) { const cur = document.querySelector('#pages .item.is-current') || null; const bk = cur && UIS.bySrc.get(cur.dataset.src); if (bk) openSection(bk.sec); }
   }, true);
 }

@@ -1188,7 +1188,8 @@ function pendantLamp(drop) {
   const cloth = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .0035, cord, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0x2b2420, roughness: .85 }));
   cloth.position.y = -.032 - cord / 2; g.add(cloth);
   // the bulb, in its own frame (y up from the tip of the base), turned base up
-  const b = new THREE.Group(); b.rotation.x = Math.PI; b.position.y = tipY; g.add(b);
+  // (the bulb and its socket 20 % larger than the model's: G, 17/10/2026; hung from the same cord grip)
+  const BS = 1.2, tipB = gripY - 0.058 * BS, b = new THREE.Group(); b.rotation.x = Math.PI; b.scale.setScalar(BS); b.position.y = tipB; g.add(b);
   b.add(lathe([[.0001, 0], [.0022, .0003], [.0086, .0028], [.0086, .0037]], new THREE.MeshStandardMaterial({ color: 0x141414, roughness: .3 }), 24));   // the insulator
   b.add(lathe([[.0086, .0037], [.0187, .0095], [.0200, .024], [.0207, .0255], [.0189, .0272], [.0207, .0289], [.0198, .0301], [.0191, .031], [.0184, .0326], [.0176, .0332]],
     new THREE.MeshStandardMaterial({ color: 0xc9c9c4, metalness: 1, roughness: .3 }), 32));   // the screw base
@@ -1223,10 +1224,10 @@ function pendantLamp(drop) {
     [.0247, -.002], [.0241, -.001], [.0247, 0], [.0247, .0225], [.0253, .0235], [.0253, .025], [.0213, .0252], [.0211, .02]], MAT.brass, 40));
   // its light: a spot straight down, from just under the glass (from the filament it would light the glass itself, 5 cm
   // away, white), and a glow round the bulb
-  const spotY = tipY - .162, light = new THREE.SpotLight(0xffc98f, 0, 9, 0.85, 0.8, 2); light.position.y = spotY; light.target.position.y = spotY - 2.5; light.visible = false; g.add(light, light.target);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffc98f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(.26); glow.position.y = tipY - .105; glow.renderOrder = 4; g.add(glow);
+  const spotY = tipB - .162 * BS, light = new THREE.SpotLight(0xffc98f, 0, 9, 0.85, 0.8, 2); light.position.y = spotY; light.target.position.y = spotY - 2.5; light.visible = false; g.add(light, light.target);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffc98f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(.26 * BS); glow.position.y = tipB - .105 * BS; glow.renderOrder = 4; g.add(glow);
   const at = new THREE.Vector3(), toCam = new THREE.Vector3();   // (drawn 7 cm toward the eye, in front of the glass that hides what is behind it)
-  glow.onBeforeRender = (r, s, cam) => { g.localToWorld(at.set(0, tipY - .105, 0)); toCam.setFromMatrixPosition(cam.matrixWorld).sub(at).normalize(); glow.matrixWorld.setPosition(at.addScaledVector(toCam, .07)); };
+  glow.onBeforeRender = (r, s, cam) => { g.localToWorld(at.set(0, tipB - .105 * BS, 0)); toCam.setFromMatrixPosition(cam.matrixWorld).sub(at).normalize(); glow.matrixWorld.setPosition(at.addScaledVector(toCam, .07)); };
   g.userData.light = light; g.userData.glow = glow; g.userData.coil = coil; g.userData.glass = glass;
   return g;
 }
@@ -2119,7 +2120,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   // ---- a bare bulb hanging over the front of the sofa's seat: from the room's first view it is seen above the RESEARCH
   // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up
   const pd = pendantLamp(R.H - 3.27); pd.position.set(0.43, R.H, -7.2); F.add(pd); LIGHTS.pendant = pd;
-  paintLightly(pd);   // (as the lamps: 75 % less watercolour)
+  paintLightly(pd, 0.875);   // (75 % less watercolour, then half of what was left: G, 17/10/2026)
   // ---- stump side table + plant
   const st = stumpTable(); st.position.set(R.xL + 0.32, 0, -5.85); F.add(st);
   const pot = new THREE.Mesh(new THREE.LatheGeometry([[.001, 0], [.1, 0], [.14, .05], [.15, .11], [.14, .12]].map(p => new THREE.Vector2(p[0], p[1])), 28), MAT.stone); pot.position.set(R.xL + 0.28, 0.53, -5.98); pot.castShadow = true; F.add(pot);
@@ -2543,7 +2544,7 @@ function applyHour(e, az) {
   L.floor.userData.light.intensity = lerp(D.floor, 32, k); L.floor.userData.pt.intensity = lerp(D.floorPt, 5, k); L.floor.userData.glow.material.opacity = lerp(D.floorGlow, 0.95, k);
   MAT.shade.emissiveIntensity = lerp(D.shade, 2.4, k);
   if (L.pendant) {   // the bulb over the sofa: off by day, on with the lamps (its spot shown and hidden with the downlights, so the shaders change once)
-    const P = L.pendant.userData; P.light.intensity = 40 * k; P.light.visible = k > 0.001; P.glow.material.opacity = 0.6 * k;
+    const P = L.pendant.userData; P.light.intensity = 40 * k; P.light.visible = k > 0.001; P.glow.material.opacity = 0.45 * k;
     P.coil.material.emissiveIntensity = 9 * k; P.glass.emissiveIntensity = 0.35 * k;
   }
   for (const sp of NIGHT.spots) { sp.sp.intensity = 55 * sp.k * k; sp.sp.visible = k > 0.001; sp.disc.material.color.setRGB(0.1, 0.086, 0.07).lerp(NC.disc, k); }
@@ -2700,6 +2701,18 @@ function focusView(sec) {
   return { pos, tgt, fov: fov0, shift };
 }
 function researchView() { return { pos: new V3(0.55, 1.95, -4.4), tgt: new V3(0.55, 1.8, -8.3), fov: 46, shift: 0 }; }
+// the Books part of the room seen whole and near (G, 17/10/2026: "cho Research and Books có thể ấn vào và có thể close up"):
+// the stretch of the tall shelf its rows take, framed with a little room round it, from as far back as the room allows
+// (the lens widening where it does not)
+function booksView() {
+  const bs = UIS.secs.filter(s => s.group === 'books' && s.box.focus); if (!bs.length) return null;
+  let z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const s of bs) { const b = s.box; z0 = Math.min(z0, b.focus.z - b.focusW / 2); z1 = Math.max(z1, b.focus.z + b.focusW / 2); y0 = Math.min(y0, b.ya); y1 = Math.max(y1, b.yb); }
+  const aspect = innerWidth / innerHeight, fov0 = 40, t = Math.tan(fov0 / 2 * Math.PI / 180), w = (z1 - z0) * 1.18, h = (y1 - y0) * 1.3;
+  const need = Math.max(w / (2 * t * aspect), h / (2 * t)), dmax = R.xS - R.xL - 0.35, dist = Math.min(need, dmax);
+  const fov = need <= dmax ? fov0 : 2 * Math.atan(t * need / dmax) * 180 / Math.PI, yc = (y0 + y1) / 2, zc = (z0 + z1) / 2;
+  return { pos: new V3(R.xS - dist, yc + 0.05, zc), tgt: new V3(R.xS, yc, zc), fov, shift: 0 };
+}
 /* ---- the page's books in both languages, with their page counts
    The page lists its books under their Vietnamese titles (a few under their English ones). Here each also has its
    original English title (a Vietnamese book: a translation), its author and year where the page gives none, and its
@@ -4113,7 +4126,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   let any = false;
   for (const sec of UIS.secs) for (const bk of sec.books) {
     // only in the close-up of its own section (G, 17/10/2026: "các text này ko nên hiện ra khi chưa close up"), and wide enough to read there
-    const on = !bk.away && UIS.open === sec && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;
+    const on = !bk.away && (UIS.open === sec || UIS.mode === sec.group) && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;
   }
   if (OVER.sky) { const night = NIGHT.u.value > 0.005; OVER.sky.visible = night; if (night) { OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); stepMeteors(clock.getElapsedTime(), camera); } }
   if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
@@ -5092,7 +5105,7 @@ function drawRain() {
    short-legged cat that is a stride of ~0.16 m in 0.6 s. Walking, its head is
    held steady and a little nose-down while the trunk rises and falls twice a stride and sways once (Zubair et al.);
    its shoulder blades ride up over each forepaw in stance; its tail, carried up, follows the body as a damped chain. */
-const CATR = { bones: {}, rest: null, body: null, mesh: null, ground: null, gaze: null, poses: {}, legs: null, S: null, scale: 1.25, tail: null };
+const CATR = { bones: {}, rest: null, body: null, mesh: null, ground: null, gaze: null, poses: {}, legs: null, S: null, scale: 1.375, tail: null };
 const C_SIDED = /^(scap|arm|fore|paw|thigh|shin|foot|toe|ear)$/;   // (a pose op ['tailArc', from, step, dip] lays the tail on an arc)
 const C_AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
 const C_TAIL = ['tail1', 'tail2', 'tail3', 'tail4', 'tail5', 'tail6', 'tail7'];
@@ -5459,7 +5472,7 @@ const PETS = { ok: false, cat: null, holder: null, chicken: null, layer: 1, last
 // where the cat stays (by day the floor between the stump table and the glass, by night the chaise: on the flat of its
 // cushion, back from the front edge where it rounds off), and where it jumps. sink: how far it presses into what it
 // lies on (a soft cushion gives ~1 cm under a cat; the floor none)
-const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12, sink: 0 }, night: { x: 1.62, z: -6.1, yaw: -1.83, sink: 0.022 } };   // (night: into the ~3 cm hollow it makes)   // (asleep on its side, its face and paws toward the room)
+const CAT_SPOT = { day: { x: -0.82, z: -5.02, yaw: -Math.PI / 2 - 0.12, sink: 0 }, night: { x: 1.62, z: -6.1, yaw: -1.83, sink: 0.024 } };   // (night: into the ~3 cm hollow it makes)   // (asleep on its side, its face and paws toward the room)
 const CAT_WAY = { floor: [1.22, -5.22], seat: [1.5, -6.02] };   // the floor left of the deck, the chaise's cushion
 // the chicken's patch of lawn outside the left glass (it wanders in it), and its height
 const HEN_AREA = { x0: -2.45, x1: -1.85, z0: -5.7, z1: -4.5, h: 0.42 };   // clear of the sill, so its legs show
@@ -5757,8 +5770,8 @@ function stepDent(dt) {
     Bn.hips.getWorldPosition(_dh); Bn.chest.getWorldPosition(_dc);
     const ax = _dc.x - _dh.x, az = _dc.z - _dh.z, len = Math.hypot(ax, az) || 1, k = B.d < 1e-4 ? 1 : 1 - Math.exp(-dt / 0.08);
     let x = (_dh.x + _dc.x) / 2, z = (_dh.z + _dc.z) / 2, ra, rb;
-    if (lying) { goal = 0.03; if (/curl|nest/.test(pose)) ra = rb = 0.17; else if (pose === 'side') { ra = len / 2 + 0.13; rb = 0.13; } else { ra = len / 2 + 0.1; rb = 0.12; } }
-    else if (sitting) { goal = 0.026; x = _dh.x; z = _dh.z; ra = rb = 0.12; }
+    if (lying) { goal = 0.03; if (/curl|nest/.test(pose)) ra = rb = 0.187; else if (pose === 'side') { ra = len / 2 + 0.14; rb = 0.143; } else { ra = len / 2 + 0.11; rb = 0.132; } }   // (the cat 10 % larger: G, 17/10/2026)
+    else if (sitting) { goal = 0.026; x = _dh.x; z = _dh.z; ra = rb = 0.132; }
     else { goal = 0.006; ra = len / 2 + 0.08; rb = 0.1; }
     B.x += (x - B.x) * k; B.z += (z - B.z) * k; B.ca += (ax / len - B.ca) * k; B.sa += (az / len - B.sa) * k; B.ra += (ra - B.ra) * k; B.rb += (rb - B.rb) * k;
     const n = Math.hypot(B.ca, B.sa) || 1; B.ca /= n; B.sa /= n;
@@ -6405,7 +6418,8 @@ function buildOverlay() {
   for (const [g, en, vi] of [['books', 'Books', 'Sách'], ['research', 'Research', 'Nghiên cứu']]) {
     if (!UIS.secs.some(s => s.group === g)) continue;
     const h = document.querySelector(`.toc-group[data-group="${g}"] .toc-group-h`), txt = cls => { const n = h && h.querySelector('.' + cls); return n ? n.textContent.trim() : ''; };
-    const c = document.createElement('div'); c.className = 'l3-cap'; c.setAttribute('aria-hidden', 'true');
+    const c = document.createElement('button'); c.type = 'button'; c.className = 'l3-cap l3-cap-' + g;   // (a click: that part of the room, close: G, 17/10/2026)
+    c.addEventListener('click', () => (g === 'research' ? showResearch() : showBooks()));
     c.innerHTML = `<span class="en">${esc(txt('en') || en)}</span><span class="vi">${esc(txt('vi') || vi)}</span>`; UIEL.labels.appendChild(c); UIEL.caps[g] = c;
   }
   UIEL.card.querySelector('#l3-close').addEventListener('click', () => closeCard());
@@ -6482,6 +6496,7 @@ function closeCard(home = true) {
   if (UIS.active) UIS.touched.add(UIS.active); setNeeds(true); return was;
 }
 function showResearch() { closeCard(false); UIS.mode = 'research'; goView(researchView()); }
+function showBooks() { const v = booksView(); if (!v) return; closeCard(false); UIS.mode = 'books'; goView(v); }
 function stepGlow(dt) {
   let moving = false;
   for (const s of UIS.secs) {
@@ -6516,7 +6531,7 @@ function layoutOverlay() {
     boxes.push({ el, a, x, y, w, h, sec });
   };
   for (const s of UIS.secs) {
-    const vis = show && (home || (UIS.mode === 'research' && s.group === 'research'));
+    const vis = show && (home || UIS.mode === s.group);   // (in the close-up of its part of the room, its own labels)
     const lh = s.label.offsetHeight || 26;   // (the labels' size follows the window: build.py's CSS)
     if (s.group === 'books') place(s.label, s.box.plate, s.box.tag, 30 + lh * 0.4, 0, 'left', vis, s);   // on its row, just past the plate
     else place(s.label, s.box.plate, s.box.tag, 0, -31 - lh / 2, 'center', vis, s);                       // above its bay
@@ -6717,7 +6732,7 @@ function bindPicking() {
     const nav = e.target.closest('.toc-link[data-nav]');
     if (nav) { const s = UIS.byCat.get(nav.dataset.nav); if (s) { e.preventDefault(); openSection(s, s.group === 'research' ? nav.dataset.nav : null); } return; }
     const go = e.target.closest('.toc [data-goto]');   // Books: the whole room; Research: the back bookcase; a research topic: its bay
-    if (go) { e.preventDefault(); const g = go.dataset.goto, s = UIS.byId.get(g); if (g === 'books') closeCard(); else if (s && s.group === 'research') openSection(s); else showResearch(); return; }
+    if (go) { e.preventDefault(); const g = go.dataset.goto, s = UIS.byId.get(g); if (g === 'books') showBooks(); else if (s && s.group === 'research') openSection(s); else showResearch(); return; }
     if (e.target.closest('#np-info')) { const cur = document.querySelector('#pages .item.is-current') || null; const bk = cur && UIS.bySrc.get(cur.dataset.src); if (bk) openSection(bk.sec); }
   }, true);
 }
@@ -6845,7 +6860,7 @@ function setReady(v) { ready = v; }
 /* ---------------------------------------------------------------- page hooks */
 addEventListener('resize', () => {
   if (!ready) return; resize();
-  if (CAM.k >= 1) { CAM.cur = UIS.open ? focusView(UIS.open) : UIS.mode === 'research' ? researchView() : homeView(); applyView(CAM.cur); }
+  if (CAM.k >= 1) { CAM.cur = UIS.open ? focusView(UIS.open) : UIS.mode === 'research' ? researchView() : UIS.mode === 'books' ? (booksView() || homeView()) : homeView(); applyView(CAM.cur); }
   setNeeds(true); updateOn();
 });
 new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mode !== 'home') closeCard(); }).observe(body, { attributes: true, attributeFilter: ['class'] });
