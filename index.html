@@ -1095,6 +1095,15 @@
   })();
 </script>
 <style id="lib3d-style">
+  /* ---- the accent: black by day, the page's beige by night, where it was blue (G, 17/10/2026: "trong light theme: em
+     thay tất cả màu xanh dương thành màu đen, dark theme thì xanh thành màu #E2D6C0"), on every screen; what stands on
+     it (words, icons) turns dark by night. The day/night switch keeps its sky. */
+  :root { --accent: #000; --accent-rgb: 0, 0, 0; --accent-hover: #3a3a3a; --on-accent: #fff; --on-accent-rgb: 255, 255, 255; }
+  body.dark-mode { --accent: #E2D6C0; --accent-rgb: 226, 214, 192; --accent-hover: #efe6d5; --on-accent: #1d1913; --on-accent-rgb: 29, 25, 19;
+    --chip-hover: rgba(var(--accent-rgb), .38); }
+  body.dark-mode .chip:hover { border-color: rgba(var(--accent-rgb), .6); }
+  .lang-switch button[aria-pressed="true"], .subtab[aria-current="page"], .np .np-play { color: var(--on-accent); }
+  .np .np-play:hover { background: var(--accent-hover); }
   /* ---- 3D library: the room is the interface on wide screens (the old cards stay in the DOM, hidden) */
   #lib3d { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; opacity: 0; transition: opacity 1.6s var(--ease); touch-action: none; }
   body.lib3d-on #lib3d { opacity: 1; }
@@ -1144,8 +1153,8 @@
   .l3-label.l3-books { font-size: calc(clamp(12px, 1.2vw, 18.4px) * var(--l3-k, 1)); }   /* (20 % smaller: G, 17/10/2026) */   /* (smaller only where the shelf's frame is too narrow: overlay.js) */
   .l3-label > span { overflow: hidden; text-overflow: ellipsis; }
   .l3-label i { font-style: normal; font-weight: 700; font-size: .91em; min-width: 1.6em; text-align: center; padding: .14em .5em; border-radius: 999px; background: rgba(60, 45, 25, .1); }
-  .l3-label:hover, .l3-label.is-hover { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .l3-label:hover i, .l3-label.is-hover i { background: rgba(255, 255, 255, .25); }
+  .l3-label:hover, .l3-label.is-hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .l3-label:hover i, .l3-label.is-hover i { background: rgba(var(--on-accent-rgb), .25); }
   .l3-label.is-off { opacity: 0; pointer-events: none; }
   .l3-cap { position: absolute; left: 0; top: 0; pointer-events: none; white-space: nowrap; color: #2a2118; text-shadow: var(--halo);
     font: 700 clamp(22.4px, 2.19vw, 33.6px)/1 var(--font); letter-spacing: .26em; text-transform: uppercase; transition: opacity .35s ease; }   /* (twice their first size: G, 15/10/2026) */
@@ -1164,8 +1173,8 @@
   body.dark-mode .l3-tip { background: rgba(22, 18, 14, .94); color: #f3ead9; border-color: rgba(255, 240, 215, .18); }
   body.dark-mode .l3-label { background: rgba(22, 18, 14, .86); color: #f3ead9; border-color: rgba(255, 240, 215, .2); }
   body.dark-mode .l3-label i { background: rgba(255, 240, 215, .12); }
-  body.dark-mode .l3-label:hover, body.dark-mode .l3-label.is-hover { background: var(--accent); color: #fff; border-color: var(--accent); }   /* (chosen: blue by night too) */
-  body.dark-mode .l3-label:hover i, body.dark-mode .l3-label.is-hover i { background: rgba(255, 255, 255, .25); }
+  body.dark-mode .l3-label:hover, body.dark-mode .l3-label.is-hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }   /* (chosen: the accent by night too) */
+  body.dark-mode .l3-label:hover i, body.dark-mode .l3-label.is-hover i { background: rgba(var(--on-accent-rgb), .25); }
 
   /* ---- the section card */
   .l3-card { position: absolute; left: calc(var(--sidebar-w) + 22px); top: 118px; width: min(400px, calc(100vw - var(--sidebar-w) - 44px)); max-height: calc(100vh - 220px);
@@ -1184,19 +1193,19 @@
   .l3-items { overflow: auto; padding: 6px 8px 10px; overscroll-behavior: contain; }
   .l3-item { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 10px; }
   .l3-item.has-audio, .l3-item.is-atlas { cursor: pointer; }
-  .l3-map { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--accent); background: rgba(74, 144, 226, .1); }   /* an atlas: opens on its map */
+  .l3-map { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--accent); background: rgba(var(--accent-rgb), .1); }   /* an atlas: opens on its map */
   .l3-map svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
-  .l3-item.is-current .l3-map { background: var(--accent); color: #fff; }
+  .l3-item.is-current .l3-map { background: var(--accent); color: var(--on-accent); }
   .l3-item:hover { background: rgba(255, 255, 255, .55); }
   body.dark-mode .l3-item:hover { background: rgba(255, 255, 255, .07); }
-  .l3-item.is-current { background: rgba(74, 144, 226, .12); box-shadow: inset 2px 0 0 var(--accent); }
-  .l3-item.is-hot { background: rgba(74, 144, 226, .2); box-shadow: inset 0 0 0 1px rgba(74, 144, 226, .55); }   /* its book is under the pointer */
+  .l3-item.is-current { background: rgba(var(--accent-rgb), .12); box-shadow: inset 2px 0 0 var(--accent); }
+  .l3-item.is-hot { background: rgba(var(--accent-rgb), .2); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), .55); }   /* its book is under the pointer */
   .l3-play { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: rgba(60, 45, 25, .08); transition: background-color .2s ease, color .2s ease; }
   body.dark-mode .l3-play { background: rgba(255, 240, 215, .1); }
   .l3-play .i { width: 15px; height: 15px; }
   .l3-play .ic-pause, .l3-item.is-playing .l3-play .ic-play { display: none; }
   .l3-item.is-playing .l3-play .ic-pause { display: block; }
-  .l3-item.is-current .l3-play, .l3-play:hover { background: var(--accent); color: #fff; }
+  .l3-item.is-current .l3-play, .l3-play:hover { background: var(--accent); color: var(--on-accent); }
   .l3-item.is-loading .l3-play { animation: pulse 1s ease-in-out infinite; }
   .l3-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .l3-t { font: 600 13px/1.35 var(--font); }
