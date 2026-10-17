@@ -2708,7 +2708,7 @@ function booksView() {
   const bs = UIS.secs.filter(s => s.group === 'books' && s.box.focus); if (!bs.length) return null;
   let z0 = Infinity, z1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const s of bs) { const b = s.box; z0 = Math.min(z0, b.focus.z - b.focusW / 2); z1 = Math.max(z1, b.focus.z + b.focusW / 2); y0 = Math.min(y0, b.ya); y1 = Math.max(y1, b.yb); }
-  const aspect = innerWidth / innerHeight, fov0 = 40, t = Math.tan(fov0 / 2 * Math.PI / 180), w = (z1 - z0) * 1.18, h = (y1 - y0) * 1.3;
+  const aspect = innerWidth / innerHeight, fov0 = 40, t = Math.tan(fov0 / 2 * Math.PI / 180), w = (z1 - z0) * 1.18 * 1.5, h = (y1 - y0) * 1.3 * 1.5;   // (50 % further out: G, 17/10/2026)
   const need = Math.max(w / (2 * t * aspect), h / (2 * t)), dmax = R.xS - R.xL - 0.35, dist = Math.min(need, dmax);
   const fov = need <= dmax ? fov0 : 2 * Math.atan(t * need / dmax) * 180 / Math.PI, yc = (y0 + y1) / 2, zc = (z0 + z1) / 2;
   return { pos: new V3(R.xS - dist, yc + 0.05, zc), tgt: new V3(R.xS, yc, zc), fov, shift: 0 };
