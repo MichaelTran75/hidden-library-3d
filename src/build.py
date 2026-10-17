@@ -172,6 +172,23 @@ STYLE = IMPORTMAP + """<script>
   @keyframes l3load { from { left: -40%; } to { left: 100%; } }
   html.lib3d-capable:not(.lib3d-failed) body:not(.lib3d-on) #lib3d-loader { display: block; }
 
+  /* ---- the medieval clock out of its shelf (clock.js): its panel and the names of its parts */
+  .ck-out-ui { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
+  .ck-out-ui.is-on { opacity: 1; }
+  .ck-head { position: absolute; top: 18px; left: calc(var(--sidebar-w) + (100vw - var(--sidebar-w)) / 2); transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
+    padding: 8px 10px 8px 16px; border-radius: 999px; background: rgba(246, 240, 228, .92); color: #2a2118; box-shadow: 0 8px 26px rgba(20, 14, 8, .28); font: 13px/1.3 var(--font); white-space: nowrap; }
+  .ck-head b { font-size: 14px; } .ck-head small { opacity: .7; }
+  .ck-x { pointer-events: auto; width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(60, 45, 25, .12); color: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
+  .ck-x:hover { background: var(--accent); color: var(--on-accent); }
+  .ck-name { position: absolute; left: 0; top: 0; padding: 4px 10px 5px; border-radius: 999px; background: rgba(246, 240, 228, .9); color: #2a2118; font: 600 12.5px/1.25 var(--font);
+    box-shadow: 0 5px 16px rgba(20, 14, 8, .25); white-space: nowrap; opacity: 0; transition: opacity .3s ease; }
+  .ck-name.is-on { opacity: 1; }
+  .ck-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+  .ck-lines g { opacity: 0; transition: opacity .3s ease; } .ck-lines g.is-on { opacity: 1; }
+  .ck-lines line { stroke: rgba(246, 240, 228, .78); stroke-width: 1.2; } .ck-lines circle { fill: rgba(246, 240, 228, .95); stroke: rgba(30, 22, 14, .55); stroke-width: 1; }
+  body.dark-mode .ck-head, body.dark-mode .ck-name { background: rgba(22, 18, 14, .9); color: #f3ead9; }
+  body.dark-mode .ck-x { background: rgba(255, 240, 215, .12); }
+  body.ck-out #l3-lines, body.ck-out .l3-label, body.ck-out .l3-cap { opacity: 0 !important; pointer-events: none !important; }
   /* ---- labels and leader lines */
   #l3-ui { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-family: var(--font); }
   body.off-mode #l3-ui { display: none; }

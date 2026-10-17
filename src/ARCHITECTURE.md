@@ -63,7 +63,7 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   core/   base.js (DOM, R, REF, tick)   utils.js (rng, noise, canvas…)   renderer.js   views.js (camera)
           build.js (main: dựng phòng)   loop.js (draw, loop, start, biên dịch shader)
   world/  textures materials room books shelves pouf rug furniture (đèn bàn, đèn cây, đèn treo bóng sợi đốt pendantLamp: dựng theo số đo mẫu CC BY) bush (bụi cây ngoài kính: thẻ chùm lá quay về người xem, pháp tuyến theo khối bụi, alpha-to-coverage) outside lights trees assets wind velvet furnish
-          decor/{kit, atlas, items, build}.js   cat.js (thân mèo: tư thế, lò xo, IK, dáng đi)   fur.js (lông: 20 lớp shell, ánh sáng nướng trong không gian texture)   pets.js (tập tính mèo, gà, lớp vẽ sắc nét)   b747.js (mô hình 747-8 trên kệ Research, dựng từ số đo; viền chọn, bấm mở link)   clock.js (đồng hồ trung cổ trên kệ cao: bánh răng theo giờ thật, chuông mỗi giờ)
+          decor/{kit, atlas, items, build}.js   cat.js (thân mèo: tư thế, lò xo, IK, dáng đi)   fur.js (lông: 20 lớp shell, ánh sáng nướng trong không gian texture)   pets.js (tập tính mèo, gà, lớp vẽ sắc nét)   b747.js (mô hình 747-8 trên kệ Research, dựng từ số đo; viền chọn, bấm mở link)   clock.js (đồng hồ trung cổ trên kệ cao: bánh răng theo giờ thật, chuông mỗi giờ; bấm vào thì bay ra to gấp 3, tách rời từng bộ phận có tên)
   fx/     dust post (màu nước: Kuwahara tổng quát, loang ướt ở mảng lá, sàn gỗ vẽ nhẹ tay hơn, FXAA) night hour (mặt trời, lấy từ `window.HL_SUN`) glass (kính: phản chiếu phòng bằng cubemap hiệu chỉnh thị sai, Fresnel, bụi, vệt sáng chéo) rain (mưa theo thời tiết thật Pleiku: vệt mưa ngoài kính, nước bắn trên sân, giọt nước đọng và chảy trên kính khúc xạ hình phía sau, trời u ám, chớp khi dông; ?wx=rain|drizzle|storm) star-catalog (danh mục sao Yale BSC5, 2887 sao) sky (trời sắp đặt: Ngân Hà xoay vào góc kính trái cạnh trăng ở góc nhìn đầu, SKYSET; ?sky=real: trời thật theo giờ sao tại nơi người xem (`HL_SUN.place`); sao chổi sau trăng, sao băng trước trăng; dò chỗ thấy trời trên GPU, probeSky) fireflies
   ui/     library sections hero-books (sách lấy ra: bìa cứng dựng như thợ đóng sách, gáy tròn, rãnh bản lề, ruột lùi vào, vân trang, headband, chữ dập; áo sách bóng; đèn chính riêng; giữ tối đa 5 cuốn) leaves (sách đọc được, 17/10/2026: ghi chú [Mô hình kinh tế] thành sách; mở ra trang tiêu đề + mục lục, mỗi nước một trang đôi, tờ giấy lật trong shader quanh bản lề bìa, chữ tự co cho vừa 2 trang; bấm mục lục/chip trong thẻ để lật tới, trang phải lật tiếp, trang trái lật lui) words (tên trên gáy sách ở kệ, bầu trời) flight deck overlay picking hooks (__lib3d, khởi động)
 ```
@@ -106,7 +106,7 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
 - Hai ô của kệ cao gộp làm một: cột thứ 4, hàng 6 và 7 (`CLOCK_CELL` trong `shelves.js`).
   - Tấm ngăn giữa hai ô bị cắt khỏi cột đó.
   - Đồ trang trí của hai ô (đèn lồng, chồng đá) vẫn được chia bài và dựng như cũ để giữ chuỗi số ngẫu nhiên, nhưng không được thêm vào cảnh (`d.skip`).
-- Mẫu "Ardavin's Medieval Clock" (Miguel Garcia, CC BY 4.0) cao 68 cm, file `clock.glb` 815 KB.
+- Mẫu "Ardavin's Medieval Clock" (Miguel Garcia, CC BY 4.0), file `clock.glb` 815 KB. Cao 74,8 cm (`CK.height`; lúc đầu 68 cm, G cho to thêm 10 %).
   - Có 7 phần: tĩnh, mặt kim, trục bánh lớn, trục giữa, trục bánh hồi, verge + foliot, búa.
   - Được vẽ sắc nét qua `crispPass`, trên lớp riêng 5, không màu nước.
 - Kim chỉ giờ máy người xem. Mọi bánh quay theo tỉ số đếm trên mẫu, tính từ tư thế gốc nên răng luôn ăn khớp: mặt kim +1, trục bánh lớn −8, trục giữa +64, bánh hồi −512 vòng cho mỗi vòng kim.
@@ -119,6 +119,18 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   - Chỉ kêu sau khi người xem đã chạm vào trang lần đầu (luật trình duyệt). Không kêu khi tab đang ẩn.
   - Giờ được canh mỗi giây (`setInterval`).
 - Cách tách bộ phận: xem `tools/clock/README.md`.
+- Rê chuột lên đồng hồ thì hiện viền chọn như 747 (`clockHit`: tia chuột với hộp của nó, trong hệ toạ độ của nó).
+- Bấm vào thì đồng hồ bay ra khỏi kệ (`openClock`, `stepClock`, `ckPlace`, `drawInspect`):
+  - Bay 0,85 s ra giữa phần màn hình bên phải sidebar, scale 3D gấp 3 (`CK.big`). Khoảng cách camera tính để cả cụm (khi ráp hay khi tách, nội suy `CLOCK.span`) vừa khung.
+  - Phòng tối lại (quad 0,78). Đồng hồ vẽ bằng `bigPass` vào target riêng, không bị phòng che (`uRoomDepth` = 0), có hai đèn riêng trên lớp 5 (key 2,6 bên trái trên, fill 1,1 bên phải).
+  - Sau đó tách rời trong 1,1 s (`CK.apart`, đơn vị của mẫu): kim + bánh giờ ra trước và sang trái, ba trục bánh sang phải, verge lên trái, búa lên trên.
+  - Đồng hồ vẫn chạy đúng giờ khi tách. Để yên 4 s thì lắc nhẹ ±0,32 rad, chu kỳ 18 s. Kéo để xoay.
+  - Bấm vào bộ phận (hộp chiếu của từng phần, `V.rects`) để ráp/tách. Bấm ra ngoài, nút × hoặc Esc thì bay về kệ (ráp lại trước rồi mới bay).
+- Nhãn tên song ngữ (`ckLabels`):
+  - Mỗi nhãn chọn 1 trong 4 chỗ quanh hộp chiếu của bộ phận (trên, phải, dưới, trái), chấm điểm theo phần đè lên nhãn khác, bộ phận khác, mép màn hình. Có ưu tiên giữ chỗ cũ để nhãn không nhảy.
+  - Có đường mảnh nối từ nhãn tới trục của bộ phận.
+  - Hộp của bánh răng lấy tròn quanh trục (`ckPartBox`) để nhãn không rung khi bánh quay.
+  - Chỉnh bố cục từ console: `__lib3d.CLOCK.CK.apart`, rồi `CLOCK.reSpan()`.
 - Mèo to thêm 10 % (`CATR.scale` 1,375 → 1,5125), vết lún nệm và độ chìm khi nằm đêm tăng theo.
 
 ### Thời tiết trực tiếp (`src/weather/`)

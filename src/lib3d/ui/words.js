@@ -15,7 +15,7 @@ import { REVEAL, clock } from '../core/loop.js';
 import { drawPets, drawSharpBooks } from '../world/pets.js';
 import { drawRain } from '../fx/rain.js';
 import { drawPlane } from '../world/b747.js';
-import { drawClock } from '../world/clock.js';
+import { drawClock, drawInspect } from '../world/clock.js';
 
 /* ---- the titles on the shelves' spines: drawn after the watercolour pass so they stay sharp, and hidden wherever the
    room stands in front of the book (each pixel is tested against the room's depth); shown only once its section is
@@ -94,6 +94,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   // room's depth does not hide the titles behind it)
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
   drawSharpBooks();
+  drawInspect();   // (the clock out of its shelf: over all of it, the room dimmed)
 }
 
 export { OVER, drawWords, relabelBooks };

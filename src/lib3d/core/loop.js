@@ -61,7 +61,7 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock();      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
