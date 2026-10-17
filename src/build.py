@@ -148,6 +148,11 @@ STYLE = IMPORTMAP + """<script>
        max(2.556vw, 1.996vh). The page the clock sits in is centred at 50vw + sidebar / 2. On a narrow window it stops
        clear of the sidebar. (Moving the bulb, world/furnish.js, moves this.) */
     html.lib3d-capable:not(.lib3d-failed) .page .sky { left: calc(max(50vw + max(2.556vw, 1.996vh), var(--sidebar-w) + 16px + min(21vw, 210px)) - 50vw - var(--sidebar-w) / 2); }
+    /* the now-playing bar (an audiobook) half see-through over the room, by day and by night (G, 17/10/2026: "make
+       background 50% transparent"; it was 0.96 and 0.93). Phones and the page without the room keep it as it was: the
+       page's own words would show through it there. */
+    html.lib3d-capable:not(.lib3d-failed) .np { background: rgba(226, 214, 192, .5); }
+    html.lib3d-capable:not(.lib3d-failed) body.dark-mode .np { background: rgba(16, 13, 10, .5); }
     /* the sidebar floats on the room: no panel, a soft halo keeps the words readable */
     html.lib3d-capable:not(.lib3d-failed) .toc { background: none; border-right-color: transparent; text-shadow: var(--halo); --ink-soft: rgba(0, 0, 0, .8); }
     html.lib3d-capable:not(.lib3d-failed) body.dark-mode .toc { --ink-soft: rgba(255, 255, 255, .84); }
