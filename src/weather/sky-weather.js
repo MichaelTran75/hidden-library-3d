@@ -115,7 +115,9 @@
     var day = isDay(), code = c.weather_code, name = NAMES[code] || ['', ''], k = W.kind;
     var to = ((c.wind_direction_10m || 0) + 180) % 360, d = DIRS[Math.round((c.wind_direction_10m || 0) / 22.5) % 16];
     var mm = c.precipitation || 0, rainy = k === 'rain' || k === 'storm' || mm > 0.05;
-    var html = svg(iconOf(code, day), 'wx-ico') + '<b>' + num(c.temperature_2m, 0) + '°C</b><span class="wx-sep">·</span>' +
+    // the place the weather is for, first (G, 18/10/2026: "em add local city name"): the visitor's city as their clock names it (sun/sun-clock.js)
+    var city = (window.HL_SUN && window.HL_SUN.place && window.HL_SUN.place.city) || '';
+    var html = (city ? '<span class="wx-city">' + city.replace(/[<>&"]/g, '') + '</span><span class="wx-sep">·</span>' : '') + svg(iconOf(code, day), 'wx-ico') + '<b>' + num(c.temperature_2m, 0) + '°C</b><span class="wx-sep">·</span>' +
       '<span class="wx-name">' + both(name[0], name[1]) + '</span><span class="wx-sep">·</span>' +
       '<span class="wx-wind">' + svg('arrow', 'wx-arrow', 'transform:rotate(' + (-to) + 'deg)') + num(c.wind_speed_10m || 0, 0) + ' km/h</span>' +
       (rainy ? '<span class="wx-sep">·</span><span class="wx-mm">' + svg('drop') + num(mm * 4, 1).replace('.', vi() ? ',' : '.') + ' mm/h</span>' : '') +
