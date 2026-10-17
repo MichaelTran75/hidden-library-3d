@@ -33,10 +33,10 @@ Script cần `@gltf-transform` 4.2, `meshoptimizer` và `sharp`. Bản trong tra
 
 ## Trong phòng
 
-- Rộng 88 cm tính cả cánh pin.
+- Rộng 79 cm tính cả cánh pin. Lúc đầu là 88 cm, ngày 18/10 G cho nhỏ đi 10 %, giá đỡ nhỏ theo.
 - Mặt +Y hướng vào phòng, đầu Nga ở trên. Mô hình ngả ra sau 12° để nhìn xuống mắt người xem, và xoay 18° về phía họ.
 - Tâm ở (1,68; 3,51), là tâm ô G khoanh: khung kính bên phải, trên nhãn Geography.
-- Giá đỡ: dùng hàm `standParts` của 747 nhân 1,5 (đế gỗ óc chó 23 × 13,5 cm, cần chrome). Cần cao khoảng 0,86 m tính từ nóc kệ (2,68 m).
+- Giá đỡ: dùng hàm `standParts` của 747 nhân 1,35 (đế gỗ óc chó 21 × 12 cm, cần chrome). Cần cao khoảng 0,86 m tính từ nóc kệ (2,68 m).
 - Có đèn trưng bày riêng: một `DirectionalLight` chỉ bật trên lớp 6, chiếu từ trên cao phía trước.
 - Bắt chuột:
   - Lưới ô vuông khoảng 100 ô theo chiều dài, đánh dấu những ô mà hộp bao của tam giác chạm tới (`issVoxels`). Tia chuột đi qua lưới bằng DDA.

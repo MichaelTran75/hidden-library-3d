@@ -133,6 +133,15 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   - Chỉnh bố cục từ console: `__lib3d.CLOCK.CK.apart`, rồi `CLOCK.reSpan()`.
 - Mèo to thêm 10 % (`CATR.scale` 1,375 → 1,5125), vết lún nệm và độ chìm khi nằm đêm tăng theo.
 
+### 747 to thêm 20 % (`lib3d/world/b747.js`, 18/10/2026)
+
+- Tỉ lệ 1:128 (`B7_SCALE` = 1,3 × 1,2 / 200), dài 58 cm, sải cánh 54 cm. Giá đỡ to theo (`B7_STAND` 1,2, cần 18 cm).
+- Đỉnh đuôi cách tấm kệ trên 5 cm. Đầu cánh gần thò ra trước mép kệ khoảng 16 cm.
+- Đế gỗ (dùng chung với ISS):
+  - Góc bo 14 đoạn. Pháp tuyến làm mịn quanh góc bằng `toCreasedNormals` với góc gãy 20°.
+  - Lớp sơn bóng mờ hơn (clearcoat 0,4, độ nhám 0,5).
+  - Trước đó đèn sàn cạnh kệ chiếu sáng từng mặt phẳng ở góc bo, hiện thành một ô vuông màu be trên mép đế.
+
 ### Mô hình ISS trên nóc kệ Geography (`lib3d/world/iss.js`, 17/10/2026)
 
 - Mẫu "ISS" của uperesito (CC BY 4.0) đứng trên giá kiểu 747, trên nóc kệ thấp phía sau, ngay trên ô Geography, trước cửa kính (khung kính bên phải, chỗ G khoanh).
@@ -141,8 +150,8 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   - 36 texture gộp trong atlas 1024×512, thuộc tính `_CELL`/`_UVT`, shader `issPatch` lặp vân trong ô;
   - không có pháp tuyến, đổ bóng phẳng.
 - Kích thước và tư thế:
-  - Rộng 88 cm, mặt quay vào phòng, ngả sau 12°, xoay 18° về phía mắt người xem, tâm ở (1,68; 3,51).
-  - Giá đỡ `standParts(rodTop, 1.5)` (hàm của `b747.js`, có thêm hệ số kích thước). Cần cao khoảng 0,86 m.
+  - Rộng 79 cm (lúc đầu 88 cm, G cho nhỏ đi 10 % ngày 18/10), mặt quay vào phòng, ngả sau 12°, xoay 18° về phía mắt người xem, tâm ở (1,68; 3,51).
+  - Giá đỡ `standParts(rodTop, 1.35)` (hàm của `b747.js`, có thêm hệ số kích thước). Cần cao khoảng 0,86 m.
   - Đế đặt giữa nóc kệ. Lưng trạm cách kính ít nhất 4 cm, đế cách thanh ngang chân kính.
 - Vẽ sắc nét trên lớp 6 qua `crispPass`, có viền chọn như 747. Có đèn trưng bày riêng chỉ trên lớp 6 (`ISS.key`, cường độ 1,6) vì nó đứng xa các đèn của phòng.
 - Bắt chuột (`issHit`):

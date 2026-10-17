@@ -4,7 +4,7 @@ const LIB = innerWidth > 768 && window.WebGL2RenderingContext ? await Promise.al
   import('three'), import('three/addons/environments/RoomEnvironment.js'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/lights/RectAreaLightUniformsLib.js'), import('three/addons/loaders/GLTFLoader.js'), import('three/addons/postprocessing/Pass.js'), import('three/addons/utils/BufferGeometryUtils.js')
 ]).catch(e => { console.warn('3D library unavailable', e); document.documentElement.classList.add('lib3d-failed'); return null; }) : null;
 if (LIB) {
-const [THREE, { RoomEnvironment }, { MeshoptDecoder }, { RectAreaLightUniformsLib }, { GLTFLoader }, { FullScreenQuad }, { mergeGeometries }] = LIB;
+const [THREE, { RoomEnvironment }, { MeshoptDecoder }, { RectAreaLightUniformsLib }, { GLTFLoader }, { FullScreenQuad }, { mergeGeometries, toCreasedNormals }] = LIB;
 /* Hidden Library · 3D library (ver 01)
    On wide screens the reading room is the interface: the categories are shelf sections (labels with leader lines),
    a click opens the section's card, a book being played comes off the shelf. The page's own data, audio engine,
@@ -6439,8 +6439,8 @@ function setHenAway(away) {
   if (PETS.chicken) { PETS.chicken.visible = PETS.henShadow.visible = PETS.state === 'day' && !away; setShadowsDirty(true); setNeeds(true); }
 }
 /* ---------------------------------------------------------------- the 747 on the Research shelf
-   A desk model of a Boeing 747-8 Intercontinental, 1:154 (48 cm long; 1:200 made 30 % larger: G, 17/10/2026), on a walnut
-   stand, in the middle row of the Economy bay, a few of its books left at the left end (G, 17/10/2026: "em thay sách ở ngăn màu xanh bằng model boing 747, learn vỏ máy bay 747
+   A desk model of a Boeing 747-8 Intercontinental, 1:128 (58 cm long; 1:200 made 30 % larger, G 17/10/2026, then 20 % more
+   with its stand, G 18/10/2026: "em cho máy bay 20% bigger"), on a walnut stand, in the middle row of the Economy bay, a few of its books left at the left end (G, 17/10/2026: "em thay sách ở ngăn màu xanh bằng model boing 747, learn vỏ máy bay 747
    from glb asset, khi hover vào máy bay thì tạo viền select, khi click vào thì open newtab tới …"). The pointer on it
    draws a selection outline round it (white, a soft dark edge outside, as the page's own outlines); a click opens
    PLANE.url in a new tab.
@@ -6457,7 +6457,7 @@ function setHenAway(away) {
      painting, hidden where the room is nearer), on a layer of its own. The pointer finds it through a coarse copy. */
 const PLANE = { ok: false, layer: 4, url: 'https://www.investingforum.info/copy-of-piano?rc=test-site', hover: false, out: 0, fade: 0, holder: null, hit: null, box: null,
   P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 4, toneK: 1, outline: true, pad: 12 } };
-const B7_SCALE = 1.3 / 200;
+const B7_SCALE = 1.3 * 1.2 / 200, B7_STAND = 1.2;   // (the model 1:128; its stand grown with it)
 
 // the aircraft in metres (the real one: nose toward +z, y up), as a group of meshes; bare: geometry only (the pointer's copy)
 function shape747(q, bare) {
@@ -6694,11 +6694,14 @@ function standParts(rodTop, k = 1) {
   const shp = new THREE.Shape(), w = 0.156 * k, d = 0.09 * k, r = 0.035 * k;
   shp.moveTo(-w / 2 + r, -d / 2); shp.lineTo(w / 2 - r, -d / 2); shp.quadraticCurveTo(w / 2, -d / 2, w / 2, -d / 2 + r); shp.lineTo(w / 2, d / 2 - r); shp.quadraticCurveTo(w / 2, d / 2, w / 2 - r, d / 2);
   shp.lineTo(-w / 2 + r, d / 2); shp.quadraticCurveTo(-w / 2, d / 2, -w / 2, d / 2 - r); shp.lineTo(-w / 2, -d / 2 + r); shp.quadraticCurveTo(-w / 2, -d / 2, -w / 2 + r, -d / 2);
-  const base = new THREE.ExtrudeGeometry(shp, { depth: 0.008 * k, bevelEnabled: true, bevelThickness: 0.003 * k, bevelSize: 0.003 * k, bevelSegments: 3, curveSegments: 6 });
+  const base = new THREE.ExtrudeGeometry(shp, { depth: 0.008 * k, bevelEnabled: true, bevelThickness: 0.003 * k, bevelSize: 0.003 * k, bevelSegments: 4, curveSegments: 14 });   // (its corners round, not in facets, seen near)
   base.rotateX(-Math.PI / 2); base.rotateY(Math.PI / 2); base.translate(0, 0.003 * k, 0);   // (lying on the board along the fuselage, 14 mm thick with its bevels)
+  // (shaded smooth round its corners, the bevel's steps and the top kept sharp: a lamp near it lit its corners' facets one
+  // by one, a square of light on its edge)
+  const baseS = toCreasedNormals(base, 20 * Math.PI / 180);
   const rod = new THREE.CylinderGeometry(0.004 * k, 0.0052 * k, rodTop.y - 0.012 * k, 16); rod.translate(0, (rodTop.y + 0.012 * k) / 2, 0);
   const cup = new THREE.CylinderGeometry(0.011 * k, 0.007 * k, 0.009 * k, 20); cup.translate(0, rodTop.y - 0.0045 * k, 0);   // (the cradle under the belly)
-  return { base, rod: mergeGeometries([rod, cup]) };
+  return { base: baseS, rod: mergeGeometries([rod, cup]) };
 }
 
 const b7mark = name => { try { performance.mark('l3-' + name); } catch (e) { /* no User Timing */ } };   // (start-up marks: tools/perf/marks.cjs)
@@ -6707,16 +6710,17 @@ async function buildPlane() {
   // the model: nose up 6° as in a climb, turned 22° toward the room so it shows three quarters
   const S = SHELF.B, xa = S.X[B7_CELL.i] + 0.025, xb = S.X[B7_CELL.i + 1] - 0.025, y0 = 0.1 + B7_CELL.j * S.rh2 + S.th / 2, zBack = R.zB + 0.006;
   const holder = new THREE.Group(), model = shape747(1, null); b7mark('plane-model'); await tick();
-  const pitch = 6 * Math.PI / 180, yaw = (90 - 22) * Math.PI / 180, attach = new THREE.Vector3(0, -2.31, 1.0).multiplyScalar(B7_SCALE), rodTop = new THREE.Vector3(0, 0.15, 0);
+  const pitch = 6 * Math.PI / 180, yaw = (90 - 22) * Math.PI / 180, attach = new THREE.Vector3(0, -2.31, 1.0).multiplyScalar(B7_SCALE), rodTop = new THREE.Vector3(0, 0.15 * B7_STAND, 0);
   model.scale.setScalar(B7_SCALE); model.rotation.x = -pitch;
   model.position.copy(rodTop).sub(attach.clone().applyAxisAngle(new THREE.Vector3(1, 0, 0), -pitch));
-  const st = standParts(rodTop);
-  const walnut = new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#6a4128').convertSRGBToLinear(), roughness: 0.42, clearcoat: 0.6, clearcoatRoughness: 0.25 });
+  const st = standParts(rodTop, B7_STAND);
+  const walnut = new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#6a4128').convertSRGBToLinear(), roughness: 0.42, clearcoat: 0.4, clearcoatRoughness: 0.5 });   // (a soft sheen: a sharp one showed a light as a square on its edge)
   const chrome = new THREE.MeshStandardMaterial({ color: 0xdfe3e6, metalness: 1, roughness: 0.16 });
   const stand = new THREE.Group(); stand.add(new THREE.Mesh(st.base, walnut), new THREE.Mesh(st.rod, chrome));
   holder.add(model, stand); holder.rotation.y = yaw;
-  // placed (by its box) in the middle of the shelf right of the books, its far side against the back: its span (45 cm)
-  // is more than the shelf is deep (36 cm), so the near wing tip reaches a little past the shelf's front, as a model's would
+  // placed (by its box) in the middle of the shelf right of the books, its far side against the back: its span (54 cm)
+  // is more than the shelf is deep (36 cm), so the near wing tip reaches past the shelf's front, as a model's would (its
+  // fin's top 5 cm under the board above)
   holder.position.set(0, y0, 0); holder.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(holder, true), x0 = xa + B7_CELL.books + 0.05, x1 = xb - 0.02;   // (precise: a turned mesh's own box would be far larger)
   holder.position.x += (x0 + x1) / 2 - (box.min.x + box.max.x) / 2; holder.position.z += zBack - box.min.z;
@@ -6732,7 +6736,7 @@ async function buildPlane() {
     gr.addColorStop(0, 'rgba(18,11,5,.6)'); gr.addColorStop(0.6, 'rgba(18,11,5,.25)'); gr.addColorStop(1, 'rgba(18,11,5,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
     const tex = ctex(c2, { rep: false });
     for (const [w, d, k] of [[0.2, 0.13, 1], [0.47, 0.26, 0.35]]) {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: k, depthWrite: false, fog: false }));
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w * B7_STAND, d * B7_STAND), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: k, depthWrite: false, fog: false }));
       m.rotation.set(-Math.PI / 2, 0, yaw - Math.PI / 2); m.position.set(holder.position.x, y0 + 0.001, holder.position.z); m.renderOrder = 1; room.add(m);
     }
   }
@@ -7122,7 +7126,7 @@ function clockHit(ray) {
      textures in one atlas; each vertex carries its texture's place there and the range of its own texture coordinates,
      and the shader repeats each texture inside its cell as the model did (issPatch). No normals: shaded flat, as its
      panels and trusses are.
-   - 88 cm across its arrays, its face to the room (the truss over the modules, the Russian segment above), leaning back
+   - 79 cm across its arrays (88 at first, 10 % smaller: G, 18/10/2026), its face to the room (the truss over the modules, the Russian segment above), leaning back
      12° to look down at the room's eye, turned 18° toward it. The rod meets the back of the US laboratory, under the
      truss's middle.
    - Drawn sharp over the painted room as the 747 is (pets.js crispPass, on a layer of its own), outlined under the
@@ -7130,12 +7134,12 @@ function clockHit(ray) {
 const ISS = { ok: false, layer: 6, url: 'https://michaeltran75.github.io/iss-station/', hover: false, out: 0, fade: 0, holder: null, mesh: null, box: null, vox: null, hitBoxes: null,
   P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 6, toneK: 1, outline: true, pad: 12 } };
 const IS = {
-  span: 0.88,                                // across its arrays (m)
+  span: 0.88 * 0.9,                          // across its arrays (m): 79 cm
   lean: 12 * Math.PI / 180,                  // its face tipped down toward the room's eye
   yaw: -18 * Math.PI / 180,                  // and turned toward it (the room's eye is to its left)
   mid: [1.68, 3.51],                         // the middle of it (x, y): the middle of G's box, over the Geography bay
   attach: [7.0, -2.3, -4.0],                 // where the rod meets it, in the model's units: the back of the US lab, under the truss's middle
-  stand: 1.5,                                // the stand: the 747's, half as large again
+  stand: 1.5 * 0.9,                          // the stand: the 747's (as it was at first) 1.35 times
   light: 1.6,                                // its display light
 };
 
@@ -7213,7 +7217,7 @@ async function buildIss() {
   const sb = new THREE.Box3().setFromObject(lean, true), mid = sb.getCenter(new THREE.Vector3());
   rodTop.y = IS.mid[1] - R.caseTop - mid.y; lean.position.copy(rodTop);
   const st = standParts(rodTop, IS.stand);
-  const walnut = new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#6a4128').convertSRGBToLinear(), roughness: 0.42, clearcoat: 0.6, clearcoatRoughness: 0.25 });
+  const walnut = new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#6a4128').convertSRGBToLinear(), roughness: 0.42, clearcoat: 0.4, clearcoatRoughness: 0.5 });   // (as the 747's)
   const chrome = new THREE.MeshStandardMaterial({ color: 0xdfe3e6, metalness: 1, roughness: 0.16 });
   const stand = new THREE.Group(), base = new THREE.Mesh(st.base, walnut), rod = new THREE.Mesh(st.rod, chrome); base.rotation.y = Math.PI / 2; stand.add(base, rod); holder.add(stand);
   // on the bookcase's top over the Geography bay: the middle of it where G drew it; the base on the top board's middle,
@@ -7233,7 +7237,7 @@ async function buildIss() {
   {
     const c2 = canvas(128, 128), gc = c2.getContext('2d'), gr = gc.createRadialGradient(64, 64, 4, 64, 64, 62);
     gr.addColorStop(0, 'rgba(18,11,5,.6)'); gr.addColorStop(0.6, 'rgba(18,11,5,.25)'); gr.addColorStop(1, 'rgba(18,11,5,0)'); gc.fillStyle = gr; gc.fillRect(0, 0, 128, 128);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.2), new THREE.MeshBasicMaterial({ map: ctex(c2, { rep: false }), transparent: true, depthWrite: false, fog: false }));
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.23 * IS.stand, 0.135 * IS.stand), new THREE.MeshBasicMaterial({ map: ctex(c2, { rep: false }), transparent: true, depthWrite: false, fog: false }));
     m.rotation.set(-Math.PI / 2, 0, IS.yaw); m.position.set(holder.position.x, R.caseTop + 0.001, holder.position.z); m.renderOrder = 1; room.add(m);
   }
   // what the pointer finds: the stand's boxes (in the holder's frame), the station's cells

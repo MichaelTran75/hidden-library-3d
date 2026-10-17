@@ -20,7 +20,7 @@ import { setNeeds } from '../core/loop.js';
      textures in one atlas; each vertex carries its texture's place there and the range of its own texture coordinates,
      and the shader repeats each texture inside its cell as the model did (issPatch). No normals: shaded flat, as its
      panels and trusses are.
-   - 88 cm across its arrays, its face to the room (the truss over the modules, the Russian segment above), leaning back
+   - 79 cm across its arrays (88 at first, 10 % smaller: G, 18/10/2026), its face to the room (the truss over the modules, the Russian segment above), leaning back
      12° to look down at the room's eye, turned 18° toward it. The rod meets the back of the US laboratory, under the
      truss's middle.
    - Drawn sharp over the painted room as the 747 is (pets.js crispPass, on a layer of its own), outlined under the
@@ -28,12 +28,12 @@ import { setNeeds } from '../core/loop.js';
 const ISS = { ok: false, layer: 6, url: 'https://michaeltran75.github.io/iss-station/', hover: false, out: 0, fade: 0, holder: null, mesh: null, box: null, vox: null, hitBoxes: null,
   P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 6, toneK: 1, outline: true, pad: 12 } };
 const IS = {
-  span: 0.88,                                // across its arrays (m)
+  span: 0.88 * 0.9,                          // across its arrays (m): 79 cm
   lean: 12 * Math.PI / 180,                  // its face tipped down toward the room's eye
   yaw: -18 * Math.PI / 180,                  // and turned toward it (the room's eye is to its left)
   mid: [1.68, 3.51],                         // the middle of it (x, y): the middle of G's box, over the Geography bay
   attach: [7.0, -2.3, -4.0],                 // where the rod meets it, in the model's units: the back of the US lab, under the truss's middle
-  stand: 1.5,                                // the stand: the 747's, half as large again
+  stand: 1.5 * 0.9,                          // the stand: the 747's (as it was at first) 1.35 times
   light: 1.6,                                // its display light
 };
 
@@ -111,7 +111,7 @@ async function buildIss() {
   const sb = new THREE.Box3().setFromObject(lean, true), mid = sb.getCenter(new THREE.Vector3());
   rodTop.y = IS.mid[1] - R.caseTop - mid.y; lean.position.copy(rodTop);
   const st = standParts(rodTop, IS.stand);
-  const walnut = new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#6a4128').convertSRGBToLinear(), roughness: 0.42, clearcoat: 0.6, clearcoatRoughness: 0.25 });
+  const walnut = new THREE.MeshPhysicalMaterial({ color: new THREE.Color('#6a4128').convertSRGBToLinear(), roughness: 0.42, clearcoat: 0.4, clearcoatRoughness: 0.5 });   // (as the 747's)
   const chrome = new THREE.MeshStandardMaterial({ color: 0xdfe3e6, metalness: 1, roughness: 0.16 });
   const stand = new THREE.Group(), base = new THREE.Mesh(st.base, walnut), rod = new THREE.Mesh(st.rod, chrome); base.rotation.y = Math.PI / 2; stand.add(base, rod); holder.add(stand);
   // on the bookcase's top over the Geography bay: the middle of it where G drew it; the base on the top board's middle,
@@ -131,7 +131,7 @@ async function buildIss() {
   {
     const c2 = canvas(128, 128), gc = c2.getContext('2d'), gr = gc.createRadialGradient(64, 64, 4, 64, 64, 62);
     gr.addColorStop(0, 'rgba(18,11,5,.6)'); gr.addColorStop(0.6, 'rgba(18,11,5,.25)'); gr.addColorStop(1, 'rgba(18,11,5,0)'); gc.fillStyle = gr; gc.fillRect(0, 0, 128, 128);
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.2), new THREE.MeshBasicMaterial({ map: ctex(c2, { rep: false }), transparent: true, depthWrite: false, fog: false }));
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.23 * IS.stand, 0.135 * IS.stand), new THREE.MeshBasicMaterial({ map: ctex(c2, { rep: false }), transparent: true, depthWrite: false, fog: false }));
     m.rotation.set(-Math.PI / 2, 0, IS.yaw); m.position.set(holder.position.x, R.caseTop + 0.001, holder.position.z); m.renderOrder = 1; room.add(m);
   }
   // what the pointer finds: the stand's boxes (in the holder's frame), the station's cells
