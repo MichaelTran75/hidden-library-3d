@@ -3,15 +3,15 @@
 // order of surfaces at equal depth, and the shared random sequence is drawn in that order). Each module first imports
 // the one built just before it, so importing the last one here runs them all in this order, whatever else they import
 // from each other (a module may use a later one's functions; they are only called once everything has run):
-//    1. core/base.js
-//    2. core/utils.js
-//    3. world/textures.js
-//    4. core/renderer.js
-//    5. world/materials.js
-//    6. world/room.js
-//    7. world/books.js
-//    8. world/shelves.js
-//    9. world/decor/kit.js
+//   1. core/base.js
+//   2. core/utils.js
+//   3. world/textures.js
+//   4. core/renderer.js
+//   5. world/materials.js
+//   6. world/room.js
+//   7. world/books.js
+//   8. world/shelves.js
+//   9. world/decor/kit.js
 //   10. world/decor/atlas.js
 //   11. world/decor/items.js
 //   12. world/decor/build.js
@@ -44,19 +44,20 @@
 //   39. fx/star-catalog.js
 //   40. fx/sky.js
 //   41. fx/fireflies.js
-//   42. fx/rain.js
-//   43. world/cat.js
-//   44. world/fur.js
-//   45. world/pets.js
-//   46. world/b747.js
-//   47. world/clock.js
-//   48. world/iss.js
-//   49. ui/flight.js
-//   50. ui/deck.js
-//   51. ui/overlay.js
-//   52. ui/picking.js
-//   53. core/loop.js
-//   54. ui/hooks.js
+//   42. fx/glow.js
+//   43. fx/rain.js
+//   44. world/cat.js
+//   45. world/fur.js
+//   46. world/pets.js
+//   47. world/b747.js
+//   48. world/clock.js
+//   49. world/iss.js
+//   50. ui/flight.js
+//   51. ui/deck.js
+//   52. ui/overlay.js
+//   53. ui/picking.js
+//   54. core/loop.js
+//   55. ui/hooks.js
 // A new part goes in where it belongs in that order: it imports the module before it, and the module after it (or this
 // file, at the end) imports it instead.
 import './ui/hooks.js';

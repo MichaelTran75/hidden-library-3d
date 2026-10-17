@@ -1,4 +1,4 @@
-import './fireflies.js';   // build order: the module before this one runs first
+import './glow.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { R, reduceMotion } from '../core/base.js';
 import { rng } from '../core/utils.js';

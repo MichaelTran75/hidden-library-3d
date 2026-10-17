@@ -14,6 +14,7 @@ import { GLASS, stepGlass } from '../fx/glass.js';
 import { OVER, drawWords } from '../ui/words.js';
 import { METEOR, buildNightSky } from '../fx/sky.js';
 import { FLY, buildFireflies } from '../fx/fireflies.js';
+import { buildBulbGlow } from '../fx/glow.js';
 import { stepBooks } from '../ui/flight.js';
 import { DECK, stepDeck } from '../ui/deck.js';
 import { layoutOverlay, stepGlow } from '../ui/overlay.js';
@@ -133,7 +134,9 @@ async function start() {
   buildClock().catch(e => console.warn('clock unavailable', e));
   buildIss().catch(e => console.warn('ISS unavailable', e));   // (the ISS over the Geography bay)   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
-  buildNightSky(); buildFireflies(); await compileFor(OVER.skyScene, null); await compileFor(OVER.scene, null);   // (the sharp layer: drawn on the page's own canvas)
+  buildNightSky(); buildFireflies();
+  if (LIGHTS.pendant) { const P = LIGHTS.pendant; P.updateMatrixWorld(true); buildBulbGlow(P.localToWorld(P.userData.glow.position.clone())); }   // (the bulb over the sofa, glowing: fx/glow.js)
+  await compileFor(OVER.skyScene, null); await compileFor(OVER.scene, null);   // (the sharp layer: drawn on the page's own canvas)
   await notBefore(1250); reveal(2);
   await notBefore(1900); reveal(3);
   (window.requestIdleCallback || (fn => setTimeout(fn, 500)))(() => precompileLightStates(), { timeout: 3000 });

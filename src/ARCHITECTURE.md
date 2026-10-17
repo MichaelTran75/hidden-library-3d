@@ -155,6 +155,16 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
     - trộn 30 % lên chữ gốc (`feComposite` arithmetic 0,7 / 0,3).
   - Rê chuột hiện quầng sáng ấm `--cap-glow`. Ban ngày là quầng kem quanh chữ đen, ban đêm là quầng vàng quanh chữ kem. Chuyển đổi trong 0,35 s.
 
+### Bóng đèn treo toả sáng động (`lib3d/fx/glow.js`, 18/10/2026)
+
+- Một tấm quay mặt về camera đặt ở kính bóng đèn, kéo về phía mắt 7 cm, cộng sáng (additive) trong `OVER.scene` như đom đóm. Nó được vẽ cùng lớp sắc nét (30 khung/giây), không bắt phòng (đã tô màu nước) vẽ lại.
+- Bị che bởi những gì phòng đặt phía trước (so với `uDepth`).
+- Nhịp:
+  - "Thở" bằng hai sóng chậm 3,8 s và 6,1 s, nên không bao giờ lặp y hệt. Quầng sáng sáng/tối khoảng ±20 %, cỡ to/nhỏ 14 %.
+  - Lung linh rất nhẹ 3 %.
+  - Gồm lõi trắng ấm, quầng hổ phách và một lớp toả rộng (lớp này phồng nhiều nhất theo nhịp thở).
+- Chỉ bật khi bóng đèn sáng. Độ sáng đọc từ độ mờ quầng sáng của chính bóng đèn mà `hour.js` đặt (0 ban ngày).
+
 ### Mô hình ISS trên nóc kệ Geography (`lib3d/world/iss.js`, 17/10/2026)
 
 - Mẫu "ISS" của uperesito (CC BY 4.0) đứng trên giá kiểu 747, trên nóc kệ thấp phía sau, ngay trên ô Geography, trước cửa kính (khung kính bên phải, chỗ G khoanh).

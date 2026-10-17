@@ -4223,6 +4223,10 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   }
   if (OVER.sky) { const night = NIGHT.u.value > 0.005 && REVEAL.stage >= 2; OVER.sky.visible = night; if (night) { OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); stepMeteors(clock.getElapsedTime(), camera); } }
   if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
+  if (BULB.mesh) {   // the bulb over the sofa glowing, while it is on (its glow's strength as the hour set it: fx/hour.js)
+    const P = LIGHTS.pendant; BULB.on.value = P ? P.userData.glow.material.opacity / 0.45 : 0; BULB.mesh.visible = BULB.on.value > 0.01;
+    if (BULB.mesh.visible) { any = true; BULB.t.value = clock.getElapsedTime(); }
+  }
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   // the night sky first: it darkens the dome behind it (fx/sky.js), so the rain, the deck, the animals and the rest stand in front of it
   if (OVER.sky && OVER.sky.visible) { renderer.autoClear = false; renderer.render(OVER.skyScene, camera); renderer.autoClear = true; }
@@ -4984,6 +4988,32 @@ function buildFireflies() {
         gl_FragColor = vec4(mix(vec3(0.62, 0.95, 0.22), vec3(1.0, 1.0, 0.78), core) * a, 1.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
   pts.frustumCulled = false; pts.visible = false; OVER.scene.add(pts); FLY.pts = pts;
+}
+/* ---- the bulb over the sofa, glowing (G, 18/10/2026: "em cho glowing animation vào bóng này"). Drawn sharp over the
+   picture like the fireflies: the room is painted only when something in it changes, and this goes with the sharp
+   layer, 30 times a second. A quad facing the eye at the bulb's glass, pulled 7 cm toward the eye so the glass does not
+   hide it, and hidden behind whatever the room puts in front of it. Its light breathes slowly (two slow waves, 3.8 s
+   and 6.1 s, so it never quite repeats) and shimmers a very little: a warm core in an amber halo, in a wider bloom that
+   swells more with the breath. On only while the bulb is (fx/hour.js: the pendant's glow). */
+const BULB = { mesh: null, on: { value: 0 }, t: { value: 0 }, at: { value: new THREE.Vector3() }, size: { value: 0.42 } };
+function buildBulbGlow(at) {
+  BULB.at.value.copy(at);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uAt: BULB.at, uSize: BULB.size, uOn: BULB.on, uTime: BULB.t },
+    vertexShader: `uniform vec3 uAt; uniform float uSize; varying vec2 vQ;
+      void main(){ vec4 c = viewMatrix * vec4(uAt, 1.0); c.xyz += normalize(-c.xyz) * 0.07; vQ = position.xy;
+        gl_Position = projectionMatrix * vec4(c.xy + position.xy * uSize, c.z, 1.0); }`,
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uOn, uTime; varying vec2 vQ;
+      void main(){ if (gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 4e-6) discard;
+        float t = uTime, b = 0.5 + 0.5 * (0.62 * sin(t * 1.653) + 0.38 * sin(t * 1.03 + 1.3));              // the breath, 0..1
+        float s = 1.0 + 0.03 * sin(t * 23.0) * sin(t * 7.1 + 0.4) + 0.015 * sin(t * 41.3);                     // the shimmer
+        float q = length(vQ), r = q / (0.86 + 0.14 * b);
+        float core = exp(-r * r / 0.010), halo = 0.5 * exp(-r * r / 0.07), bloom = 0.16 * exp(-r * r / 0.35) * (0.35 + 1.3 * b);
+        vec3 col = vec3(1.0, 0.93, 0.8) * core * 0.45 + vec3(1.0, 0.74, 0.42) * halo * (0.62 + 0.6 * b) + vec3(1.0, 0.62, 0.3) * bloom;
+        col *= s * uOn * smoothstep(1.0, 0.85, q); if (max(col.r, max(col.g, col.b)) < 0.002) discard;
+        gl_FragColor = vec4(col, 1.0); }`,
+    transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
+  m.frustumCulled = false; m.visible = false; OVER.scene.add(m); BULB.mesh = m;
 }
 /* ---------------------------------------------------------------- rain
    Rain outside the glass when it rains where the visitor is now (G, 16/10/2026: "làm mưa ngoài kính khi (local time) có
@@ -8022,7 +8052,9 @@ async function start() {
   buildClock().catch(e => console.warn('clock unavailable', e));
   buildIss().catch(e => console.warn('ISS unavailable', e));   // (the ISS over the Geography bay)   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
-  buildNightSky(); buildFireflies(); await compileFor(OVER.skyScene, null); await compileFor(OVER.scene, null);   // (the sharp layer: drawn on the page's own canvas)
+  buildNightSky(); buildFireflies();
+  if (LIGHTS.pendant) { const P = LIGHTS.pendant; P.updateMatrixWorld(true); buildBulbGlow(P.localToWorld(P.userData.glow.position.clone())); }   // (the bulb over the sofa, glowing: fx/glow.js)
+  await compileFor(OVER.skyScene, null); await compileFor(OVER.scene, null);   // (the sharp layer: drawn on the page's own canvas)
   await notBefore(1250); reveal(2);
   await notBefore(1900); reveal(3);
   (window.requestIdleCallback || (fn => setTimeout(fn, 500)))(() => precompileLightStates(), { timeout: 3000 });
