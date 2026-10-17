@@ -63,7 +63,7 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   core/   base.js (DOM, R, REF, tick)   utils.js (rng, noise, canvas…)   renderer.js   views.js (camera)
           build.js (main: dựng phòng)   loop.js (draw, loop, start, biên dịch shader)
   world/  textures materials room books shelves pouf rug furniture (đèn bàn, đèn cây, đèn treo bóng sợi đốt pendantLamp: dựng theo số đo mẫu CC BY) bush (bụi cây ngoài kính: thẻ chùm lá quay về người xem, pháp tuyến theo khối bụi, alpha-to-coverage) outside lights trees assets wind velvet furnish
-          decor/{kit, atlas, items, build}.js   cat.js (thân mèo: tư thế, lò xo, IK, dáng đi)   fur.js (lông: 20 lớp shell, ánh sáng nướng trong không gian texture)   pets.js (tập tính mèo, gà, lớp vẽ sắc nét)
+          decor/{kit, atlas, items, build}.js   cat.js (thân mèo: tư thế, lò xo, IK, dáng đi)   fur.js (lông: 20 lớp shell, ánh sáng nướng trong không gian texture)   pets.js (tập tính mèo, gà, lớp vẽ sắc nét)   b747.js (mô hình 747-8 1:200 trên kệ Research, dựng từ số đo; viền chọn, bấm mở link)
   fx/     dust post (màu nước: Kuwahara tổng quát, loang ướt ở mảng lá, sàn gỗ vẽ nhẹ tay hơn, FXAA) night hour (mặt trời, lấy từ `window.HL_SUN`) glass (kính: phản chiếu phòng bằng cubemap hiệu chỉnh thị sai, Fresnel, bụi, vệt sáng chéo) rain (mưa theo thời tiết thật Pleiku: vệt mưa ngoài kính, nước bắn trên sân, giọt nước đọng và chảy trên kính khúc xạ hình phía sau, trời u ám, chớp khi dông; ?wx=rain|drizzle|storm) star-catalog (danh mục sao Yale BSC5, 2887 sao) sky (trời sắp đặt: Ngân Hà xoay vào góc kính trái cạnh trăng ở góc nhìn đầu, SKYSET; ?sky=real: trời thật theo giờ sao tại nơi người xem (`HL_SUN.place`); sao chổi sau trăng, sao băng trước trăng; dò chỗ thấy trời trên GPU, probeSky) fireflies
   ui/     library sections hero-books (sách lấy ra: bìa cứng dựng như thợ đóng sách, gáy tròn, rãnh bản lề, ruột lùi vào, vân trang, headband, chữ dập; áo sách bóng; đèn chính riêng; giữ tối đa 5 cuốn) leaves (sách đọc được, 17/10/2026: ghi chú [Mô hình kinh tế] thành sách; mở ra trang tiêu đề + mục lục, mỗi nước một trang đôi, tờ giấy lật trong shader quanh bản lề bìa, chữ tự co cho vừa 2 trang; bấm mục lục/chip trong thẻ để lật tới, trang phải lật tiếp, trang trái lật lui) words (tên trên gáy sách ở kệ, bầu trời) flight deck overlay picking hooks (__lib3d, khởi động)
 ```
@@ -76,6 +76,25 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
 - **Biến dùng chung bị ghi từ mô-đun khác** phải qua setter, vì biến import chỉ đọc được: `setNeeds`, `setShadowsDirty`, `setRtScale`, `setReady`.
 - **Tên cấp cao nhất phải khác nhau giữa các mô-đun**, vì bản phát hành ghép chúng vào một phạm vi. `build.py` chạy `node --check` để bắt tên trùng.
 - **Import viết trên một dòng**, đường dẫn tương đối, không `?v=`.
+
+### Mô hình 747 trên kệ Research (`lib3d/world/b747.js`, 17/10/2026)
+
+- Hàng giữa (hàng 4) của ngăn trái kệ thấp sau lưng (ngăn Economy) không còn sách. Sách vẫn được xếp rồi cất đi (`B7_CELL` trong `shelves.js`), nên chuỗi số ngẫu nhiên của các ngăn khác giữ nguyên.
+- Ngăn đó có mô hình Boeing 747-8I tỉ lệ 1:200 (dài 37 cm) trên đế gỗ óc chó và trục mạ crôm. Máy bay ngóc mũi 6°, quay 18° về phía phòng.
+- Dựng bằng code từ số đo mẫu `3D Assets/aviation/boeing-747-8i.glb` (OUTPISTON, CC BY-NC-SA 4.0). Chỉ lấy số, không nhúng lưới hay ảnh:
+  - thân: 37 lát cắt, mỗi lát hai nửa siêu elip, sai số dưới 2 %;
+  - cánh, đuôi ngang, đuôi đứng: mặt bằng, độ cao, tỉ lệ dày. Nhị diện cánh 6° phía trong động cơ trong, 2,8° phía ngoài;
+  - vỏ động cơ GEnx-2B, giá treo, vỏ ray cánh tà, bầu bụng nối cánh;
+  - sơn: chiếu từng texel của mẫu về toạ độ 3D, rồi đo ranh bụng đỏ theo chiều dọc thân, chỗ bắt đầu màu cam ở đuôi, hàng cửa sổ (tầng chính 1,65 m, tầng trên 4,29 m, bước 0,508 m), cửa, kính buồng lái, và bảng màu.
+- Sơn là kiểu sơn ngày ra mắt 747-8, chỉ dùng màu, không chữ, không biểu tượng.
+- Vẽ sắc nét đè lên tranh như con mèo:
+  - qua `crispPass` của `pets.js`, trên lớp riêng 4, dùng đèn của phòng, bị che ở chỗ phòng gần hơn;
+  - hiện dần trong 0,6 s khi shader đã biên dịch xong;
+  - khi rê chuột, `sharpQuad` vẽ viền chọn (`P.outline`): nét trắng 2 px CSS, ngoài là quầng tối mờ 1,6 px, theo kiểu `.l3-outline` của trang.
+- Bắt chuột bằng một bản thô vô hình (`PLANE.hit`, khoảng 2 nghìn tam giác). Nó được kiểm sau các sách đang mở, trước mặt phẳng của ngăn. Bấm vào thì mở `PLANE.url` trong tab mới.
+- Góc nhìn gần của ngăn có máy bay khung cả hàng 4 (`slotBox` → `viewY`, `viewH`).
+- Dựng sau khi vườn biên dịch xong. Trên M4: hình và sơn 24 ms, phần còn lại 8 ms, biên dịch song song khoảng 90 ms. Mốc thời gian: `l3-plane-start`, `l3-plane-model`, `l3-plane-built`, `l3-plane`.
+- Script đo nằm ở `tools/b747/` (README ở đó).
 
 ### Thời tiết trực tiếp (`src/weather/`)
 

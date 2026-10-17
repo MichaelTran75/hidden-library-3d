@@ -88,9 +88,11 @@ function contactShadow(w, d) {
    the paper took the paint unevenly, and a little colour bled past it into the paper; then 15 % of the painted pass
    itself (post.js PAINT_GLSL) over that (G, 15/10/2026: 70 % less watercolour than the 50 % it had, but truer). */
 function sharpQuad(P) {
-  P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, uWash: { value: P.wash || 0 }, uToneK: { value: P.toneK }, ...SHARP.u, ...paintUniforms() },
+  const out = !!P.outline;   // (the 747 on the shelf: its selection outline when the pointer is on it, and its fade in: b747.js)
+  P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, uWash: { value: P.wash || 0 }, uToneK: { value: P.toneK }, ...SHARP.u, ...paintUniforms(),
+      ...(out ? { uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, uFade: { value: 1 } } : {}) },
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
-    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK; varying vec2 vUv;
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK; varying vec2 vUv;${out ? ' uniform float uOut, uOutW, uHalo, uFade;' : ''}
       ${PAINT_GLSL}
       vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
@@ -111,8 +113,17 @@ function sharpQuad(P) {
         if (b.a > 0.02 && a < 0.5) { float bl = b.a * 0.22 * (0.55 + 0.9 * n1.z); col = mix(b.rgb / b.a * 1.04, col, a / max(a + bl, 1e-4)); a = max(a, bl); }   // a little colour bled past it
         return vec4(col, a);
       }
+      ${out ? `float aAt(vec2 p){ return (p.x < 0.0 || p.y < 0.0 || p.x > uScale.x || p.y > uScale.y) ? 0.0 : texture2D(t, p).a; }` : ''}
       void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uWash > 0.001) o = mix(o, washAt(uv, o), uWash); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
-        if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }` }));
+        ${out ? `vec4 res = vec4(o.rgb * o.a, o.a);
+        if (uOut > 0.001) {   // the outline: where the picture is near (within uOutW pixels) but not here, white; just beyond that a soft dark edge
+          float near = 0.0, far = 0.0, here = aAt(uv);
+          for (int i = 0; i < 24; i++) { float an = 6.2831853 * (float(i) + 0.5) / 24.0; vec2 d = vec2(cos(an), sin(an)) * uTexel;
+            near = max(near, max(aAt(uv + d * uOutW), aAt(uv + d * uOutW * 0.5))); far = max(far, aAt(uv + d * (uOutW + uHalo))); }
+          float w = smoothstep(0.2, 0.6, near) * (1.0 - smoothstep(0.3, 0.8, here)) * 0.95 * uOut, h = smoothstep(0.1, 0.6, far) * (1.0 - here) * 0.55 * uOut;
+          vec4 ring = vec4(vec3(w), w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
+        }
+        res *= uFade; if (res.a < 0.002) discard; gl_FragColor = res; }` : `if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }`}` }));
 }
 const SHARP = { cam: new THREE.Camera(), v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } },
   cat: { rt: null, quad: null, paint: 0, layer: 1, toneK: 1 }, hen: { rt: null, quad: null, paint: 0.15, wash: 1, layer: 1, toneK: 1 },   // (each its own target; the chicken 15 % painted over a watercolour's surface: G, 15/10/2026)
@@ -858,7 +869,8 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
   for (let i = 0; i < 8; i++) { const v = SHARP.v.set(bx + (i & 1 ? rx : -rx), by + (i & 2 ? ry : 0), bz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
     any = true; const px = (v.x + 1) / 2 * W_, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
   if (!any) return false;
-  x0 = Math.max(0, Math.floor(x0) - 8); y0 = Math.max(0, Math.floor(y0) - 8); x1 = Math.min(W_, Math.ceil(x1) + 8); y1 = Math.min(H, Math.ceil(y1) + 8);   // (room for the paint's strokes)
+  const pad = P.pad || 8;
+  x0 = Math.max(0, Math.floor(x0) - pad); y0 = Math.max(0, Math.floor(y0) - pad); x1 = Math.min(W_, Math.ceil(x1) + pad); y1 = Math.min(H, Math.ceil(y1) + pad);   // (room for the paint's strokes, and an outline's)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return false;
   if (!P.rt || P.rt.width < w || P.rt.height < h) {
     if (P.rt) P.rt.dispose();
@@ -910,4 +922,4 @@ function setHenAway(away) {
   if (PETS.chicken) { PETS.chicken.visible = PETS.henShadow.visible = PETS.state === 'day' && !away; setShadowsDirty(true); setNeeds(true); }
 }
 
-export { PETS, drawPets, drawSharpBooks, loadPets, petsForHour, setHenAway };
+export { PETS, SHARP, crispPass, crispPatch, drawPets, drawSharpBooks, loadPets, petsForHour, setHenAway, sharpQuad };

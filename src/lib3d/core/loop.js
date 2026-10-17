@@ -19,6 +19,7 @@ import { DECK, stepDeck } from '../ui/deck.js';
 import { layoutOverlay, stepGlow } from '../ui/overlay.js';
 import { buildInterface } from '../ui/picking.js';
 import { PETS, loadPets } from '../world/pets.js';
+import { buildPlane, stepPlane } from '../world/b747.js';
 import { RAIN, readWeather } from '../fx/rain.js';
 
 /* ---------------------------------------------------------------- render loop */
@@ -59,7 +60,7 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt);      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
@@ -126,6 +127,7 @@ async function start() {
   // the cat and the chicken (it stays out of sight until the garden is in), once the garden's shaders are made: a first
   // use of one of theirs while those were still being made held a frame up to 0.4 s
   loadPets().catch(e => console.warn('pets unavailable', e));
+  buildPlane().catch(e => console.warn('747 unavailable', e));   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
   buildNightSky(); buildFireflies(); await compileFor(OVER.skyScene, null); await compileFor(OVER.scene, null);   // (the sharp layer: drawn on the page's own canvas)
   await notBefore(1250); reveal(2);

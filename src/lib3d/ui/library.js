@@ -1,7 +1,7 @@
 import '../fx/glass.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { R, body } from '../core/base.js';
-import { SHELF } from '../world/shelves.js';
+import { B7_CELL, SHELF } from '../world/shelves.js';
 import { V3 } from '../core/views.js';
 
 /* ---------------------------------------------------------------- library interface
@@ -41,8 +41,11 @@ function slotBox(slot) {
   const S = SHELF.B, xa = S.X[slot.cols[0]] + 0.03, xb = S.X[slot.cols[1] + 1] - 0.03, ya = 0.1 + slot.rows[0] * S.rh2, yb = 0.1 + (slot.rows[1] + 1) * S.rh2;
   const top = slot.rows[1] >= 6, plate = new V3((xa + xb) / 2, top ? R.caseTop - 0.0225 : yb, top ? S.zf + 0.03 : S.zf + 0.004);
   const br = slot.bookRows || slot.rows, bookY = 0.1 + (br[0] + br[1] + 1) / 2 * S.rh2;   // the middle of the rows its books stand in
+  // (a bay with the 747 in it, world/b747.js: its view takes in that row too)
+  const pl = slot.cols[0] <= B7_CELL.i && B7_CELL.i <= slot.cols[1] && slot.rows[0] <= B7_CELL.j && B7_CELL.j <= slot.rows[1], v0 = pl ? Math.min(br[0], B7_CELL.j) : br[0];
+  const viewY = 0.1 + (v0 + br[1] + 1) / 2 * S.rh2, viewH = (br[1] + 1 - v0) * S.rh2;
   const bookX0 = xa + (xb - xa) * (slot.bookCut || 0) - 0.04, bookX1 = xb + 0.03;                    // and the stretch they take
-  return { ya, yb, bookY, bookX0, bookX1, w: xb - xa, h: yb - ya, normal: new V3(0, 0, 1), face: new V3((xa + xb) / 2, (ya + yb) / 2, S.zf + 0.004),
+  return { ya, yb, bookY, viewY, viewH, bookX0, bookX1, w: xb - xa, h: yb - ya, normal: new V3(0, 0, 1), face: new V3((xa + xb) / 2, (ya + yb) / 2, S.zf + 0.004),
     lo: new V3(Math.max(xa + 0.06, bookX0 + 0.06), ya + 0.06, S.zf + 0.004), hi: new V3(xb - 0.06, yb - 0.06, S.zf + 0.004),
     corners: [[0, ya - 0.012], [1, ya - 0.012], [1, yb + 0.012], [0, yb + 0.012]].map(([k, y]) => new V3(S.X[slot.cols[0] + k * (slot.cols[1] - slot.cols[0] + 1)], y, S.zf + 0.004)), back: new V3((xa + xb) / 2, (ya + yb) / 2, R.zB + 0.012), plate, tag: plate, rotY: 0 };
 }
@@ -60,7 +63,7 @@ function focusView(sec) {
     return { pos: new V3(R.xS - dist, b.focus.y + 0.05, b.focus.z + 0.3), tgt: new V3(R.xS, b.focus.y, b.focus.z), fov, shift };
   }
   // a bay: close, the stretch of its books filling the free side, level with the rows they stand in
-  const dist = THREE.MathUtils.clamp((b.bookX1 - b.bookX0 + 0.12) / ((r - l) * span), 1.3, 4.4), tgt = new V3((b.bookX0 + b.bookX1) / 2, b.bookY, b.face.z);
+  const dist = THREE.MathUtils.clamp(Math.max((b.bookX1 - b.bookX0 + 0.12) / ((r - l) * span), (b.viewH + 0.2) / (2 * Math.tan(fov0 / 2 * Math.PI / 180))), 1.3, 4.4), tgt = new V3((b.bookX0 + b.bookX1) / 2, b.viewY, b.face.z);
   const pos = tgt.clone().addScaledVector(b.normal, dist).add(new V3(0, 0.05, 0));
   pos.x = THREE.MathUtils.clamp(pos.x, R.xL + 0.3, R.xS - 0.3);
   return { pos, tgt, fov: fov0, shift };

@@ -281,6 +281,10 @@ CREDITS = """<!--
   - "Tree" by SomeKevin - https://sketchfab.com/3d-models/tree-66a8d0ef9b49415a9eaf6af216cb9bce
   - "Stylized Tree" by yonimantz - https://sketchfab.com/3d-models/stylized-tree-6d1aeea748f147789004bc03e1930d32
   - "Platano Tree" by gelmi.com.br - https://sketchfab.com/3d-models/platano-tree-ef48485b7c534acc905c0d9964c5fe7c
+  The Boeing 747-8 on the Research shelf is built in code from measurements of "Boeing 747-8i" by OUTPISTON -
+  https://sketchfab.com/3d-models/boeing-747-8i-61b531546bb242f690f87028e333aa5c (CC BY-NC-SA 4.0): its sections,
+  planforms and where its paint changes colour were measured; no mesh or picture of it is shipped. Its paint is the
+  747-8's rollout scheme in plain colours, without lettering or emblem.
   The cat and the chicken:
   - "cat" by artofaria - https://sketchfab.com/3d-models/cat-7e8cbcad506041dc9c3a0cb74edb3360 (Sketchfab Free Standard
     licence, https://sketchfab.com/licenses; rigged, re-materialled, posed and animated in code). Under that licence the

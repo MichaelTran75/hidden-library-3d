@@ -10,6 +10,7 @@ import { UIEL, buildOverlay, closeCard, openSection, refreshCard, setHover, setM
 import { ready, setNeeds } from '../core/loop.js';
 import { isMapItem, opensFlat } from './book-data.js';
 import { readClick, readHint, readHit } from './leaves.js';
+import { PLANE } from '../world/b747.js';
 
 /* ---- picking in the room */
 const RAY = new THREE.Raycaster(), NDC = new THREE.Vector2(); RAY.layers.enable(3);   // (the book out of the shelf is on its own layer: hero-books.js)
@@ -44,6 +45,7 @@ function pickAt(e) {
   const books = UIS.open ? UIS.open.books.map(b => b.hit) : [];
   for (const b of [UIS.active, UIS.peek]) if (b && b.hero && b.hero.visible) books.push(b.hero);
   const hb = books.length ? RAY.intersectObjects(books, false)[0] : null; if (hb) return { book: hb.object.userData.book };
+  if (PLANE.ok && PLANE.hit && RAY.intersectObject(PLANE.hit, false).length) return { plane: true };   // (the 747 on the Research shelf: b747.js)
   const hs = RAY.intersectObjects(UIS.secs.map(s => s.hit), false)[0], hd = DECK.ok ? RAY.intersectObject(DECK.hit, false)[0] : null;
   if (hd && (!hs || hd.distance < hs.distance)) return { deck: true };
   return hs ? { sec: hs.object.userData.sec } : null;
@@ -69,11 +71,12 @@ function bindPicking() {
   CANVAS.addEventListener('pointermove', e => {
     if (!ready || offMode()) return;
     const p = pickAt(e), bk = p && p.book && p.book.sec === UIS.open ? p.book : null;
-    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map), p && p.read ? readHint(p.book, p.read) : null); setHover(!p || p.book || p.deck || UIS.open === p.sec ? null : p.sec);
-    CANVAS.style.cursor = p && (p.book || p.deck || UIS.open !== p.sec) ? 'pointer' : '';
-    const dh = !!(p && p.deck); if (dh !== DECK.hover) { DECK.hover = dh; CANVAS.title = dh ? (document.documentElement.lang === 'vi' ? 'Máy hát' : 'Record player') : ''; setNeeds(true); }
+    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map), p && p.read ? readHint(p.book, p.read) : null); setHover(!p || p.book || p.deck || p.plane || UIS.open === p.sec ? null : p.sec);
+    CANVAS.style.cursor = p && (p.book || p.deck || p.plane || UIS.open !== p.sec) ? 'pointer' : '';
+    const dh = !!(p && p.deck), ph = !!(p && p.plane);
+    if (dh !== DECK.hover || ph !== PLANE.hover) { DECK.hover = dh; PLANE.hover = ph; CANVAS.title = dh ? (document.documentElement.lang === 'vi' ? 'Máy hát' : 'Record player') : ph ? 'Boeing 747-8' : ''; setNeeds(true); }
   });
-  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover) { DECK.hover = false; CANVAS.title = ''; setNeeds(true); } });
+  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover || PLANE.hover) { DECK.hover = PLANE.hover = false; CANVAS.title = ''; setNeeds(true); } });
   CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; showTip(null); });
   CANVAS.addEventListener('pointerup', e => {
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || performance.now() - down.t > 600 || offMode()) { down = null; return; }
@@ -85,6 +88,7 @@ function bindPicking() {
     else if (p && p.book && p.book === UIS.active && p.book.out) { const x = document.getElementById('np-close'); if (x) x.click(); }   // the book out of the shelf: back to its place (the player closes)
     else if (p && p.book) activateItem(p.book.it);
     else if (p && p.deck) togglePlayer();   // the record player on the floor: the page's player comes out (or goes away)
+    else if (p && p.plane) window.open(PLANE.url, '_blank', 'noopener');   // the 747: its page, in a new tab
     else if (p && p.sec) openSection(p.sec);
     else if (UIS.mode !== 'home') closeCard();
   });

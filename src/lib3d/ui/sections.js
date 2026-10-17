@@ -53,7 +53,7 @@ function readItems(sec) {
 function gatherBooks(slot, cols) {
   const cand = [], rows = slot.bookRows || slot.rows;
   BOOK.list.forEach((b, idx) => {
-    const cl = b.cell; if (!cl || !b.up || b.lean || cl.shelf !== slot.shelf) return;
+    const cl = b.cell; if (!cl || b.hidden || !b.up || b.lean || cl.shelf !== slot.shelf) return;
     if (cl.i < cols[0] || cl.i > cols[1] || cl.j < rows[0] || cl.j > rows[1]) return;
     const t = new V3().setFromMatrixColumn(b.m, 0).length(), h = new V3().setFromMatrixColumn(b.m, 1).length(), d = new V3().setFromMatrixColumn(b.m, 2).length();
     // the tall shelf's books take the thickness of their pages anyway, so any upright book will do there: more of them in
