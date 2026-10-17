@@ -5,7 +5,7 @@ import { R } from '../core/base.js';
 import { boardGeo, place, rand } from '../core/utils.js';
 import { MAT } from './materials.js';
 import { room } from './room.js';
-import { BOOK, PAL, fillCell } from './books.js';
+import { BOOK, PAL, fillCell, rowOfBooks } from './books.js';
 import { DECOR } from './decor/kit.js';
 
 /* ---------------------------------------------------------------- shelves */
@@ -41,14 +41,17 @@ function buildShelves() {
     const along2 = new THREE.Vector3(s, 0, 0), out2 = new THREE.Vector3(0, 0, s);
     for (let i = 0; i < X.length - 1; i++) for (let j = 0; j < rows; j++) {
       const xa = X[i] + 0.025, xb = X[i + 1] - 0.025; const len = xb - xa; const yb = 0.1 + j * rh2 + th / 2;
-      const o = new THREE.Vector3(s > 0 ? xa : xb, yb, zf - s * 0.005), n0 = BOOK.list.length;
-      fillCell(o, along2, out2, len, rh2 - th, R.caseD - 0.03, PAL.old, { stack: .07, gaps: .04, cell: { shelf: s > 0 ? 'B' : 'F', i, j } });
-      if (s > 0 && i === B7_CELL.i && j === B7_CELL.j) for (let k = n0; k < BOOK.list.length; k++) { BOOK.list[k].m.makeScale(0, 0, 0); BOOK.list[k].hidden = true; }   // (the 747 stands there: b747.js)
+      const o = new THREE.Vector3(s > 0 ? xa : xb, yb, zf - s * 0.005), n0 = BOOK.list.length, cell = { shelf: s > 0 ? 'B' : 'F', i, j };
+      fillCell(o, along2, out2, len, rh2 - th, R.caseD - 0.03, PAL.old, { stack: .07, gaps: .04, cell });
+      if (s > 0 && i === B7_CELL.i && j === B7_CELL.j) {   // (the 747 stands there: its books put away, a row of others at its left end: b747.js)
+        for (let k = n0; k < BOOK.list.length; k++) { BOOK.list[k].m.makeScale(0, 0, 0); BOOK.list[k].hidden = true; }
+        rowOfBooks(cell, B7_CELL.books, 747);
+      }
     }
   }
   const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.oak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
 }
 
-const B7_CELL = { i: 0, j: 4 };   // the cell the 747 stands in (the back bookcase's left bay, its middle row: b747.js)
+const B7_CELL = { i: 0, j: 4, books: 0.4 };   // the cell the 747 stands in (the back bookcase's left bay, its middle row: b747.js), and the books kept at its left end (m)
 
 export { B7_CELL, SHELF, buildShelves };

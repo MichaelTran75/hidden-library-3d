@@ -389,6 +389,26 @@ function refitCell(cell, sizes, keep = new Set()) {
   }
   return moved;
 }
+/* a row of upright books from a cell's left end, len metres of it, the last leaning left on the one before it (as a row's
+   last book does in fillCell): the 747's cell (G, 17/10/2026: "add vài cuốn sách bên trái để fill khoảng trống"). Its own
+   random draws, so the room's shared sequence, and every other cell, stay as they were. */
+function rowOfBooks(cell, len, seed) {
+  const r = rng(seed), between = (a, b) => a + (b - a) * r(), T = (x, y, z) => new THREE.Matrix4().makeTranslation(x, y, z), S = (x, y, z) => new THREE.Matrix4().makeScale(x, y, z);
+  let x = between(0.002, 0.01), last = null;
+  for (;;) {
+    const t = between(0.019, 0.046) * (r() < 0.12 ? 1.4 : 1), h = between(0.21, 0.3), d = Math.min(0.3, between(0.13, 0.17) + h * 0.25), inset = between(0, 0.02);
+    if (x + t > len) break;
+    const c = new THREE.Color(PAL.old[Math.floor(r() * PAL.old.length)]).offsetHSL(0, (r() - 0.5) * 0.08, (r() - 0.5) * 0.09);
+    last = { idx: BOOK.list.length, x, t, h, d, inset };
+    BOOK.list.push({ m: cell.B.clone().multiply(T(x + t / 2, 0, -inset)).multiply(S(t, h, d)), c, v: Math.floor(r() * SPINES), up: true, cell });
+    x += t + (r() < 0.25 ? between(0.001, 0.005) : 0.0008);
+  }
+  if (last) {
+    const { idx, t, h, d, inset } = last, phi = 0.22;
+    BOOK.list[idx].m = cell.B.clone().multiply(T(last.x + t * Math.cos(phi) + h * Math.sin(phi), 0, -inset)).multiply(new THREE.Matrix4().makeRotationZ(phi)).multiply(T(-t / 2, 0, 0)).multiply(S(t, h, d));
+    BOOK.list[idx].lean = true;
+  }
+}
 function buildBookInstances() {
   const geo = bookGeometry(); const n = BOOK.list.length;
   const mesh = new THREE.InstancedMesh(geo, bookMaterial(BOOK.atlas), n);
@@ -430,15 +450,18 @@ function buildShelves() {
     const along2 = new THREE.Vector3(s, 0, 0), out2 = new THREE.Vector3(0, 0, s);
     for (let i = 0; i < X.length - 1; i++) for (let j = 0; j < rows; j++) {
       const xa = X[i] + 0.025, xb = X[i + 1] - 0.025; const len = xb - xa; const yb = 0.1 + j * rh2 + th / 2;
-      const o = new THREE.Vector3(s > 0 ? xa : xb, yb, zf - s * 0.005), n0 = BOOK.list.length;
-      fillCell(o, along2, out2, len, rh2 - th, R.caseD - 0.03, PAL.old, { stack: .07, gaps: .04, cell: { shelf: s > 0 ? 'B' : 'F', i, j } });
-      if (s > 0 && i === B7_CELL.i && j === B7_CELL.j) for (let k = n0; k < BOOK.list.length; k++) { BOOK.list[k].m.makeScale(0, 0, 0); BOOK.list[k].hidden = true; }   // (the 747 stands there: b747.js)
+      const o = new THREE.Vector3(s > 0 ? xa : xb, yb, zf - s * 0.005), n0 = BOOK.list.length, cell = { shelf: s > 0 ? 'B' : 'F', i, j };
+      fillCell(o, along2, out2, len, rh2 - th, R.caseD - 0.03, PAL.old, { stack: .07, gaps: .04, cell });
+      if (s > 0 && i === B7_CELL.i && j === B7_CELL.j) {   // (the 747 stands there: its books put away, a row of others at its left end: b747.js)
+        for (let k = n0; k < BOOK.list.length; k++) { BOOK.list[k].m.makeScale(0, 0, 0); BOOK.list[k].hidden = true; }
+        rowOfBooks(cell, B7_CELL.books, 747);
+      }
     }
   }
   const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.oak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
 }
 
-const B7_CELL = { i: 0, j: 4 };   // the cell the 747 stands in (the back bookcase's left bay, its middle row: b747.js)
+const B7_CELL = { i: 0, j: 4, books: 0.4 };   // the cell the 747 stands in (the back bookcase's left bay, its middle row: b747.js), and the books kept at its left end (m)
 /* ---------------------------------------------------------------- decor on shelves
    Every decorated cell of the tall shelf holds a piece of its own, no two alike: a catalogue of vessels, pictures,
    figures, instruments, plants and small things is shuffled and dealt one per cell. Each piece is built in its own
@@ -6407,8 +6430,8 @@ function setHenAway(away) {
   if (PETS.chicken) { PETS.chicken.visible = PETS.henShadow.visible = PETS.state === 'day' && !away; setShadowsDirty(true); setNeeds(true); }
 }
 /* ---------------------------------------------------------------- the 747 on the Research shelf
-   A desk model of a Boeing 747-8 Intercontinental, 1:200 (37 cm long), on a walnut stand in place of the books of the
-   middle row of the Economy bay (G, 17/10/2026: "em thay sách ở ngăn màu xanh bằng model boing 747, learn vỏ máy bay 747
+   A desk model of a Boeing 747-8 Intercontinental, 1:154 (48 cm long; 1:200 made 30 % larger: G, 17/10/2026), on a walnut
+   stand, in the middle row of the Economy bay, a few of its books left at the left end (G, 17/10/2026: "em thay sách ở ngăn màu xanh bằng model boing 747, learn vỏ máy bay 747
    from glb asset, khi hover vào máy bay thì tạo viền select, khi click vào thì open newtab tới …"). The pointer on it
    draws a selection outline round it (white, a soft dark edge outside, as the page's own outlines); a click opens
    PLANE.url in a new tab.
@@ -6425,7 +6448,7 @@ function setHenAway(away) {
      painting, hidden where the room is nearer), on a layer of its own. The pointer finds it through a coarse copy. */
 const PLANE = { ok: false, layer: 4, url: 'https://www.investingforum.info/copy-of-piano?rc=test-site', hover: false, out: 0, fade: 0, holder: null, hit: null, box: null,
   P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 4, toneK: 1, outline: true, pad: 12 } };
-const B7_SCALE = 1 / 200;
+const B7_SCALE = 1.3 / 200;
 
 // the aircraft in metres (the real one: nose toward +z, y up), as a group of meshes; bare: geometry only (the pointer's copy)
 function shape747(q, bare) {
@@ -6658,23 +6681,23 @@ function shape747(q, bare) {
 
 // the desk stand: a walnut base and a chrome rod up to the belly (in metres, the base's middle at the origin)
 function standParts(rodTop) {
-  const shp = new THREE.Shape(), w = 0.13, d = 0.075, r = 0.03;
+  const shp = new THREE.Shape(), w = 0.156, d = 0.09, r = 0.035;
   shp.moveTo(-w / 2 + r, -d / 2); shp.lineTo(w / 2 - r, -d / 2); shp.quadraticCurveTo(w / 2, -d / 2, w / 2, -d / 2 + r); shp.lineTo(w / 2, d / 2 - r); shp.quadraticCurveTo(w / 2, d / 2, w / 2 - r, d / 2);
   shp.lineTo(-w / 2 + r, d / 2); shp.quadraticCurveTo(-w / 2, d / 2, -w / 2, d / 2 - r); shp.lineTo(-w / 2, -d / 2 + r); shp.quadraticCurveTo(-w / 2, -d / 2, -w / 2 + r, -d / 2);
   const base = new THREE.ExtrudeGeometry(shp, { depth: 0.008, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 3, curveSegments: 6 });
   base.rotateX(-Math.PI / 2); base.rotateY(Math.PI / 2); base.translate(0, 0.003, 0);   // (lying on the board along the fuselage, 14 mm thick with its bevels)
-  const rod = new THREE.CylinderGeometry(0.0035, 0.0045, rodTop.y - 0.012, 16); rod.translate(0, (rodTop.y + 0.012) / 2, 0);
-  const cup = new THREE.CylinderGeometry(0.009, 0.006, 0.008, 20); cup.translate(0, rodTop.y - 0.004, 0);   // (the cradle under the belly)
+  const rod = new THREE.CylinderGeometry(0.004, 0.0052, rodTop.y - 0.012, 16); rod.translate(0, (rodTop.y + 0.012) / 2, 0);
+  const cup = new THREE.CylinderGeometry(0.011, 0.007, 0.009, 20); cup.translate(0, rodTop.y - 0.0045, 0);   // (the cradle under the belly)
   return { base, rod: mergeGeometries([rod, cup]) };
 }
 
 const b7mark = name => { try { performance.mark('l3-' + name); } catch (e) { /* no User Timing */ } };   // (start-up marks: tools/perf/marks.cjs)
 async function buildPlane() {
   b7mark('plane-start');
-  // the model: 1:200, nose up 6° as in a climb, turned 18° toward the room so it shows three quarters
-  const S = SHELF.B, xa = S.X[B7_CELL.i] + 0.025, xb = S.X[B7_CELL.i + 1] - 0.025, y0 = 0.1 + B7_CELL.j * S.rh2 + S.th / 2, zBack = R.zB + 0.006, zFront = S.zf - 0.006;
+  // the model: nose up 6° as in a climb, turned 22° toward the room so it shows three quarters
+  const S = SHELF.B, xa = S.X[B7_CELL.i] + 0.025, xb = S.X[B7_CELL.i + 1] - 0.025, y0 = 0.1 + B7_CELL.j * S.rh2 + S.th / 2, zBack = R.zB + 0.006;
   const holder = new THREE.Group(), model = shape747(1, null); b7mark('plane-model'); await tick();
-  const pitch = 6 * Math.PI / 180, yaw = (90 - 18) * Math.PI / 180, attach = new THREE.Vector3(0, -2.31, 1.0).multiplyScalar(B7_SCALE), rodTop = new THREE.Vector3(0, 0.135, 0);
+  const pitch = 6 * Math.PI / 180, yaw = (90 - 22) * Math.PI / 180, attach = new THREE.Vector3(0, -2.31, 1.0).multiplyScalar(B7_SCALE), rodTop = new THREE.Vector3(0, 0.15, 0);
   model.scale.setScalar(B7_SCALE); model.rotation.x = -pitch;
   model.position.copy(rodTop).sub(attach.clone().applyAxisAngle(new THREE.Vector3(1, 0, 0), -pitch));
   const st = standParts(rodTop);
@@ -6682,11 +6705,11 @@ async function buildPlane() {
   const chrome = new THREE.MeshStandardMaterial({ color: 0xdfe3e6, metalness: 1, roughness: 0.16 });
   const stand = new THREE.Group(); stand.add(new THREE.Mesh(st.base, walnut), new THREE.Mesh(st.rod, chrome));
   holder.add(model, stand); holder.rotation.y = yaw;
-  // placed in the middle of its cell (by its box, so the wing tips stay clear of the front and back of the shelf)
+  // placed (by its box) in the middle of the shelf right of the books, its far side against the back: its span (45 cm)
+  // is more than the shelf is deep (36 cm), so the near wing tip reaches a little past the shelf's front, as a model's would
   holder.position.set(0, y0, 0); holder.updateMatrixWorld(true);
-  let box = new THREE.Box3().setFromObject(holder);
-  if (box.max.z - box.min.z > zFront - zBack) { holder.scale.setScalar((zFront - zBack) / (box.max.z - box.min.z)); holder.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(holder); }   // (smaller if it would not fit)
-  const c = box.getCenter(new THREE.Vector3()); holder.position.x += (xa + xb) / 2 + 0.06 - c.x; holder.position.z += (zBack + zFront) / 2 - c.z;
+  const box = new THREE.Box3().setFromObject(holder, true), x0 = xa + B7_CELL.books + 0.05, x1 = xb - 0.02;   // (precise: a turned mesh's own box would be far larger)
+  holder.position.x += (x0 + x1) / 2 - (box.min.x + box.max.x) / 2; holder.position.z += zBack - box.min.z;
   holder.updateMatrixWorld(true);
   holder.traverse(o => {
     if (!o.isMesh) return; o.layers.set(PLANE.layer); o.castShadow = false; o.receiveShadow = true;
@@ -6698,7 +6721,7 @@ async function buildPlane() {
     const c2 = canvas(128, 128), g = c2.getContext('2d'), gr = g.createRadialGradient(64, 64, 4, 64, 64, 62);
     gr.addColorStop(0, 'rgba(18,11,5,.6)'); gr.addColorStop(0.6, 'rgba(18,11,5,.25)'); gr.addColorStop(1, 'rgba(18,11,5,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
     const tex = ctex(c2, { rep: false });
-    for (const [w, d, k] of [[0.17, 0.11, 1], [0.36, 0.2, 0.35]]) {
+    for (const [w, d, k] of [[0.2, 0.13, 1], [0.47, 0.26, 0.35]]) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: k, depthWrite: false, fog: false }));
       m.rotation.set(-Math.PI / 2, 0, yaw - Math.PI / 2); m.position.set(holder.position.x, y0 + 0.001, holder.position.z); m.renderOrder = 1; room.add(m);
     }
@@ -6713,7 +6736,7 @@ async function buildPlane() {
     PLANE.hit = new THREE.Mesh(mergeGeometries(geos), hidden); PLANE.hit.matrixAutoUpdate = false; room.add(PLANE.hit);
   }
   // the box the crisp pass draws (its corners on screen), and the room's lights lighting it on its layer
-  const bb = new THREE.Box3().setFromObject(holder), bc = bb.getCenter(new THREE.Vector3());
+  const bb = new THREE.Box3().setFromObject(holder, true), bc = bb.getCenter(new THREE.Vector3());
   PLANE.box = [bc.x, bb.min.y - 0.005, bc.z, (bb.max.x - bb.min.x) / 2 + 0.01, bb.max.y - bb.min.y + 0.01, (bb.max.z - bb.min.z) / 2 + 0.01];
   scene.traverse(o => { if (o.isLight) o.layers.enable(PLANE.layer); });
   scene.add(holder); PLANE.holder = holder; sharpQuad(PLANE.P); b7mark('plane-built');

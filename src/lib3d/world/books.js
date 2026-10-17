@@ -135,6 +135,26 @@ function refitCell(cell, sizes, keep = new Set()) {
   }
   return moved;
 }
+/* a row of upright books from a cell's left end, len metres of it, the last leaning left on the one before it (as a row's
+   last book does in fillCell): the 747's cell (G, 17/10/2026: "add vài cuốn sách bên trái để fill khoảng trống"). Its own
+   random draws, so the room's shared sequence, and every other cell, stay as they were. */
+function rowOfBooks(cell, len, seed) {
+  const r = rng(seed), between = (a, b) => a + (b - a) * r(), T = (x, y, z) => new THREE.Matrix4().makeTranslation(x, y, z), S = (x, y, z) => new THREE.Matrix4().makeScale(x, y, z);
+  let x = between(0.002, 0.01), last = null;
+  for (;;) {
+    const t = between(0.019, 0.046) * (r() < 0.12 ? 1.4 : 1), h = between(0.21, 0.3), d = Math.min(0.3, between(0.13, 0.17) + h * 0.25), inset = between(0, 0.02);
+    if (x + t > len) break;
+    const c = new THREE.Color(PAL.old[Math.floor(r() * PAL.old.length)]).offsetHSL(0, (r() - 0.5) * 0.08, (r() - 0.5) * 0.09);
+    last = { idx: BOOK.list.length, x, t, h, d, inset };
+    BOOK.list.push({ m: cell.B.clone().multiply(T(x + t / 2, 0, -inset)).multiply(S(t, h, d)), c, v: Math.floor(r() * SPINES), up: true, cell });
+    x += t + (r() < 0.25 ? between(0.001, 0.005) : 0.0008);
+  }
+  if (last) {
+    const { idx, t, h, d, inset } = last, phi = 0.22;
+    BOOK.list[idx].m = cell.B.clone().multiply(T(last.x + t * Math.cos(phi) + h * Math.sin(phi), 0, -inset)).multiply(new THREE.Matrix4().makeRotationZ(phi)).multiply(T(-t / 2, 0, 0)).multiply(S(t, h, d));
+    BOOK.list[idx].lean = true;
+  }
+}
 function buildBookInstances() {
   const geo = bookGeometry(); const n = BOOK.list.length;
   const mesh = new THREE.InstancedMesh(geo, bookMaterial(BOOK.atlas), n);
@@ -144,4 +164,4 @@ function buildBookInstances() {
   mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; room.add(mesh); return mesh;
 }
 
-export { BOOK, PAL, buildBookInstances, buildSpineAtlas, fillCell, refitCell };
+export { BOOK, PAL, buildBookInstances, buildSpineAtlas, fillCell, refitCell, rowOfBooks };

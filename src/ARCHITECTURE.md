@@ -79,8 +79,13 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
 
 ### Mô hình 747 trên kệ Research (`lib3d/world/b747.js`, 17/10/2026)
 
-- Hàng giữa (hàng 4) của ngăn trái kệ thấp sau lưng (ngăn Economy) không còn sách. Sách vẫn được xếp rồi cất đi (`B7_CELL` trong `shelves.js`), nên chuỗi số ngẫu nhiên của các ngăn khác giữ nguyên.
-- Ngăn đó có mô hình Boeing 747-8I tỉ lệ 1:200 (dài 37 cm) trên đế gỗ óc chó và trục mạ crôm. Máy bay ngóc mũi 6°, quay 18° về phía phòng.
+- Hàng giữa (hàng 4) của ngăn trái kệ thấp sau lưng (ngăn Economy):
+  - Sách ngẫu nhiên của ngăn vẫn được xếp rồi cất đi (`B7_CELL` trong `shelves.js`), nên chuỗi số ngẫu nhiên của các ngăn khác giữ nguyên.
+  - Đầu trái ngăn có một hàng sách riêng dài 40 cm (`rowOfBooks` trong `books.js`, dùng bộ số ngẫu nhiên riêng, hạt giống 747), cuốn cuối dựa nghiêng.
+- Bên phải hàng sách là mô hình Boeing 747-8I tỉ lệ 1:154 (dài 48 cm; 1:200 phóng to 30 %), đứng trên đế gỗ óc chó với trục mạ crôm.
+  - Máy bay ngóc mũi 6°, quay 22° về phía phòng.
+  - Sải cánh 45 cm lớn hơn chiều sâu kệ 36 cm, nên phía sau áp sát kính, đầu cánh gần chìa qua mép kệ khoảng 6 cm.
+  - Chỗ đặt tính bằng hộp bao chính xác `setFromObject(holder, true)`. Hộp bao theo mesh của vật đã xoay phình to và đẩy máy bay ra quá xa.
 - Dựng bằng code từ số đo mẫu `3D Assets/aviation/boeing-747-8i.glb` (OUTPISTON, CC BY-NC-SA 4.0). Chỉ lấy số, không nhúng lưới hay ảnh:
   - thân: 37 lát cắt, mỗi lát hai nửa siêu elip, sai số dưới 2 %;
   - cánh, đuôi ngang, đuôi đứng: mặt bằng, độ cao, tỉ lệ dày. Nhị diện cánh 6° phía trong động cơ trong, 2,8° phía ngoài;
