@@ -167,6 +167,13 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
   - Gồm lõi trắng ấm, quầng hổ phách và một lớp toả rộng (lớp này phồng nhiều nhất theo nhịp thở).
 - Chỉ bật khi bóng đèn sáng. Độ sáng đọc từ độ mờ quầng sáng của chính bóng đèn mà `hour.js` đặt (0 ban ngày).
 
+### Sách khu vườn 3D trên pouf (`lib3d/world/gardenbook.js`, 18/10/2026)
+
+- Cuốn sách nằm trên cùng chồng sách trên pouf (`LIGHTS.gardenBook`, tức b2 trong `furnish.js`) được dán bìa là ảnh G chụp khu vườn 3D (`garden-cover.webp`, 1024 px).
+  - Bìa là một mặt phẳng phủ trên mặt sách. Ảnh được cắt cho khớp tỉ lệ bìa.
+- Sách được vẽ sắc nét trên lớp 7, rê chuột hiện viền trắng, bấm thì mở https://michaeltran75.github.io/3d-garden/ trong tab mới.
+- Bắt chuột bằng hộp bao của sách.
+
 ### Sách đang phát: mở ra đọc tóm tắt (18/10/2026)
 
 - Sách đang phát (`UIS.active`) bay ra trước camera như cũ.

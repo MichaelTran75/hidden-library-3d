@@ -52,12 +52,13 @@
 //   47. world/b747.js
 //   48. world/clock.js
 //   49. world/iss.js
-//   50. ui/flight.js
-//   51. ui/deck.js
-//   52. ui/overlay.js
-//   53. ui/picking.js
-//   54. core/loop.js
-//   55. ui/hooks.js
+//   50. world/gardenbook.js
+//   51. ui/flight.js
+//   52. ui/deck.js
+//   53. ui/overlay.js
+//   54. ui/picking.js
+//   55. core/loop.js
+//   56. ui/hooks.js
 // A new part goes in where it belongs in that order: it imports the module before it, and the module after it (or this
 // file, at the end) imports it instead.
 import './ui/hooks.js';

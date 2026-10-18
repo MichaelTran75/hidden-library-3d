@@ -190,8 +190,9 @@ function buildMaterials() {
   MAT.ceil = std({ map: TEX.ceil, roughness: .8 });
   MAT.oak = std({ map: TEX.oak, roughness: .62 });
   MAT.oakDark = std({ map: TEX.oak, color: 0xb98d62, roughness: .7 });
-  MAT.shelfBack = std({ map: TEX.oak, color: 0x5e4430, roughness: .85 });
-  MAT.frame = std({ map: TEX.frame, roughness: .55 });
+  MAT.shelfBack = std({ map: TEX.oak, color: 0x5e4430, roughness: .85 }); MAT.shelfBack.color.multiplyScalar(new THREE.Color().setRGB(0.75, 0.75, 0.75, THREE.SRGBColorSpace).r);
+  MAT.shelfOak = MAT.oak.clone(); MAT.shelfOak.color.setRGB(0.75, 0.75, 0.75, THREE.SRGBColorSpace);   // (the bookshelves' boards and backs 25 % darker, as the frames: G, 18/10/2026; the tables keep MAT.oak)
+  MAT.frame = std({ map: TEX.frame, roughness: .55 }); MAT.frame.color.setRGB(0.75, 0.75, 0.75, THREE.SRGBColorSpace);   // (the glass walls' wooden frames 25 % darker: G, 18/10/2026)
   MAT.glass = new THREE.MeshPhysicalMaterial({ color: 0xf2f7ee, roughness: .04, metalness: 0, transparent: true, opacity: .1, envMapIntensity: 1.2, depthWrite: false, side: THREE.DoubleSide });
   MAT.glass.defines = { RECT_SPEC: '' };   // the panes keep the windows' reflections
   MAT.velvet = new THREE.MeshPhysicalMaterial({ color: 0x3d5638, roughness: .8, sheen: 1, sheenRoughness: .42, sheenColor: new THREE.Color(0x98ad85), side: THREE.DoubleSide });
@@ -464,7 +465,7 @@ function buildShelves() {
       }
     }
   }
-  const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.oak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
+  const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.shelfOak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
 }
 
 const B7_CELL = { i: 0, j: 4, books: 0.4 };
@@ -2228,7 +2229,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const b1 = flatBook(B.book_book002, Math.PI / 2, 1.5), b2 = flatBook(B.book_book005, Math.PI / 2 + 0.07, 1.42), b3 = flatBook(B.book_book006, Math.PI / 2, 1.55);
   for (const b of [b1, b2, b3]) paintLightly(b, 0.1);
   { const p = toW(-0.17, -0.22); restOn(b1, p.x, p.z, 0.22, 0.13, 0.17); }
-  const y2 = b1.position.y + b1.userData.h; b2.position.set(b1.position.x + 0.006, y2, b1.position.z - 0.004); b2.rotation.copy(b1.rotation); b2.rotation.y += 0.06; F.add(b2);
+  const y2 = b1.position.y + b1.userData.h; b2.position.set(b1.position.x + 0.006, y2, b1.position.z - 0.004); b2.rotation.copy(b1.rotation); b2.rotation.y += 0.06; F.add(b2); LIGHTS.gardenBook = b2;   // (its cover the 3D garden's: world/gardenbook.js)
   { const p = toW(-0.33, 0.05); restOn(b3, p.x, p.z, 0.36, 0.14, 0.19); }
   // the weight of a book flattens the velvet under it; the fabric rises softly around its edges
   const pressUnder = (book, hw, hd) => {
@@ -4361,7 +4362,7 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   // the night sky first: it darkens the dome behind it (fx/sky.js), so the rain, the deck, the animals and the rest stand in front of it
   if (OVER.sky && OVER.sky.visible) { renderer.autoClear = false; renderer.render(OVER.skyScene, camera); renderer.autoClear = true; }
-  drawRain(); drawDeck(); drawPlane(); drawIss(); drawClock(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
+  drawRain(); drawDeck(); drawPlane(); drawIss(); drawGardenBook(); drawClock(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
   // the shelves' titles and the fireflies, then the book out of the shelf over them (sharp: it is not in the picture, so the
   // room's depth does not hide the titles behind it)
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
@@ -7441,6 +7442,57 @@ function drawIss() {   // over the picture, with the 747 (in front of the sky be
   SHARP.u.uExp.value = PU.exposure.value; SHARP.u.uLift.value = PU.lift.value; SHARP.u.uVeil.value = PU.veil.value;
   crispPass(ISS.P, ISS.box);
 }
+/* ---------------------------------------------------------------- the 3D garden's book on the pouf
+   The book on top of the pair on the pouf wears a picture of the 3D garden (its camper van under its awning) as its
+   cover; the pointer on it outlines it, a click opens the garden in a new tab (G, 18/10/2026: "em thay bìa sách thành
+   ảnh screenshot, then add white border khi hover over, when click then open new tab https://michaeltran75.github.io/
+   3d-garden/"). Drawn sharp over the painted room, as the 747 is, on a layer of its own (its outline needs one). */
+const GBOOK = { ok: false, layer: 7, url: 'https://michaeltran75.github.io/3d-garden/', hover: false, out: 0, book: null, box: null, hit: null,
+  P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 7, toneK: 1, outline: true, pad: 12 } };
+async function gardenCover() {   // the picture: inline in the one-file page, a file next to it on Pages
+  const el = document.getElementById('garden-cover'); if (!el) return null;
+  const src = el.dataset.src || ('data:image/webp;base64,' + el.textContent.trim());
+  const im = new Image(); im.src = src; await im.decode(); return im;
+}
+async function buildGardenBook() {
+  const bk = LIGHTS.gardenBook; if (!bk) return;
+  const im = await gardenCover(); if (!im) return;
+  bk.updateMatrixWorld(true);
+  // the cover: the book's top face (in the book's own frame: it lies on its back cover), the picture cut to its shape
+  const inv = bk.matrixWorld.clone().invert(), lb = new THREE.Box3();
+  bk.traverse(o => { if (o.isMesh) { o.geometry.computeBoundingBox(); lb.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld.clone().premultiply(inv))); } });
+  const w = (lb.max.x - lb.min.x) * 0.94, d = (lb.max.z - lb.min.z) * 0.94, ar = w / d;   // (inside the boards' edge)
+  const W = 1024, H = Math.round(W / Math.max(ar, 1 / ar)), c = document.createElement('canvas'); c.width = ar >= 1 ? W : H; c.height = ar >= 1 ? H : W;
+  const g = c.getContext('2d'), s = Math.max(c.width / im.width, c.height / im.height); g.drawImage(im, (c.width - im.width * s) / 2, (c.height - im.height * s) / 2, im.width * s, im.height * s);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const cover = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, metalness: 0, fog: false }));
+  cover.rotation.x = -Math.PI / 2; cover.position.set((lb.min.x + lb.max.x) / 2, lb.max.y + 0.0012, (lb.min.z + lb.max.z) / 2);
+  // which way is "up" on the picture: its top toward the book's far edge from the room's eye (the camera looks from +z)
+  bk.add(cover);
+  bk.traverse(o => { if (!o.isMesh) return; o.layers.set(GBOOK.layer); o.material = o.material.clone(); o.material.fog = false; o.material.onBeforeCompile = crispPatch; o.material.needsUpdate = true; });
+  bk.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(bk, true), bc = bb.getCenter(new THREE.Vector3());
+  GBOOK.box = [bc.x, bb.min.y - 0.005, bc.z, (bb.max.x - bb.min.x) / 2 + 0.01, bb.max.y - bb.min.y + 0.01, (bb.max.z - bb.min.z) / 2 + 0.01];
+  GBOOK.hit = bb.clone().expandByScalar(0.004);
+  scene.traverse(o => { if (o.isLight) o.layers.enable(GBOOK.layer); });
+  GBOOK.book = bk; sharpQuad(GBOOK.P);
+  if (renderer.compileAsync) { SHARP.cam.layers.set(GBOOK.layer); renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(bk, SHARP.cam, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
+  GBOOK.ok = true; setNeeds(true);
+}
+const _gp = new THREE.Vector3();
+function gardenHit(ray) { return GBOOK.ok && !!ray.intersectBox(GBOOK.hit, _gp); }
+function stepGardenBook(dt) {   // the outline in and out (0.14 s): true while it moves
+  if (!GBOOK.ok) return false;
+  const was = GBOOK.out, to = GBOOK.hover ? 1 : 0; GBOOK.out += Math.sign(to - GBOOK.out) * Math.min(Math.abs(to - GBOOK.out), dt / 0.14);
+  return GBOOK.out !== was;
+}
+function drawGardenBook() {
+  if (!GBOOK.ok) return;
+  const U = GBOOK.P.quad.material.uniforms, pr = renderer.getPixelRatio(), PU = POST.mat.uniforms;
+  U.uOut.value = GBOOK.out; U.uOutW.value = 2 * pr; U.uHalo.value = 1.6 * pr; U.uFade.value = 1;
+  SHARP.u.uExp.value = PU.exposure.value; SHARP.u.uLift.value = PU.lift.value; SHARP.u.uVeil.value = PU.veil.value;
+  crispPass(GBOOK.P, GBOOK.box);
+}
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
   setShadowsDirty(true);
@@ -8028,6 +8080,7 @@ function pickAt(e) {
   if (PLANE.ok && PLANE.hit && RAY.intersectObject(PLANE.hit, false).length) return { plane: true };   // (the 747 on the Research shelf: b747.js)
   if (clockHit(RAY.ray)) return { clock: true };   // (the medieval clock on the tall shelf: clock.js)
   if (issHit(RAY.ray)) return { iss: true };   // (the ISS over the Geography bay: iss.js)
+  if (gardenHit(RAY.ray)) return { garden: true };   // (the 3D garden's book on the pouf: gardenbook.js)
   const hs = RAY.intersectObjects(UIS.secs.map(s => s.hit), false)[0], hd = DECK.ok ? RAY.intersectObject(DECK.hit, false)[0] : null;
   if (hd && (!hs || hd.distance < hs.distance)) return { deck: true };
   return hs ? { sec: hs.object.userData.sec } : null;
@@ -8054,15 +8107,15 @@ function bindPicking() {
     if (!ready || offMode()) return;
     if (inspectPointer('move', e)) { CANVAS.style.cursor = CLOCK.view.drag && CLOCK.view.drag.moved ? 'grabbing' : 'grab'; return; }   // (the clock out of its shelf: the room is not picked)
     const p = pickAt(e), bk = p && p.book && p.book.sec === UIS.open ? p.book : null;
-    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map), p && p.read ? readHint(p.book, p.read) : null); setHover(!p || p.book || p.deck || p.plane || p.clock || p.iss || UIS.open === p.sec ? null : p.sec);
-    CANVAS.style.cursor = p && (p.book || p.deck || p.plane || p.clock || p.iss || UIS.open !== p.sec) ? 'pointer' : '';
-    const dh = !!(p && p.deck), ph = !!(p && p.plane), ch = !!(p && p.clock), ih = !!(p && p.iss), vi = document.documentElement.lang === 'vi';
-    if (dh !== DECK.hover || ph !== PLANE.hover || ch !== CLOCK.hover || ih !== ISS.hover) {
-      DECK.hover = dh; PLANE.hover = ph; CLOCK.hover = ch; ISS.hover = ih;
-      CANVAS.title = dh ? (vi ? 'Máy hát' : 'Record player') : ph ? 'Boeing 747-8' : ch ? (vi ? 'Đồng hồ trung cổ' : 'Medieval clock') : ih ? (vi ? 'Trạm Vũ trụ Quốc tế (ISS)' : 'International Space Station') : ''; setNeeds(true);
+    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map), p && p.read ? readHint(p.book, p.read) : null); setHover(!p || p.book || p.deck || p.plane || p.clock || p.iss || p.garden || UIS.open === p.sec ? null : p.sec);
+    CANVAS.style.cursor = p && (p.book || p.deck || p.plane || p.clock || p.iss || p.garden || UIS.open !== p.sec) ? 'pointer' : '';
+    const dh = !!(p && p.deck), ph = !!(p && p.plane), ch = !!(p && p.clock), ih = !!(p && p.iss), gh = !!(p && p.garden), vi = document.documentElement.lang === 'vi';
+    if (dh !== DECK.hover || ph !== PLANE.hover || ch !== CLOCK.hover || ih !== ISS.hover || gh !== GBOOK.hover) {
+      DECK.hover = dh; PLANE.hover = ph; CLOCK.hover = ch; ISS.hover = ih; GBOOK.hover = gh;
+      CANVAS.title = dh ? (vi ? 'Máy hát' : 'Record player') : ph ? 'Boeing 747-8' : ch ? (vi ? 'Đồng hồ trung cổ' : 'Medieval clock') : ih ? (vi ? 'Trạm Vũ trụ Quốc tế (ISS)' : 'International Space Station') : gh ? (vi ? 'Khu vườn 3D' : '3D Garden') : ''; setNeeds(true);
     }
   });
-  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover || PLANE.hover || CLOCK.hover || ISS.hover) { DECK.hover = PLANE.hover = CLOCK.hover = ISS.hover = false; CANVAS.title = ''; setNeeds(true); } });
+  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover || PLANE.hover || CLOCK.hover || ISS.hover || GBOOK.hover) { DECK.hover = PLANE.hover = CLOCK.hover = ISS.hover = GBOOK.hover = false; CANVAS.title = ''; setNeeds(true); } });
   CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; showTip(null); inspectPointer('down', e); });
   CANVAS.addEventListener('pointerup', e => {
     if (inspectPointer('up', e)) { down = null; return; }   // (the clock out: its own clicks and drags)
@@ -8078,7 +8131,8 @@ function bindPicking() {
     else if (p && p.book) activateItem(p.book.it);
     else if (p && p.deck) togglePlayer();   // the record player on the floor: the page's player comes out (or goes away)
     else if (p && p.plane) window.open(PLANE.url, '_blank', 'noopener');   // the 747: its page, in a new tab
-    else if (p && p.iss) window.open(ISS.url, '_blank', 'noopener');   // the ISS: the station's own page, in a new tab
+    else if (p && p.iss) window.open(ISS.url, '_blank', 'noopener');
+    else if (p && p.garden) window.open(GBOOK.url, '_blank', 'noopener');   // the garden's book: the 3D garden, in a new tab   // the ISS: the station's own page, in a new tab
     else if (p && p.clock) { CLOCK.hover = false; CANVAS.title = ''; openClock(); }   // the clock: out of its shelf, three times as large, apart
     else if (p && p.sec) openSection(p.sec);
     else if (UIS.mode !== 'home') closeCard();
@@ -8159,7 +8213,7 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepIss(dt);      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepIss(dt) | stepGardenBook(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
@@ -8228,7 +8282,8 @@ async function start() {
   loadPets().catch(e => console.warn('pets unavailable', e));
   buildPlane().catch(e => console.warn('747 unavailable', e));
   buildClock().catch(e => console.warn('clock unavailable', e));
-  buildIss().catch(e => console.warn('ISS unavailable', e));   // (the ISS over the Geography bay)   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
+  buildIss().catch(e => console.warn('ISS unavailable', e));
+  buildGardenBook().catch(e => console.warn('garden book unavailable', e));   // (the 3D garden's book on the pouf)   // (the ISS over the Geography bay)   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
   buildNightSky(); buildFireflies();
   if (LIGHTS.pendant) { const P = LIGHTS.pendant; P.updateMatrixWorld(true); buildBulbGlow(P.localToWorld(P.userData.glow.position.clone())); }   // (the bulb over the sofa, glowing: fx/glow.js)
@@ -8276,7 +8331,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, PLANE, CLOCK, ISS, BULB, readCheck: () => readCheck(UIS.secs.flatMap(s => s.books), bk => (heroMesh(bk), heroRead(bk))), RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
+window.__lib3d = { PETS, PLANE, CLOCK, ISS, BULB, GBOOK, readCheck: () => readCheck(UIS.secs.flatMap(s => s.books), bk => (heroMesh(bk), heroRead(bk))), RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
   atlas: (which, lang, w = 1024, h = 1371) => { const c = canvas(w, h), t0 = performance.now(); drawAtlas(c, which, lang); return { url: c.toDataURL('image/png'), ms: performance.now() - t0 }; } };   // (tests: the Geography books' page on its own)
 // The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
 // the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page

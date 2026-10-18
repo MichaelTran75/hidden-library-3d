@@ -145,7 +145,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const b1 = flatBook(B.book_book002, Math.PI / 2, 1.5), b2 = flatBook(B.book_book005, Math.PI / 2 + 0.07, 1.42), b3 = flatBook(B.book_book006, Math.PI / 2, 1.55);
   for (const b of [b1, b2, b3]) paintLightly(b, 0.1);
   { const p = toW(-0.17, -0.22); restOn(b1, p.x, p.z, 0.22, 0.13, 0.17); }
-  const y2 = b1.position.y + b1.userData.h; b2.position.set(b1.position.x + 0.006, y2, b1.position.z - 0.004); b2.rotation.copy(b1.rotation); b2.rotation.y += 0.06; F.add(b2);
+  const y2 = b1.position.y + b1.userData.h; b2.position.set(b1.position.x + 0.006, y2, b1.position.z - 0.004); b2.rotation.copy(b1.rotation); b2.rotation.y += 0.06; F.add(b2); LIGHTS.gardenBook = b2;   // (its cover the 3D garden's: world/gardenbook.js)
   { const p = toW(-0.33, 0.05); restOn(b3, p.x, p.z, 0.36, 0.14, 0.19); }
   // the weight of a book flattens the velvet under it; the fabric rises softly around its edges
   const pressUnder = (book, hw, hd) => {

@@ -23,6 +23,7 @@ import { PETS, loadPets } from '../world/pets.js';
 import { buildPlane, stepPlane } from '../world/b747.js';
 import { CLOCK, buildClock, stepClock } from '../world/clock.js';
 import { buildIss, stepIss } from '../world/iss.js';
+import { buildGardenBook, stepGardenBook } from '../world/gardenbook.js';
 import { RAIN, readWeather } from '../fx/rain.js';
 
 /* ---------------------------------------------------------------- render loop */
@@ -63,7 +64,7 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepIss(dt);      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepIss(dt) | stepGardenBook(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
@@ -132,7 +133,8 @@ async function start() {
   loadPets().catch(e => console.warn('pets unavailable', e));
   buildPlane().catch(e => console.warn('747 unavailable', e));
   buildClock().catch(e => console.warn('clock unavailable', e));
-  buildIss().catch(e => console.warn('ISS unavailable', e));   // (the ISS over the Geography bay)   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
+  buildIss().catch(e => console.warn('ISS unavailable', e));
+  buildGardenBook().catch(e => console.warn('garden book unavailable', e));   // (the 3D garden's book on the pouf)   // (the ISS over the Geography bay)   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
   buildNightSky(); buildFireflies();
   if (LIGHTS.pendant) { const P = LIGHTS.pendant; P.updateMatrixWorld(true); buildBulbGlow(P.localToWorld(P.userData.glow.position.clone())); }   // (the bulb over the sofa, glowing: fx/glow.js)

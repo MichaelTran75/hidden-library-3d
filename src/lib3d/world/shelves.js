@@ -55,7 +55,7 @@ function buildShelves() {
       }
     }
   }
-  const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.oak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
+  const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.shelfOak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
 }
 
 const B7_CELL = { i: 0, j: 4, books: 0.4 };

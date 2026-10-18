@@ -92,7 +92,8 @@ glb = base64.b64encode(open(os.path.join(HERE, 'lib.glb'), 'rb').read()).decode(
 cat_bin = base64.b64encode(open(os.path.join(HERE, 'cat.bin'), 'rb').read()).decode()   # the cat (tools/pets: rig_cat.py, pack.mjs)
 hen = base64.b64encode(open(os.path.join(HERE, 'hen.glb'), 'rb').read()).decode()   # the chicken (tools/pets/pack.mjs)
 clock = base64.b64encode(open(os.path.join(HERE, 'clock.glb'), 'rb').read()).decode()   # the medieval clock, its moving parts apart (tools/clock)
-iss = base64.b64encode(open(os.path.join(HERE, 'iss.glb'), 'rb').read()).decode()   # the ISS over the Geography bay, one mesh and an atlas (tools/iss)
+iss = base64.b64encode(open(os.path.join(HERE, 'iss.glb'), 'rb').read()).decode()
+gcover = base64.b64encode(open(os.path.join(HERE, 'garden-cover.webp'), 'rb').read()).decode()   # the 3D garden's book's cover (G's screenshot of the garden)   # the ISS over the Geography bay, one mesh and an atlas (tools/iss)
 import json   # the books' covers (tools/covers/make.py): the images themselves in the one-file page, files next to it on Pages
 COVER_DIR = os.path.join(HERE, 'covers'); cover_files = sorted(f for f in os.listdir(COVER_DIR) if f.endswith('.webp')) if os.path.isdir(COVER_DIR) else []
 covers_inline = json.dumps({f[:-5]: 'data:image/webp;base64,' + base64.b64encode(open(os.path.join(COVER_DIR, f), 'rb').read()).decode() for f in cover_files}, separators=(',', ':'))
@@ -136,6 +137,15 @@ STYLE = IMPORTMAP + """<script>
   .np .np-play:hover { background: var(--accent-hover); }
   /* the sky clock's moon as it is seen where the visitor is: turned over south of the equator (src/sun: html.hl-south) */
   html.hl-south .sky .moon img { transform: rotate(180deg); }
+  /* by day the sky clock in the sun's yellow, its words edged in black (G, 18/10/2026: "đưa về màu vàng với black
+     border"; the lines yellow too, but plain) */
+  .sky:not(.is-night) { --sky-y: #ffd21f; --sky-edge: 0 0 1px #000, 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000, 0 0 3px rgba(0, 0, 0, .55); color: var(--sky-y); }
+  .sky:not(.is-night) .orb-time, .sky:not(.is-night) .mk, .sky:not(.is-night) .sky-labels, .sky:not(.is-night) .sky-label, .sky:not(.is-night) .wx { color: var(--sky-y); text-shadow: var(--sky-edge); opacity: 1; }
+  .sky:not(.is-night) .wx svg { filter: drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000); }
+  .sky:not(.is-night) .sky-arc path { stroke: var(--sky-y); opacity: 1; }   /* (the lines yellow, without the edge: only the words have it) */
+  .sky:not(.is-night) .ruler { background: var(--sky-y); }
+  .sky:not(.is-night) .drop { background: repeating-linear-gradient(to bottom, var(--sky-y) 0 3px, transparent 3px 6px); }
+  .sky:not(.is-night) .tick { background: var(--sky-y); box-shadow: 0 0 5px var(--sky-y); }
   /* ---- 3D library: the room is the interface on wide screens (the old cards stay in the DOM, hidden) */
   #lib3d { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; opacity: 0; transition: opacity 1.6s var(--ease); touch-action: none; }
   body.lib3d-on #lib3d { opacity: 1; }
@@ -353,6 +363,7 @@ SCRIPTS = (CREDITS + '<script id="sky-weather-js">\n' + WX_JS + '</script>\n'
   + f'<script id="hen-glb" type="application/octet-stream">{hen}</script>\n'
   + f'<script id="clock-glb" type="application/octet-stream">{clock}</script>\n'
   + f'<script id="iss-glb" type="application/octet-stream">{iss}</script>\n'
+  + f'<script id="garden-cover" type="application/octet-stream">{gcover}</script>\n'
   + f'<script id="book-covers" type="application/json">{covers_inline}</script>\n'
   + f'<script id="book-summaries" type="application/json">{sums_json}</script>\n'
   + '<script type="module">\n' + module + '</script>\n')
@@ -466,6 +477,7 @@ if pages_dir:   # the same page with the models as a separate file
     hen_inline = f'<script id="hen-glb" type="application/octet-stream">{hen}</script>'
     clock_inline = f'<script id="clock-glb" type="application/octet-stream">{clock}</script>'
     iss_inline = f'<script id="iss-glb" type="application/octet-stream">{iss}</script>'
+    gc_inline = f'<script id="garden-cover" type="application/octet-stream">{gcover}</script>'
     assert page.count(cat_inline) == 1 and page.count(hen_inline) == 1
     covers_el = f'<script id="book-covers" type="application/json">{covers_inline}</script>'
     sums_el = f'<script id="book-summaries" type="application/json">{sums_json}</script>'
@@ -475,6 +487,7 @@ if pages_dir:   # the same page with the models as a separate file
                .replace(hen_inline, '<script id="hen-glb" type="application/octet-stream" data-src="hen.glb"></script>', 1)
                .replace(clock_inline, '<script id="clock-glb" type="application/octet-stream" data-src="clock.glb"></script>', 1)
                .replace(iss_inline, '<script id="iss-glb" type="application/octet-stream" data-src="iss.glb"></script>', 1)
+               .replace(gc_inline, '<script id="garden-cover" type="application/octet-stream" data-src="garden-cover.webp"></script>', 1)
                .replace(covers_el, f'<script id="book-covers" type="application/json">{covers_files}</script>', 1)
                .replace(sums_el, '<script id="book-summaries" type="application/json" data-src="summaries.json"></script>', 1)
                .replace('/*GLB_PRELOAD*/', preload, 1).replace(mod_inline, loader, 1))
@@ -486,7 +499,7 @@ if pages_dir:   # the same page with the models as a separate file
         open(os.path.join(pages_dir, 'dev.html'), 'w', encoding='utf-8').write(out.replace("'" + mod_name + "'", "'lib3d/main.js'"))
         print('dev  :', os.path.join(pages_dir, 'dev.html'), '(the modules unjoined)')
     shutil.copyfile(os.path.join(HERE, 'lib.glb'), os.path.join(pages_dir, 'lib.glb'))
-    for f in ('cat.bin', 'hen.glb', 'clock.glb', 'iss.glb'): shutil.copyfile(os.path.join(HERE, f), os.path.join(pages_dir, f))
+    for f in ('cat.bin', 'hen.glb', 'clock.glb', 'iss.glb', 'garden-cover.webp'): shutil.copyfile(os.path.join(HERE, f), os.path.join(pages_dir, f))
     open(os.path.join(pages_dir, 'summaries.json'), 'w', encoding='utf-8').write(sums_json.replace('<\\/', '</'))
     os.makedirs(os.path.join(pages_dir, 'covers'), exist_ok=True)
     for f in cover_files: shutil.copyfile(os.path.join(COVER_DIR, f), os.path.join(pages_dir, 'covers', f))

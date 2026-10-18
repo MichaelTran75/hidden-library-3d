@@ -26,6 +26,7 @@ import { PLANE } from '../world/b747.js';
 import { CLOCK } from '../world/clock.js';
 import { ISS } from '../world/iss.js';
 import { BULB } from '../fx/glow.js';
+import { GBOOK } from '../world/gardenbook.js';
 import { readCheck } from './leaves.js';
 import { heroMesh, heroRead } from './hero-books.js';
 
@@ -39,7 +40,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, PLANE, CLOCK, ISS, BULB, readCheck: () => readCheck(UIS.secs.flatMap(s => s.books), bk => (heroMesh(bk), heroRead(bk))), RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
+window.__lib3d = { PETS, PLANE, CLOCK, ISS, BULB, GBOOK, readCheck: () => readCheck(UIS.secs.flatMap(s => s.books), bk => (heroMesh(bk), heroRead(bk))), RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
   atlas: (which, lang, w = 1024, h = 1371) => { const c = canvas(w, h), t0 = performance.now(); drawAtlas(c, which, lang); return { url: c.toDataURL('image/png'), ms: performance.now() - t0 }; } };   // (tests: the Geography books' page on its own)
 // The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
 // the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page
