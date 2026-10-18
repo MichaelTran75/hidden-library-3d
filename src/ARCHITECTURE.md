@@ -194,6 +194,80 @@ lib3d/main.js          ghi thứ tự dựng; import mô-đun cuối
 - Nội dung và cách dựng lại: `tools/summaries/README.md`.
 - Kiểm tra bố cục: `__lib3d.readCheck()`.
 
+### Kệ sách và sách thật hơn khi xem gần (18/10/2026)
+
+Dựa theo cấu tạo sách bìa cứng (bìa 2–3 mm, bìa thừa ra quanh khối trang ~3 mm, khối trang lùi vào, gáy tròn, vải bọc có thớ, chữ mạ vàng/mực/nhãn giấy, gờ da nổi trên gáy) và kệ gỗ thật (cạnh ván bo tròn bắt sáng, lòng ô tối dần vào trong).
+
+- Sách trên kệ (`books.js`):
+  - `bookGeometry()`: hai bìa cứng, khối trang lùi vào ở đầu, chân và mép trước, gáy cong. Đơn vị tính theo hộp đơn vị mà instance co giãn.
+  - Atlas 2048×1024, 32 ô 64 px:
+    - ô 0–27: 28 gáy, 7 kiểu (mạ vàng trên vải, nhãn giấy, gờ da nổi, áo sách hiện đại, đầu/chân sẫm, mực trên vải, bìa mềm). Chữ chạy từ trên xuống như gáy sách Anh;
+    - ô 28: vải trơn;
+    - ô 29–30: khối trang;
+    - ô 31: gáy sách thật, chỉ có vạch ép, không chữ.
+  - Atlas cũng làm `bumpMap` (0,7).
+  - Shader làm tối ở chân sách và sâu trong kệ (`vBk`), đầu sách hơi phai.
+  - Sách thật của các mục dùng ô 31 (`titledSpine`, gọi từ `sections.js`), để tên thật (`words.js`) không chồng lên chữ giả.
+  - Atlas vẽ trong Worker trên OffscreenCanvas (`spineAtlas`); không có Worker thì vẽ ở luồng chính (`spinesHere`, ~75 ms).
+    - Trong lúc chờ, sách mặc vải trơn (`plainCloth`).
+    - `main` (`core/build.js`) gắn atlas (`setSpineAtlas`) trước khung hình đầu.
+    - `drawSpines` không được dùng gì của mô-đun ngoài `rng`, vì Worker chạy từ mã nguồn của nó.
+- Kệ (`shelves.js`):
+  - Mọi ván bo cạnh 4 mm (`boardGeo(..., round)` dùng `RoundedBoxGeometry`; uv theo mặt để vân gỗ không vỡ ở cạnh bo).
+  - Màu đỉnh tối dần về phía sau ô (`CAVE` 0,5); mặt dưới ván ×0,8.
+  - `MAT.shelfOak` có bumpMap gỗ (1,2), roughness 0,58.
+- Màu nước bớt đi ở các góc nhìn gần (`fx/post.js`):
+  - `paintLightly(obj, k, kClose)` cùng uniform `POST.light.close`, chuyển 0 → 1 trong 1,2 s (`flight.js stepBooks`).
+  - Sách 0,2 → 0,95 (lúc đầu 0,8; G 18/10 bớt thêm 75 % phần còn lại), ván kệ 0,1 → 0,85.
+  - G 18/10, "kệ sách và toàn bộ sách 10% less water color", bớt thêm 10 điểm ở góc nhìn phòng:
+    - sách 0,1 → 0,2: sách trên kệ, trên bàn, trên pouf, cùng sách trong đồ trang trí, vốn tách thành mesh riêng `fin: 'book'` (`decor/kit.js`, `decor/build.js`, kể cả chồng sách `bookPile`);
+    - ván kệ 0 → 0,1 (gần: 0,75 → 0,85);
+    - lưng kệ (`shelves.js`, `room.js`) 0 → 0,1.
+- Kiểm tra: `node tools/shelves/closeups.cjs cv 13:00` chụp Research, Books và một mục mỗi bên.
+
+### Màu trắng thành #E2D6C0, bóng đèn 50 % màu nước (18/10/2026)
+
+- G: "em thay tất cả màu trắng thành #E2D6C0". #E2D6C0 là màu giấy của trang (đã dùng cho `--halo`, `--card-open`, màu nhấn ban đêm).
+- Đã đổi:
+  - CSS trang (`hidden-library.base.html`): mọi `#fff`/`rgba(255, 255, 255, a)`, và chữ ban đêm `--ink`.
+  - CSS phòng (`build.py`):
+    - `--on-accent`;
+    - nền nhãn, thẻ, gợi ý, tên bộ phận đồng hồ (trước là `rgba(246, 240, 228, a)`);
+    - viền chọn SVG, chấm đường nối;
+    - chữ ban đêm `#f3ead9`/`#f1e9d8`, đường mảnh ban đêm `rgba(255, 240, 215, a)`.
+  - Rê chuột trên dòng/chip của thẻ (nền sáng) giờ tối đi `rgba(60, 45, 25, .07–.09)`. Nếu dùng beige thì trùng màu nền thẻ, không thấy.
+  - 3D:
+    - sách trắng của `PAL.modern`;
+    - nhãn giấy, áo sách, chữ sáng trên atlas gáy;
+    - mực sáng `INK_LIGHT` và dải dưới tên sách (`hero-books.js`, `words.js`);
+    - viền chọn quanh vật (vòng trong shader `pets.js`, `deck.js`): `vec3(0.886, 0.839, 0.753)`.
+- Giữ nguyên:
+  - mặt trời, trăng, mây trên đồng hồ trời;
+  - các quầng sáng (chữ RESEARCH/BOOKS, bóng đèn);
+  - màu thật của vật (747, ISS, máy hát);
+  - giấy trang sách.
+- Bóng đèn treo: `paintLightly(pd, 0.5)`, tức 50 % màu nước (trước đó 0,875, còn 12,5 %).
+
+### Sofa: bớt 30 % màu nước, vải nhung có dấu dùng (18/10/2026)
+
+- G: "make the sofa less water color 30%; do research and improve the texture, detailing".
+- Màu nước: `paintLightly(sofa, 0.3)`, cả gối tựa (nằm trong `F`, ngoài nhóm sofa) và gối ống.
+- Căn cứ:
+  - Hướng dẫn chăm sóc nhung của các hãng: tuyết đổ một chiều nên sáng/tối khác nhau; chỗ ngồi và tay vịn bị đè tuyết trước; ghế ghép module lệch sắc độ ở đường nối.
+  - Ghi chú CGI nội thất của Maverick Frame: đệm sạch phẳng lì thì giả; đệm thật có lõm nông và nếp mềm ở mép trước; viền ống phải nổi, có rãnh bóng.
+  - Thợ bọc nệm: vải dồn thành nếp ở góc đệm.
+- `velvet.js`:
+  - `nap`/`wear` bật define `VELVET_NAP`/`VELVET_WEAR`.
+  - Hình học mang `aCB`/`aCY` (`setNap`): hộp của từng phần (không gian vật) và độ "nằm" của tuyết.
+- `wearH` (chỉ đệm ngồi):
+  - lõm ngồi sâu 1,1 cm, hơi lệch về trước, tuyết bị đè (`vWorn` → `vCrush`, màu +5 %);
+  - nếp cuộn dưới viền trước;
+  - nếp chùng ngang nhẹ;
+  - nếp xoè ở hai góc trên, mặt trước và mặt hông, tắt trong ~11 cm.
+- Bỏ nếp xếp dọc (`pleat` 0) trên đệm ngồi, vì nhìn như sọc vải nhung kẻ hoặc vết sơn chảy. Viền ống `seam` 1,4.
+- `NAP` trong `furnish.js`: mỗi module 0,9–1,07, nhân vào sheen và 30 % vào màu.
+- Ảnh kiểm tra: `sofa.cjs` (thư mục test, chụp sofa trên cửa sổ 2880×1800).
+
 ### Mô hình ISS trên nóc kệ Geography (`lib3d/world/iss.js`, 17/10/2026)
 
 - Mẫu "ISS" của uperesito (CC BY 4.0) đứng trên giá kiểu 747, trên nóc kệ thấp phía sau, ngay trên ô Geography, trước cửa kính (khung kính bên phải, chỗ G khoanh).

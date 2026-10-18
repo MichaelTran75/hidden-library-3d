@@ -1,5 +1,6 @@
 import './base.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 /* ---------------------------------------------------------------- utils */
 function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -21,10 +22,11 @@ function ctex(c, { srgb = true, rep = true } = {}) { const t = new THREE.CanvasT
 const hsl = (h, s, l) => new THREE.Color().setHSL(h / 360, s, l);
 
 /* Box with world-scaled UVs: v runs along the longest in-plane side, 1 UV = `tile` metres */
-function boardGeo(w, h, d, tile = 1) {
-  const g = new THREE.BoxGeometry(w, h, d); const p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
+function boardGeo(w, h, d, tile = 1, round = 0) {   // (round: its edges rounded off by that radius, so they catch the light)
+  const g = round ? new RoundedBoxGeometry(w, h, d, 1, round) : new THREE.BoxGeometry(w, h, d); const p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
   for (let i = 0; i < p.count; i++) {
-    const ax = Math.abs(n.getX(i)) > 0.5 ? 0 : Math.abs(n.getY(i)) > 0.5 ? 1 : 2;
+    // (a rounded box's faces come in the order +x -x +y -y +z -z: its rounded edges keep their face's grain)
+    const ax = round ? Math.floor(i / (p.count / 6) / 2) : Math.abs(n.getX(i)) > 0.5 ? 0 : Math.abs(n.getY(i)) > 0.5 ? 1 : 2;
     const c = [p.getX(i), p.getY(i), p.getZ(i)], sz = [w, h, d];
     const axes = [0, 1, 2].filter(k => k !== ax).sort((a, b) => sz[a] - sz[b]);
     uv.setXY(i, (c[axes[0]] + 7.31 * ax) / tile, (c[axes[1]] + 3.7 * ax) / tile);

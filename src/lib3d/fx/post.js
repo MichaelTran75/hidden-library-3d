@@ -6,7 +6,7 @@ import { R } from '../core/base.js';
 
 /* ---------------------------------------------------------------- post: watercolour */
 // (light: the parts of the room painted lightly, drawLight below)
-const POST = { light: { scene: new THREE.Scene(), parts: [], mats: new Map(), k: { value: 1 } } };   // (k: all of each part's own share)
+const POST = { light: { scene: new THREE.Scene(), parts: [], mats: new Map(), k: { value: 1 }, close: { value: 0 } } };   // (k: all of each part's own share; close: 0 in the room's view, 1 in a close view of the shelves)
 /* The watercolour picture is made in three passes:
    1. tone: the scene's colours through the tone curve, once per pixel (the paint pass reads each one ~50 times);
    2. paper: the noise fields that only depend on the screen position (wobble, pigment, fibres, blotches, paper grain),
@@ -126,10 +126,12 @@ function buildPost() {
    - The tone pass hands 1 − alpha on, and the paint pass lets that share of the paint go, the part as drawn under the
      paper's lift and warmth.
    - The parts stay in the room: lit, shadowed, in its depth. An instanced mesh's stand-in shares its instances. */
-function paintLightly(obj, k = 0.75) {
-  const L = POST.light; let mat = L.mats.get(k);
-  if (!mat) L.mats.set(k, mat = new THREE.ShaderMaterial({ vertexShader: 'void main(){ vec4 p = vec4(position, 1.0);\n#ifdef USE_INSTANCING\n  p = instanceMatrix * p;\n#endif\n  gl_Position = projectionMatrix * modelViewMatrix * p; }',
-    fragmentShader: `void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, ${(1 - k).toFixed(3)}); }`, side: THREE.DoubleSide, depthTest: true, depthWrite: false,
+// kClose: its share in a close view of the shelves instead (G, 18/10/2026: "render close up Research và Books làm cho kệ sách
+// và sách realistic"): the shelves and their books, seen near, painted far more lightly, so their wood and cloth show
+function paintLightly(obj, k = 0.75, kClose = null) {
+  const L = POST.light, key = kClose === null ? k : `${k}|${kClose}`; let mat = L.mats.get(key);
+  if (!mat) L.mats.set(key, mat = new THREE.ShaderMaterial({ uniforms: { uClose: L.close }, vertexShader: 'void main(){ vec4 p = vec4(position, 1.0);\n#ifdef USE_INSTANCING\n  p = instanceMatrix * p;\n#endif\n  gl_Position = projectionMatrix * modelViewMatrix * p; }',
+    fragmentShader: kClose === null ? `void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, ${(1 - k).toFixed(3)}); }` : `uniform float uClose; void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0 - mix(${k.toFixed(3)}, ${kClose.toFixed(3)}, uClose)); }`, side: THREE.DoubleSide, depthTest: true, depthWrite: false,
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,   // (its own surface, drawn twice, always passes the depth test)
     blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor }));
   if (!L.reset) L.reset = new FullScreenQuad(new THREE.ShaderMaterial({ vertexShader: QUAD_VS, fragmentShader: 'void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }',

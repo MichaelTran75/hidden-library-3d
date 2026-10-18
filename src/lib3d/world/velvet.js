@@ -49,16 +49,17 @@ const DENT_FOLDS = DENT_U + `
     float a = atan(uv.y, uv.x), ph = a * 11.0 + 1.3 * sin(a * 3.0 + 1.7) + 2.0 * q, aa = 1.0 - smoothstep(0.6, 1.5, fwidth(ph));
     return -h * ring * aa * min(1.2, uDentB.z / 0.03) * 0.0022 * pow(0.5 + 0.5 * cos(ph), 2.0);
   }`;
-function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, normalMap = null, normalScale = null, ao = false, pleat = 0, crease = 0.4, allFaces = 0, crush = 1, seam = 0, freq = 1, spec = 0.1, sheenAmt = 0.8, dent = false }) {
+function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, normalMap = null, normalScale = null, ao = false, pleat = 0, crease = 0.4, allFaces = 0, crush = 1, seam = 0, freq = 1, spec = 0.1, sheenAmt = 0.8, dent = false, nap = false, wear = false }) {
   const m = new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, sheen: sheenAmt, sheenColor: new THREE.Color(sheen), sheenRoughness: sheenRough, specularIntensity: spec, side: THREE.DoubleSide, vertexColors: ao });
+  if (nap || wear) m.defines = Object.assign(m.defines || {}, nap || wear ? { VELVET_NAP: '' } : {}, wear ? { VELVET_WEAR: '' } : {});   // (its geometry carries aCB, aCY: setNap)
   if (map) m.map = map; if (normalMap) { m.normalMap = normalMap; if (normalScale) m.normalScale.copy(normalScale); }
   const U = { uPleat: { value: pleat }, uCrease: { value: crease }, uAll: { value: allFaces }, uCrush: { value: crush }, uSeam: { value: seam }, uFreq: { value: freq } };
   m.userData.velvet = U;
   if (dent) m.customProgramCacheKey = () => 'velvet-dent';
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObjP;\nvarying vec3 vObjN;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjP = position;\nvObjN = objectNormal;');
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObjP;\nvarying vec3 vObjN;\n#ifdef VELVET_NAP\nattribute vec4 aCB; attribute vec3 aCY; varying vec4 vCB; varying vec3 vCY;\n#endif')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjP = position;\nvObjN = objectNormal;\n#ifdef VELVET_NAP\nvCB = aCB; vCY = aCY;\n#endif');
     if (dent) {
       Object.assign(sh.uniforms, SOFT.u);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>' + DENT_GLSL)
@@ -98,19 +99,54 @@ function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, 
         float sn = (abs(n.y) - 0.74) / 0.05, cord = exp(-sn * sn) - 0.55 * exp(-pow((abs(n.y) - 0.62) / 0.05, 2.0));
         return uPleat * side * pleat * 0.012 + uCrease * top * (crease * 0.003 + lump * 0.005) + uSeam * cord * 0.0025;
       }
+      #ifdef VELVET_NAP
+        varying vec4 vCB; varying vec3 vCY;   // its part's box (object space): centre x, z, half x, z; foot y, top y; the nap's lie
+      #endif
+      float vWorn;
+      #ifdef VELVET_WEAR
+      // a seat cushion as it is after use (Maverick Frame's furniture CGI notes; velvet makers' care guides): a shallow dish
+      // where one sits, a little forward of the middle, its pile crushed (so its sheen changes); under the front welt a
+      // soft roll where the front gives; and at the top corners, where the cover turns round them, a fan of small folds
+      float wearH(vec3 p, vec3 n) {
+        vec2 hs = max(vCB.zw, vec2(1e-3)), l = (p.xz - vCB.xy) / hs;   // -1..1 across it (y: toward its front)
+        float H = max(vCY.y - vCY.x, 1e-3), ly = (p.y - vCY.x) / H, h = 0.0;
+        float top = smoothstep(0.55, 0.85, n.y), front = smoothstep(0.55, 0.85, n.z), side = smoothstep(0.55, 0.85, abs(n.x));
+        vec2 q = (l - vec2(0.0, 0.12)) / vec2(0.66, 0.6); float q2 = dot(q, q), k = max(0.0, 1.0 - q2);
+        float wob = vn3(p * 7.0) - 0.5;
+        h -= top * k * k * 0.011 * (1.0 + 0.3 * wob);
+        vWorn = top * smoothstep(1.0, 0.25, sqrt(q2)) * (0.75 + 0.5 * vn3(p * 11.0 + 4.0));
+        float ax = 1.0 - smoothstep(0.55, 0.92, abs(l.x));
+        h += front * ax * (exp(-pow((ly - 0.84) / 0.035, 2.0)) - 0.6 * exp(-pow((ly - 0.75) / 0.03, 2.0))) * 0.0045 * (0.7 + 0.6 * vn3(p * 9.0));
+        h += (front + side) * 0.0015 * (vfbm(p * vec3(3.0, 26.0, 3.0)) - 0.5) * smoothstep(0.1, 0.35, ly);   // (and a little slack: soft folds across it, uneven)
+        // the fans: from each top corner of the front, on the front and on the sides, gone within ~11 cm
+        vec2 cf = vec2(hs.x - abs(p.x - vCB.x), vCY.y - p.y), cs = vec2(hs.y - (p.z - vCB.y), vCY.y - p.y);
+        float rf = length(cf), rs = length(cs), wf = 2.0 * vn3(p * 13.0);
+        float fanF = cos(atan(cf.y, max(cf.x, 1e-4)) * 10.0 + wf) * exp(-rf * rf / 0.011) * smoothstep(0.004, 0.03, rf);
+        float fanS = cos(atan(cs.y, max(cs.x, 1e-4)) * 10.0 + wf) * exp(-rs * rs / 0.011) * smoothstep(0.004, 0.03, rs);
+        return h + (front * fanF + side * fanS) * 0.003;
+      }
+      #endif
       float vCav, vHt;
       float vCrush;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         vCrush = smoothstep(0.28, 0.72, vfbm(vObjP * uFreq * 5.0 + 11.0));
         {
+          vWorn = 0.0;
           float hF = fabricH(vObjP, normalize(vObjN) * (gl_FrontFacing ? 1.0 : -1.0));
+          #ifdef VELVET_WEAR
+            hF += wearH(vObjP, normalize(vObjN) * (gl_FrontFacing ? 1.0 : -1.0));
+            vCrush = mix(vCrush, 0.82 + 0.18 * vfbm(vObjP * 16.0), 0.8 * vWorn);   // (the pile pressed flat where one sits)
+          #endif
           // crushed pile: a gentle undulation whose slope tilts the fibres in patches
           float hC = (vfbm(vObjP * uFreq * 3.0 + 1.3) - 0.5) * 0.012 * uCrush * (0.4 + vCrush);
           vHt = (hF + hC) * length(modelMatrix[0].xyz);           // metres in world space
           vCav = clamp(1.0 + hF * 30.0, 0.55, 1.0);                // fold valleys hold shadow
           ${dent ? 'vHt += dentFolds(vDentW); vCav *= 1.0 - 0.16 * smoothstep(0.0, 0.035, vDentD);   // (the cover drawn in round the cat; the hollow\'s floor a little in shadow)' : ''}
         }
-        diffuseColor.rgb *= mix(0.9, 1.07, vCrush * uCrush + (1.0 - uCrush) * 0.5) * vCav;`)
+        diffuseColor.rgb *= mix(0.9, 1.07, vCrush * uCrush + (1.0 - uCrush) * 0.5) * vCav * (1.0 + 0.05 * vWorn);
+        #ifdef VELVET_NAP
+          diffuseColor.rgb *= mix(1.0, vCY.z, 0.3);   // (each module's pile lies its own way: a shade lighter or darker)
+        #endif`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           // surface-gradient bump from screen-space derivatives (Mikkelsen 2010) with unnormalised sigmas,
@@ -126,12 +162,22 @@ function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, 
       .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
         #ifdef USE_SHEEN
           material.sheenColor *= mix(0.55, 1.3, vCrush * uCrush + (1.0 - uCrush) * 0.5) * vCav * vCav;
+          #ifdef VELVET_NAP
+            material.sheenColor *= vCY.z;
+          #endif
           #ifdef USE_COLOR
             material.sheenColor *= vColor.r;
           #endif
         #endif`);
   };
   return m;
+}
+/* a sofa part's box (object space) and the lie of its pile, on every vertex: the velvet's nap (and a seat's wear) read
+   them (aCB: centre x, z, half x, z; aCY: foot y, top y, nap ~0.9-1.1) */
+function setNap(g, nap) {
+  g.computeBoundingBox(); const b = g.boundingBox, n = g.attributes.position.count, cb = new Float32Array(n * 4), cy = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { cb.set([(b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2, (b.max.x - b.min.x) / 2, (b.max.z - b.min.z) / 2], i * 4); cy.set([b.min.y, b.max.y, nap], i * 3); }
+  g.setAttribute('aCB', new THREE.BufferAttribute(cb, 4)); g.setAttribute('aCY', new THREE.BufferAttribute(cy, 3));
 }
 /* stuffed bolster: rounded ends gathered into a button, soft body wrinkles; axis along x */
 function bolsterGeometry(L = 0.62, R = 0.13, seed = 3) {
@@ -152,4 +198,4 @@ function bolsterGeometry(L = 0.62, R = 0.13, seed = 3) {
   return g;
 }
 
-export { SOFT, bolsterGeometry, makeVelvet };
+export { SOFT, bolsterGeometry, makeVelvet, setNap };

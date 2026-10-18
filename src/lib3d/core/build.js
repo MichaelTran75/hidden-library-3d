@@ -4,7 +4,7 @@ import { tick } from './base.js';
 import { scene } from './renderer.js';
 import { buildMaterials, buildTextures } from '../world/materials.js';
 import { buildRoom, room } from '../world/room.js';
-import { BOOK, buildBookInstances, buildSpineAtlas } from '../world/books.js';
+import { buildBookInstances, setSpineAtlas, spineAtlas } from '../world/books.js';
 import { buildShelves } from '../world/shelves.js';
 import { buildDecor } from '../world/decor/build.js';
 import { buildOutside } from '../world/outside.js';
@@ -25,9 +25,10 @@ let A = null, booksMesh, motes;
 async function main() {
   const bufP = getLibBuffer(); bufP.catch(() => {});   // the models download while the room is built
   const texP = buildTextures();   // (the wood, painted in workers: materials.js)
+  const spinesP = spineAtlas();   // (the books' spines, drawn in a worker: books.js)
   buildMaterials();
   buildRoom();
-  BOOK.atlas = buildSpineAtlas(); buildShelves(); booksMesh = buildBookInstances(); paintLightly(booksMesh, 0.1); await tick();   // (the shelves' books: 10 % less watercolour, G, 17/10/2026)
+  buildShelves(); booksMesh = buildBookInstances(); paintLightly(booksMesh, 0.2, 0.95); await tick();   // (the shelves' books: 10 % less watercolour, G, 17/10/2026, and 10 % less again, G, 18/10/2026: "kệ sách và toàn bộ sách 10% less water color"; seen near 95 % less: 80 %, then 75 % of what was left, G, 18/10/2026)
   buildLights(); buildPost();
   A = await loadAssets(await bufP); await tick();
   await buildFurniture(A); await tick(); buildDecor(A); motes = dust(); await tick();
@@ -35,7 +36,7 @@ async function main() {
   scene.fog = new THREE.FogExp2(0xd6e2e6, 0.03);   // a light blue haze over the far trees, matching the sky
   room.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.fog = false); });
   buildGlass();   // (the panes' glass: the room is first seen in it once the garden and the sky are in, loop.js)
-  await texP;
+  await texP; setSpineAtlas(booksMesh, await spinesP);
 }
 // after the room's first picture: the garden (its trees built in code, the lawn, the shrubs, the far woods) and the
 // sky's dome, hidden until they are let in (loop.js: reveal). Of all that is built only the shelves, their books and

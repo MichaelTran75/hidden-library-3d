@@ -10,6 +10,7 @@ import { heroMesh, heroRead } from './hero-books.js';
 import { opensFlat } from './book-data.js';
 import { loadSummaries, readOpening, readRelease, stepRead } from './leaves.js';
 import { setNeeds } from '../core/loop.js';
+import { POST } from '../fx/post.js';
 
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
@@ -82,6 +83,10 @@ function wantOf(bk) {
 }
 function stepBooks(dt, t) {
   let moving = false;
+  {   // the shelves painted lightly in their close views (fx/post.js paintLightly kClose)
+    const C = POST.light.close, want = UIS.mode !== 'home' && !offMode() ? 1 : 0;
+    if (C.value !== want) { C.value += Math.sign(want - C.value) * Math.min(Math.abs(want - C.value), dt / 1.2); moving = true; }
+  }
   for (const bk of [...UIS.touched]) {
     const want = wantOf(bk);
     if (!bk.out) {

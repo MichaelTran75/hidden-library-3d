@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { canvas, ctex } from '../core/utils.js';
 import { setShadowsDirty } from '../core/renderer.js';
 import { room } from '../world/room.js';
-import { BOOK, refitCell } from '../world/books.js';
+import { BOOK, refitCell, titledSpine } from '../world/books.js';
 import { SHELF } from '../world/shelves.js';
 import { V3 } from '../core/views.js';
 import { booksMesh } from '../core/build.js';
@@ -114,6 +114,7 @@ function buildSections() {
       if (hsl.l < 0.45) {   // a book that will be read in front of the camera is never a very dark one (lifted on the shelf too)
         bl.c.setHSL(hsl.h, Math.min(hsl.s, 0.5), 0.45, THREE.SRGBColorSpace); booksMesh.setColorAt(c0.idx, bl.c); booksMesh.instanceColor.needsUpdate = true;
       }
+      titledSpine(booksMesh, c0.idx);
       const bk = { sec, it, idx: c0.idx, m0: bl.m.clone(), color: bl.c.clone(), t: c0.t, h: c0.h, d: c0.d, out: false, slide: 0, hero: null, pose: null, goal: null, fk: 1 };
       bk.normal = box.normal.clone(); it.book = bk; sec.books.push(bk); if (it.src) UIS.bySrc.set(it.src, bk);
       // an invisible box over the shelf book: the pointer finds it to select its row in the card, a click plays it

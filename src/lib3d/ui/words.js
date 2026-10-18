@@ -37,7 +37,7 @@ function crispMaterial(map) {
 }
 function wordsCanvas(W, H, bk) {   // ink that suits the cover, with a soft halo of the opposite tone so it reads on any paint
   const c = canvas(W, H), g = c.getContext('2d'), ink = inkFor(bk.color);
-  g.fillStyle = ink; g.textAlign = 'center'; g.shadowColor = ink === '#2a2118' ? 'rgba(255,248,232,.55)' : 'rgba(20,14,8,.6)'; g.shadowBlur = Math.max(4, W * 0.012);
+  g.fillStyle = ink; g.textAlign = 'center'; g.shadowColor = ink === '#2a2118' ? 'rgba(226,214,192,.55)' : 'rgba(20,14,8,.6)'; g.shadowBlur = Math.max(4, W * 0.012);
   return { c, g };
 }
 function spineWords(bk) {   // the title along the spine, as large as the spine allows (narrowed a little rather than cut)
@@ -49,7 +49,7 @@ function spineWords(bk) {   // the title along the spine, as large as the spine 
   while (g.measureText(txt).width > room * (two ? 2 : 1) && size > Math.round(W * (two ? 0.34 : 0.5))) { size -= 1; g.font = font(size); }
   const fit = (t, k) => { while (g.measureText(t).width * k > room && t.length > 4) t = t.slice(0, -2).trimEnd() + '…'; return t; };
   // a soft strip under the words, in the tone opposite the ink, so they read over any printed pattern on the spine
-  const band = (w, h) => { g.save(); g.shadowBlur = 0; g.fillStyle = g.fillStyle === '#2a2118' ? 'rgba(255,248,232,.5)' : 'rgba(22,16,10,.42)';
+  const band = (w, h) => { g.save(); g.shadowBlur = 0; g.fillStyle = g.fillStyle === '#2a2118' ? 'rgba(226,214,192,.5)' : 'rgba(22,16,10,.42)';
     g.beginPath(); g.roundRect(-w / 2 - size * 0.35, -h / 2, w + size * 0.7, h, size * 0.3); g.fill(); g.restore(); };
   if (two && g.measureText(txt).width > room) {
     const words = txt.split(/\s+/); let a = '', i = 0; while (i < words.length && g.measureText((a ? a + ' ' : '') + words[i]).width <= room) a += (a ? ' ' : '') + words[i++];

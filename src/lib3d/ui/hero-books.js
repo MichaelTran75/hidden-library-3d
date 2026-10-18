@@ -47,7 +47,8 @@ function wrapText(g, text, maxW) {
   for (const w of words) { const tryL = line ? line + ' ' + w : w; if (g.measureText(tryL).width > maxW && line) { lines.push(line); line = w; } else line = tryL; }
   if (line) lines.push(line); return lines;
 }
-function inkFor(col) { const hsl = {}; col.getHSL(hsl, THREE.SRGBColorSpace); return hsl.l < 0.55 ? '#f3ead6' : '#2a2118'; }
+function inkFor(col) { const hsl = {}; col.getHSL(hsl, THREE.SRGBColorSpace); return hsl.l < 0.55 ? INK_LIGHT : '#2a2118'; }
+const INK_LIGHT = '#e2d6c0';   // (the page's whites: G, 18/10/2026)
 // the book's own lights (on its layer only), as a product is lit: a key lamp a third of a metre off to the viewer's upper
 // left, its light falling off across the cover, bringing out the rounded edges, the groove of the joint and the stamping;
 // and a weak fill from the right, low, so the fore-edge (turned away from the key) shows its pages; softer and warmer at
@@ -264,7 +265,7 @@ function heroFace(bk, W, H, cloth, layout, ink) {
     gb.fillStyle = '#8c8c8c'; gb.fillRect(0, 0, W, H); gb.globalAlpha = 0.5; gb.fillStyle = gb.createPattern(cloth, 'repeat'); gb.fillRect(0, 0, W, H); gb.globalAlpha = 1;   // (the weave)
     gr.fillStyle = 'rgb(0,214,0)'; gr.fillRect(0, 0, W, H);
     if (layout) {   // (the cloth pressed round the stamping darkens a little: it also keeps the words clear of the cloth)
-      gc.save(); gc.shadowColor = ink === '#2a2118' ? 'rgba(255,248,232,.55)' : 'rgba(20,14,8,.6)'; gc.shadowBlur = Math.max(3, W * 0.012);
+      gc.save(); gc.shadowColor = ink === '#2a2118' ? 'rgba(226,214,192,.55)' : 'rgba(20,14,8,.6)'; gc.shadowBlur = Math.max(3, W * 0.012);
       gc.fillStyle = gc.strokeStyle = ink; layout(gc); gc.restore();
       gb.filter = 'blur(1.2px)'; gb.fillStyle = gb.strokeStyle = '#1a1a1a'; layout(gb); gb.filter = 'none';
       gr.fillStyle = gr.strokeStyle = 'rgb(0,92,96)'; layout(gr);
@@ -316,7 +317,7 @@ function heroPagesMat(bk, base) {
   return m;
 }
 function heroBand(bk) {   // the headband: silk wound on its core, two colours
-  const c = canvas(64, 16), g = c.getContext('2d'), a = inkFor(bk.color) === '#f3ead6' ? '#e9dcc0' : '#7c2b26';
+  const c = canvas(64, 16), g = c.getContext('2d'), a = inkFor(bk.color) === INK_LIGHT ? '#e9dcc0' : '#7c2b26';
   g.fillStyle = '#8f2f29'; g.fillRect(0, 0, 64, 16); g.fillStyle = a;
   for (let x = -16; x < 80; x += 8) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 4, 0); g.lineTo(x + 8, 16); g.lineTo(x + 4, 16); g.fill(); }
   const t = heroCanvasTex(c, true, true); t.repeat.set(14, 1); return t;

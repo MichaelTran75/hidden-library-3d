@@ -5,6 +5,7 @@ import { R } from '../core/base.js';
 import { boardGeo, place } from '../core/utils.js';
 import { scene } from '../core/renderer.js';
 import { MAT } from './materials.js';
+import { paintLightly } from '../fx/post.js';
 
 /* ---------------------------------------------------------------- room */
 const room = new THREE.Group(); scene.add(room);
@@ -46,7 +47,7 @@ function buildRoom() {
     rail(R.xL, R.xW, zw, zw, R.caseTop + 0.04, 0.1, 0.18); rail(R.xL, R.xW, zw, zw, R.H - 0.06, 0.12, 0.18);
     for (let i = 0; i < MX.length - 1; i++) { const g = new THREE.PlaneGeometry(MX[i + 1] - MX[i], R.H - R.caseTop - 0.16); g.translate((MX[i] + MX[i + 1]) / 2, (R.caseTop + R.H) / 2, zw); gl.push(g); }
     // wall behind bookcase (solid, timber clad on the outside)
-    const back = new THREE.Mesh(boardGeo(R.xW - R.xL, R.caseTop, 0.08, 1), MAT.shelfBack); back.position.set((R.xL + R.xW) / 2, R.caseTop / 2, zw - s * 0.06); back.receiveShadow = back.castShadow = true; room.add(back);
+    const back = new THREE.Mesh(boardGeo(R.xW - R.xL, R.caseTop, 0.08, 1), MAT.shelfBack); back.position.set((R.xL + R.xW) / 2, R.caseTop / 2, zw - s * 0.06); back.receiveShadow = back.castShadow = true; room.add(back); paintLightly(back, 0.1);   // (the low bookcases' backs: 10 % less watercolour, as their shelves)
   }
   const frames = new THREE.Mesh(mergeGeometries([...fr, ...beams]), MAT.frame); frames.castShadow = frames.receiveShadow = true; room.add(frames);
   const glass = new THREE.Mesh(mergeGeometries(gl), MAT.glass); glass.renderOrder = 2; room.add(glass); room.userData.glass = glass;   // (its glass: fx/glass.js)

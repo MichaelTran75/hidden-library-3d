@@ -1,10 +1,10 @@
 // three.js is fetched only where the room is shown (wide screens with WebGL 2): phones never download it. If it cannot
 // be fetched (offline, a blocked CDN) the page gets lib3d-failed and keeps its own card layout.
 const LIB = innerWidth > 768 && window.WebGL2RenderingContext ? await Promise.all([
-  import('three'), import('three/addons/environments/RoomEnvironment.js'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/lights/RectAreaLightUniformsLib.js'), import('three/addons/loaders/GLTFLoader.js'), import('three/addons/postprocessing/Pass.js'), import('three/addons/utils/BufferGeometryUtils.js')
+  import('three'), import('three/addons/environments/RoomEnvironment.js'), import('three/addons/geometries/RoundedBoxGeometry.js'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/lights/RectAreaLightUniformsLib.js'), import('three/addons/loaders/GLTFLoader.js'), import('three/addons/postprocessing/Pass.js'), import('three/addons/utils/BufferGeometryUtils.js')
 ]).catch(e => { console.warn('3D library unavailable', e); document.documentElement.classList.add('lib3d-failed'); return null; }) : null;
 if (LIB) {
-const [THREE, { RoomEnvironment }, { MeshoptDecoder }, { RectAreaLightUniformsLib }, { GLTFLoader }, { FullScreenQuad }, { mergeGeometries, toCreasedNormals }] = LIB;
+const [THREE, { RoomEnvironment }, { RoundedBoxGeometry }, { MeshoptDecoder }, { RectAreaLightUniformsLib }, { GLTFLoader }, { FullScreenQuad }, { mergeGeometries, toCreasedNormals }] = LIB;
 /* Hidden Library · 3D library (ver 01)
    On wide screens the reading room is the interface: the categories are shelf sections (labels with leader lines),
    a click opens the section's card, a book being played comes off the shelf. The page's own data, audio engine,
@@ -53,10 +53,11 @@ function ctex(c, { srgb = true, rep = true } = {}) { const t = new THREE.CanvasT
 const hsl = (h, s, l) => new THREE.Color().setHSL(h / 360, s, l);
 
 /* Box with world-scaled UVs: v runs along the longest in-plane side, 1 UV = `tile` metres */
-function boardGeo(w, h, d, tile = 1) {
-  const g = new THREE.BoxGeometry(w, h, d); const p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
+function boardGeo(w, h, d, tile = 1, round = 0) {   // (round: its edges rounded off by that radius, so they catch the light)
+  const g = round ? new RoundedBoxGeometry(w, h, d, 1, round) : new THREE.BoxGeometry(w, h, d); const p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
   for (let i = 0; i < p.count; i++) {
-    const ax = Math.abs(n.getX(i)) > 0.5 ? 0 : Math.abs(n.getY(i)) > 0.5 ? 1 : 2;
+    // (a rounded box's faces come in the order +x -x +y -y +z -z: its rounded edges keep their face's grain)
+    const ax = round ? Math.floor(i / (p.count / 6) / 2) : Math.abs(n.getX(i)) > 0.5 ? 0 : Math.abs(n.getY(i)) > 0.5 ? 1 : 2;
     const c = [p.getX(i), p.getY(i), p.getZ(i)], sz = [w, h, d];
     const axes = [0, 1, 2].filter(k => k !== ax).sort((a, b) => sz[a] - sz[b]);
     uv.setXY(i, (c[axes[0]] + 7.31 * ax) / tile, (c[axes[1]] + 3.7 * ax) / tile);
@@ -191,7 +192,7 @@ function buildMaterials() {
   MAT.oak = std({ map: TEX.oak, roughness: .62 });
   MAT.oakDark = std({ map: TEX.oak, color: 0xb98d62, roughness: .7 });
   MAT.shelfBack = std({ map: TEX.oak, color: 0x5e4430, roughness: .85 }); MAT.shelfBack.color.multiplyScalar(new THREE.Color().setRGB(0.75, 0.75, 0.75, THREE.SRGBColorSpace).r);
-  MAT.shelfOak = MAT.oak.clone(); MAT.shelfOak.color.setRGB(0.75, 0.75, 0.75, THREE.SRGBColorSpace);   // (the bookshelves' boards and backs 25 % darker, as the frames: G, 18/10/2026; the tables keep MAT.oak)
+  MAT.shelfOak = MAT.oak.clone(); MAT.shelfOak.color.setRGB(0.75, 0.75, 0.75, THREE.SRGBColorSpace); MAT.shelfOak.bumpMap = TEX.oak; MAT.shelfOak.bumpScale = 1.2; MAT.shelfOak.roughness = 0.58;   // (its grain in relief, seen near)   // (the bookshelves' boards and backs 25 % darker, as the frames: G, 18/10/2026; the tables keep MAT.oak)
   MAT.frame = std({ map: TEX.frame, roughness: .55 }); MAT.frame.color.setRGB(0.75, 0.75, 0.75, THREE.SRGBColorSpace);   // (the glass walls' wooden frames 25 % darker: G, 18/10/2026)
   MAT.glass = new THREE.MeshPhysicalMaterial({ color: 0xf2f7ee, roughness: .04, metalness: 0, transparent: true, opacity: .1, envMapIntensity: 1.2, depthWrite: false, side: THREE.DoubleSide });
   MAT.glass.defines = { RECT_SPEC: '' };   // the panes keep the windows' reflections
@@ -249,7 +250,7 @@ function buildRoom() {
     rail(R.xL, R.xW, zw, zw, R.caseTop + 0.04, 0.1, 0.18); rail(R.xL, R.xW, zw, zw, R.H - 0.06, 0.12, 0.18);
     for (let i = 0; i < MX.length - 1; i++) { const g = new THREE.PlaneGeometry(MX[i + 1] - MX[i], R.H - R.caseTop - 0.16); g.translate((MX[i] + MX[i + 1]) / 2, (R.caseTop + R.H) / 2, zw); gl.push(g); }
     // wall behind bookcase (solid, timber clad on the outside)
-    const back = new THREE.Mesh(boardGeo(R.xW - R.xL, R.caseTop, 0.08, 1), MAT.shelfBack); back.position.set((R.xL + R.xW) / 2, R.caseTop / 2, zw - s * 0.06); back.receiveShadow = back.castShadow = true; room.add(back);
+    const back = new THREE.Mesh(boardGeo(R.xW - R.xL, R.caseTop, 0.08, 1), MAT.shelfBack); back.position.set((R.xL + R.xW) / 2, R.caseTop / 2, zw - s * 0.06); back.receiveShadow = back.castShadow = true; room.add(back); paintLightly(back, 0.1);   // (the low bookcases' backs: 10 % less watercolour, as their shelves)
   }
   const frames = new THREE.Mesh(mergeGeometries([...fr, ...beams]), MAT.frame); frames.castShadow = frames.receiveShadow = true; room.add(frames);
   const glass = new THREE.Mesh(mergeGeometries(gl), MAT.glass); glass.renderOrder = 2; room.add(glass); room.userData.glass = glass;   // (its glass: fx/glass.js)
@@ -260,64 +261,160 @@ function buildRoom() {
 }
 /* ---------------------------------------------------------------- books (instanced) */
 const BOOK = { list: [], atlas: null };
-const SPINES = 12;
-function buildSpineAtlas() {
-  const W = 1024, H = 1024, col = canvas(W, H), msk = canvas(W, H); const g = col.getContext('2d'), m = msk.getContext('2d');
+const SPINES = 28, TILE = 64 / 2048, TITLED = 31;   // (spine variants in the atlas; one tile's width in its uv; the spine of a book of the page)
+/* the books' atlas, 2048 x 1024 in 64-pixel tiles: 28 spines, then the plain cloth (tile 28), the page block's edges
+   (tiles 29-30) and the spine of a book of the page (tile 31: blind rules only, ui/words.js letters its own title). Its
+   colour is the book's tint wherever its alpha is 1 (the cloth), and as drawn where it is 0 (the gilt, the inks, the
+   paper labels). The spines are lettered as real spines are, top to bottom: a title, an author, a
+   publisher's mark at the foot, in gilt on cloth, in ink on a paper label, or bold on a modern jacket, among bands,
+   rules and raised leather bands; the cloth woven, its edges rubbed (G, 18/10/2026: the shelves' books made realistic) */
+const SPINE_WORDS = ['ESSAYS', 'LETTERS', 'DIALOGUES', 'MEDITATIONS', 'THE REPUBLIC', 'ELEMENTS', 'PRINCIPIA', 'OPTICS', 'VOYAGES', 'CHRONICLES', 'MEMOIRS', 'LECTURES',
+  'ODES', 'SONNETS', 'POEMS', 'NOTEBOOKS', 'A HISTORY', 'THE ATLAS', 'BOTANY', 'GEOMETRY', 'ANATOMY', 'THE ODYSSEY', 'TRAVELS', 'SERMONS', 'FABLES', 'ETHICS',
+  'ON LIBERTY', 'THE PRINCE', 'WALDEN', 'LEVIATHAN', 'CANDIDE', 'EMMA', 'PERSUASION', 'MIDDLEMARCH', 'THE ILIAD', 'PENSÉES', 'CONFESSIONS', 'THE SEASONS'];
+const SPINE_NAMES = ['PLATO', 'HUME', 'KANT', 'DARWIN', 'LOCKE', 'MILL', 'SMITH', 'HOMER', 'GOETHE', 'PASCAL', 'EULER', 'AUSTEN', 'ELIOT', 'TOLSTOY', 'DICKENS',
+  'THOREAU', 'HOBBES', 'VOLTAIRE', 'MONTAIGNE', 'BACON', 'NEWTON', 'GIBBON', 'BURKE', 'RUSKIN', 'SENECA', 'OVID', 'DANTE', 'MILTON'];
+// the drawing: its colours into g, into m where they are tinted (white) or kept as drawn (black); o: the atlas's size, its
+// spines (n), the titled spine's tile and the words. A worker runs it from its source: it uses nothing of this module.
+function drawSpines(g, m, o) {
+  const { W, H, words, names } = o, cw = 64;
   g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); m.fillStyle = '#fff'; m.fillRect(0, 0, W, H);
-  const r = rng(77); const cw = 64;
-  for (let i = 0; i < SPINES; i++) {
-    const x0 = i * cw; const style = i % 6;
-    // subtle cloth texture
-    for (let k = 0; k < 900; k++) { g.fillStyle = `rgba(0,0,0,${r() * .05})`; g.fillRect(x0 + r() * cw, r() * H, 1 + r() * 2, 1 + r() * 6); }
-    const band = (y, h, c, tint = true) => { g.fillStyle = c; g.fillRect(x0 + 3, y, cw - 6, h); if (!tint) { m.fillStyle = '#000'; m.fillRect(x0 + 3, y, cw - 6, h); } };
-    const label = (y, h, c) => { g.fillStyle = c; g.fillRect(x0 + 8, y, cw - 16, h); m.fillStyle = '#000'; m.fillRect(x0 + 8, y, cw - 16, h); };
-    const lines = (y, n, c, tint) => { for (let k = 0; k < n; k++) { const w = (cw - 24) * (0.5 + r() * .5); g.fillStyle = c; g.fillRect(x0 + (cw - w) / 2, y + k * 26, w, 9); if (!tint) { m.fillStyle = '#000'; m.fillRect(x0 + (cw - w) / 2, y + k * 26, w, 9); } } };
-    const gold = '#d8b673', dark = 'rgba(0,0,0,.35)', light = 'rgba(255,255,255,.55)';
-    if (style === 0) { band(60, 14, gold, false); band(90, 6, gold, false); lines(260, 4, gold, false); band(880, 6, gold, false); band(900, 14, gold, false); }
-    if (style === 1) { label(180, 230, '#efe6d2'); lines(210, 5, '#5a4632', false); band(940, 30, dark); }
-    if (style === 2) { band(0, 120, dark); lines(300, 6, light, true); band(904, 120, dark); }
-    if (style === 3) { lines(120, 7, '#1d1d1d', false); band(860, 70, light); }
-    if (style === 4) { band(50, 40, dark); band(110, 8, gold, false); lines(380, 3, gold, false); band(930, 40, dark); }
-    if (style === 5) { lines(140, 9, light, true); label(820, 90, '#f3efe4'); }
+  const r = rng(77), pickR = a => a[Math.floor(r() * a.length)];
+  const weave = (x0, w) => {   // book cloth: a fine woven grain, a little mottled, its edges rubbed lighter
+    for (let y = 0; y < H; y += 2) { g.fillStyle = `rgba(0,0,0,${0.02 + r() * 0.03})`; g.fillRect(x0, y, w, 1); }
+    for (let x = x0; x < x0 + w; x += 2) { g.fillStyle = `rgba(0,0,0,${0.015 + r() * 0.025})`; g.fillRect(x, 0, 1, H); }
+    for (let k = 0; k < 260; k++) { g.fillStyle = `rgba(${r() < .5 ? '0,0,0' : '255,255,255'},${r() * .05})`; g.beginPath(); g.ellipse(x0 + r() * w, r() * H, 2 + r() * 8, 4 + r() * 22, 0, 0, 7); g.fill(); }
+    const rub = g.createLinearGradient(x0, 0, x0 + w, 0); rub.addColorStop(0, 'rgba(255,255,255,.16)'); rub.addColorStop(.12, 'rgba(255,255,255,0)'); rub.addColorStop(.88, 'rgba(255,255,255,0)'); rub.addColorStop(1, 'rgba(255,255,255,.16)');
+    g.fillStyle = rub; g.fillRect(x0, 0, w, H);
+  };
+  const rect = (x0, y, w, h, c, keep = true) => { g.fillStyle = c; g.fillRect(x0, y, w, h); if (keep) { m.fillStyle = '#000'; m.fillRect(x0, y, w, h); } };
+  // lettering down the spine (rotated: read top to bottom), at most len pixels long
+  const letter = (x0, yc, text, font, size, color, len, track = 0.06) => {
+    g.save(); g.translate(x0 + cw / 2, yc); g.rotate(Math.PI / 2); g.font = `${font.replace('$', Math.round(size))}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    let s = size; while (g.measureText(text).width * (1 + track) > len && s > 10) { s -= 1; g.font = font.replace('$', Math.round(s)); }
+    g.letterSpacing = `${(s * track).toFixed(1)}px`; g.fillStyle = color; g.fillText(text, 0, 1); g.restore();
+    m.save(); m.translate(x0 + cw / 2, yc); m.rotate(Math.PI / 2); m.font = g.font; m.textAlign = 'center'; m.textBaseline = 'middle'; m.letterSpacing = `${(s * track).toFixed(1)}px`; m.fillStyle = '#000'; m.fillText(text, 0, 1); m.restore();
+  };
+  const gold = () => pickR(['#d9b66a', '#cfa957', '#e3c27e']), serif = '600 $px Georgia, "Times New Roman", serif', serifI = 'italic 500 $px Georgia, serif', sans = '700 $px "Helvetica Neue", Arial, sans-serif', cond = '600 $px "Avenir Next Condensed", "Arial Narrow", sans-serif';
+  for (let i = 0; i < o.n; i++) {
+    const x0 = i * cw, style = i % 7, title = pickR(words), name = pickR(names);
+    weave(x0, cw);
+    if (style === 0) {   // gilt on cloth: double rules at head and tail, title and author in gold
+      const c = gold(); for (const y of [40, 52, H - 58, H - 46]) rect(x0 + 4, y, cw - 8, 3, c);
+      letter(x0, 330, title, serif, 34, c, 520); letter(x0, 760, name, serif, 22, c, 220, 0.18); letter(x0, H - 110, 'PRESS', cond, 14, c, 70, 0.3);
+    } else if (style === 1) {   // a paper label with the title in ink, a band at the foot
+      rect(x0 + 8, 150, cw - 16, 330, '#e2d6c0'); rect(x0 + 8, 150, cw - 16, 2, 'rgba(90,70,40,.5)'); rect(x0 + 8, 478, cw - 16, 2, 'rgba(90,70,40,.5)');
+      letter(x0, 315, title, serif, 28, '#3a2d20', 300); letter(x0, 640, name, serifI, 22, 'rgba(226,214,192,.85)', 240, 0.08);
+      g.fillStyle = 'rgba(0,0,0,.28)'; g.fillRect(x0, H - 120, cw, 70);
+    } else if (style === 2) {   // raised leather bands with gilt panels between them
+      for (let k = 0; k < 5; k++) { const y = 90 + k * 175; g.fillStyle = 'rgba(0,0,0,.32)'; g.fillRect(x0, y, cw, 14); g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(x0, y, cw, 4); }
+      const c = gold(); rect(x0 + 10, 300, cw - 20, 120, '#7b2a22'); letter(x0, 360, title, serif, 24, c, 110); letter(x0, 535, name, serif, 18, c, 120, 0.15);
+      for (const y of [120, 830]) rect(x0 + 14, y, cw - 28, 2, c);
+    } else if (style === 3) {   // a modern jacket: author in a band at the head, a bold title, a mark at the foot
+      rect(x0, 30, cw, 150, '#e2d6c0'); letter(x0, 105, name, cond, 26, '#1d1d1d', 130, 0.12);
+      letter(x0, 520, title, sans, 34, 'rgba(226,214,192,.95)', 560, 0.04); rect(x0 + 18, H - 92, cw - 36, cw - 36, '#e2d6c0'); letter(x0, H - 92 + (cw - 36) / 2, name[0], serif, 18, '#1d1d1d', 20, 0);
+    } else if (style === 4) {   // dark head and tail panels, the title in light letters between
+      g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(x0, 0, cw, 120); g.fillRect(x0, H - 120, cw, 120);
+      letter(x0, 470, title, serif, 32, '#e2d6c0', 560, 0.08); letter(x0, H - 60, name, cond, 16, '#e2d6c0', 100, 0.2);
+    } else if (style === 5) {   // ink on plain cloth, a thin rule round the lettering
+      rect(x0 + 10, 200, 2, 520, 'rgba(30,25,20,.6)'); rect(x0 + cw - 12, 200, 2, 520, 'rgba(30,25,20,.6)');
+      letter(x0, 460, title, serif, 30, '#22201c', 480); letter(x0, 820, name, serifI, 20, '#22201c', 160, 0.06);
+    } else {   // a paperback: title and author run together, a coloured strip and a mark at the foot
+      letter(x0, 380, `${title}  ·  ${name}`, sans, 26, '#1d1d1d', 700, 0.03); rect(x0, H - 150, cw, 22, pickR(['#c8452f', '#2f6db0', '#e0a526', '#2e7d59'])); letter(x0, H - 70, 'CLASSICS', cond, 12, '#1d1d1d', 90, 0.25);
+    }
   }
-  // tile 13: plain cover (tinted) ; tile 14-15 region: page block (untinted, with tinted rims)
-  const px = 13 * cw; g.fillStyle = '#fff'; g.fillRect(px, 0, cw, H);
-  const pg = 14 * cw; g.fillStyle = '#efe7d3'; g.fillRect(pg, 0, 2 * cw, H); m.fillStyle = '#000'; m.fillRect(pg, 0, 2 * cw, H);
-  for (let k = 0; k < 220; k++) { g.fillStyle = `rgba(110,90,60,${.05 + r() * .12})`; g.fillRect(pg + 6 + r() * (2 * cw - 12), 0, 1, H); }
+  // the plain cloth (tinted), and the page block (as drawn, its rims tinted where the boards meet it)
+  const px = o.n * cw; weave(px, cw);
+  const tx = o.titled * cw; weave(tx, cw); for (const y of [22, 30, H - 34, H - 26]) { g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(tx + 3, y, cw - 6, 3); }   // (pressed in, no foil)
+  const pg = (o.n + 1) * cw; g.fillStyle = '#efe7d3'; g.fillRect(pg, 0, 2 * cw, H); m.fillStyle = '#000'; m.fillRect(pg, 0, 2 * cw, H);
+  for (let k = 0; k < 360; k++) { g.fillStyle = `rgba(110,90,60,${.04 + r() * .12})`; g.fillRect(pg + 6 + r() * (2 * cw - 12), 0, 1, H); }
+  const yel = g.createLinearGradient(pg, 0, pg + 2 * cw, 0); yel.addColorStop(0, 'rgba(170,140,80,.18)'); yel.addColorStop(.5, 'rgba(170,140,80,0)'); yel.addColorStop(1, 'rgba(170,140,80,.18)'); g.fillStyle = yel; g.fillRect(pg, 0, 2 * cw, H);
   g.fillStyle = '#fff'; g.fillRect(pg, 0, 6, H); g.fillRect(pg + 2 * cw - 6, 0, 6, H); m.fillStyle = '#fff'; m.fillRect(pg, 0, 6, H); m.fillRect(pg + 2 * cw - 6, 0, 6, H);
-  const a = g.getImageData(0, 0, W, H).data, b = m.getImageData(0, 0, W, H).data; const data = new Uint8Array(W * H * 4);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x, o = ((H - 1 - y) * W + x) * 4; data[o] = a[i * 4]; data[o + 1] = a[i * 4 + 1]; data[o + 2] = a[i * 4 + 2]; data[o + 3] = b[i * 4]; }
-  const t = new THREE.DataTexture(data, W, H, THREE.RGBAFormat); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 8; t.needsUpdate = true;
-  return t;
 }
+// the two pictures as the texture's pixels: the colours, the mask in the alpha, the bottom row first (a DataTexture's)
+function spinePixels(g, m, W, H) {
+  const a = new Uint32Array(g.getImageData(0, 0, W, H).data.buffer), b = m.getImageData(0, 0, W, H).data, out = new Uint32Array(W * H);
+  for (let y = 0; y < H; y++) { const r = y * W, o = (H - 1 - y) * W; for (let x = 0; x < W; x++) out[o + x] = (a[r + x] & 0xffffff) | (b[(r + x) * 4] << 24); }
+  return new Uint8Array(out.buffer);
+}
+function spinesHere(o) {   // (on the page's own thread)
+  const g = canvas(o.W, o.H).getContext('2d', { willReadFrequently: true }), m = canvas(o.W, o.H).getContext('2d', { willReadFrequently: true });
+  drawSpines(g, m, o); return spinePixels(g, m, o.W, o.H);
+}
+/* the atlas, drawn in a worker on an OffscreenCanvas while the room is built (on the page's own thread it held the room
+   up ~75 ms): a promise of its texture. Where no worker can draw it, it is drawn here. Until it comes the books wear
+   plain cloth (plainCloth; core/build.js puts the atlas on them before the room's first picture). */
+function spineAtlas() {
+  const o = { W: 2048, H: 1024, n: SPINES, titled: TITLED, words: SPINE_WORDS, names: SPINE_NAMES };
+  const texture = d => { const t = new THREE.DataTexture(d, o.W, o.H, THREE.RGBAFormat); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 8; t.needsUpdate = true; return t; };
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return Promise.resolve().then(() => texture(spinesHere(o)));
+  return new Promise(done => {
+    let url = null, w = null, over = false;
+    const end = d => { if (over) return; over = true; if (w) w.terminate(); if (url) URL.revokeObjectURL(url); done(texture(d || spinesHere(o))); };
+    try {
+      url = URL.createObjectURL(new Blob([[rng, drawSpines, spinePixels,
+        "onmessage = e => { const o = e.data; let d = null; try { const g = new OffscreenCanvas(o.W, o.H).getContext('2d', { willReadFrequently: true }), m = new OffscreenCanvas(o.W, o.H).getContext('2d', { willReadFrequently: true }); drawSpines(g, m, o); d = spinePixels(g, m, o.W, o.H); } catch (err) { d = null; } postMessage(d, d ? [d.buffer] : []); };"].join('\n')], { type: 'text/javascript' }));
+      w = new Worker(url);
+    } catch (e) { end(null); return; }
+    w.onmessage = e => end(e.data); w.onerror = e => { e.preventDefault(); end(null); };
+    w.postMessage(o);
+  });
+}
+function plainCloth() { const t = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1, THREE.RGBAFormat); t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t; }
+function setSpineAtlas(mesh, t) { const old = BOOK.atlas; BOOK.atlas = mesh.material.map = mesh.material.bumpMap = t; if (old && old !== t) old.dispose(); }
+// a hardcover in the unit box (x across its thickness, y up, z from the fore-edge at -1 to the spine at 0; the instance
+// scales it to the book's size): two boards, the page block between them set in by the squares of the boards at head,
+// tail and fore-edge, and a rounded spine (G, 18/10/2026: the shelves' books made realistic, seen near). Its atlas: the
+// boards and the spine's caps the plain cloth (tile 28), the page block's three edges the pages (tiles 29-30), the
+// spine its own tile (a variant shifted in the shader)
 function bookGeometry() {
-  const g = new THREE.BoxGeometry(1, 1, 1); g.translate(0, 0.5, -0.5); // origin: bottom centre of the spine face; spine faces +z
-  const uv = g.attributes.uv, cw = 64 / 1024;
-  // BoxGeometry faces: +x,-x,+y,-y,+z,-z ; 4 verts each
-  const set = (face, u0, u1, v0, v1, rot = false) => { for (let k = 0; k < 4; k++) { const i = face * 4 + k; const u = uv.getX(i), v = uv.getY(i); const a = rot ? v : u, b = rot ? u : v; uv.setXY(i, u0 + (u1 - u0) * a, v0 + (v1 - v0) * b); } };
-  set(0, 13 * cw + .004, 14 * cw - .004, 0, 1); set(1, 13 * cw + .004, 14 * cw - .004, 0, 1); // covers
-  set(2, 14 * cw, 16 * cw, 0, 1); set(3, 14 * cw, 16 * cw, 0, 1);              // top / bottom page edges
-  set(4, 0.002, cw - .002, 0, 1);                                                         // spine (variant shift in shader)
-  set(5, 14 * cw + 8 / 1024, 16 * cw - 8 / 1024, 0, 1);                                    // fore-edge
-  return g;
+  const cw = TILE, CU = [28 * cw + .002, 29 * cw - .002], PU = [29 * cw + 8 / 2048, 31 * cw - 8 / 2048], SU = [0.001, cw - .001];
+  const b = 0.09, sq = 0.014, fe = 0.02, sp = 0.022, parts = [];
+  const rect = (g, face, u, v) => { const uv = g.attributes.uv; for (let k = 0; k < 4; k++) { const i = face * 4 + k; uv.setXY(i, u[0] + (u[1] - u[0]) * uv.getX(i), v[0] + (v[1] - v[0]) * uv.getY(i)); } };
+  const box = (x0, x1, y0, y1, z0, z1, uvs) => { const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); for (let f = 0; f < 6; f++) rect(g, f, uvs[f][0], uvs[f][1]); parts.push(g); };
+  const C = [CU, [0, 1]], Pg = [PU, [0, 1]];
+  box(-0.5, -0.5 + b, 0, 1, -1, -sp, [C, C, C, C, C, C]);                // the back board
+  box(0.5 - b, 0.5, 0, 1, -1, -sp, [C, C, C, C, C, C]);                  // the front board
+  box(-0.5 + b, 0.5 - b, sq, 1 - sq, -1 + fe, -sp, [Pg, Pg, Pg, Pg, Pg, Pg]);   // the page block, set in
+  // the spine: a strip bowed out by sp in the middle, across the whole thickness, and its two caps
+  const n = 10, pos = [], nor = [], uv = [], idx = [], zOf = x => -sp + sp * (1 - 4 * x * x);
+  for (let i = 0; i <= n; i++) {
+    const x = -0.5 + i / n, z = zOf(x), dz = -8 * sp * x, l = Math.hypot(dz, 1);
+    for (const y of [0, 1]) { pos.push(x, y, z); nor.push(-dz / l, 0, 1 / l); uv.push(SU[0] + (SU[1] - SU[0]) * i / n, y); }
+  }
+  for (let i = 0; i < n; i++) { const a = 2 * i; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  for (const y of [0, 1]) {   // the caps: the bow closed against the boards' line
+    const o = pos.length / 3, up = y ? 1 : -1; pos.push(0, y, -sp); nor.push(0, up, 0); uv.push((CU[0] + CU[1]) / 2, 0.5);
+    for (let i = 0; i <= n; i++) { const x = -0.5 + i / n; pos.push(x, y, zOf(x)); nor.push(0, up, 0); uv.push(CU[0] + (CU[1] - CU[0]) * i / n, 0.5); }
+    for (let i = 0; i < n; i++) y ? idx.push(o, o + 2 + i, o + 1 + i) : idx.push(o, o + 1 + i, o + 2 + i);
+  }
+  const sg = new THREE.BufferGeometry(); sg.setIndex(idx);
+  sg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); sg.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); sg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  parts.push(sg);
+  return mergeGeometries(parts);
 }
 function bookMaterial(atlas) {
-  const m = new THREE.MeshStandardMaterial({ map: atlas, roughness: .78, metalness: 0 });
+  const m = new THREE.MeshStandardMaterial({ map: atlas, bumpMap: atlas, bumpScale: 0.7, roughness: .78, metalness: 0 });   // (its cloth, bands and lettering in a little relief)
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aVar;')
-      .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\n if (vMapUv.x < 0.0625) vMapUv.x += aVar * 0.0625;\n#endif');
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\n if (vMapUv.x < ' + TILE + ') vMapUv.x += aVar * ' + TILE + ';\n#endif\n#ifdef USE_BUMPMAP\n if (vBumpMapUv.x < ' + TILE + ') vBumpMapUv.x += aVar * ' + TILE + ';\n#endif\n vBk = position;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vBk;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `
       vec4 bk = texture2D( map, vMapUv );
       vec3 tint = vec3(1.0);
       #if defined( USE_INSTANCING_COLOR ) || defined( USE_COLOR )
         tint = vColor.rgb;
       #endif
-      diffuseColor.rgb *= mix( bk.rgb, bk.rgb * tint, bk.a );`).replace('#include <color_fragment>', '');
+      diffuseColor.rgb *= mix( bk.rgb, bk.rgb * tint, bk.a );
+      // (seen near: darker where it stands on the board and deep in among its neighbours, its head a little faded by light)
+      float ao = mix(0.72, 1.0, smoothstep(0.0, 0.07, vBk.y)) * mix(0.6, 1.0, smoothstep(-0.75, -0.04, vBk.z));
+      diffuseColor.rgb = mix(diffuseColor.rgb * ao, mix(diffuseColor.rgb, vec3(0.92, 0.89, 0.82), 0.12 * bk.a) * ao, smoothstep(0.82, 1.0, vBk.y));`).replace('#include <color_fragment>', '')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vBk;');
   };
   return m;
 }
 const PAL = {
-  modern: ['#ebe6da', '#f1eee6', '#e2dccd', '#d6d0c2', '#ece7dc', '#4f8a8b', '#3c7377', '#2c3e5a', '#3b5578', '#7c90a4', '#b8bcbf', '#9aa4a8', '#2b2b2b', '#c49b4c', '#a6593d', '#8ba08a', '#e7e1d2', '#5f7c91', '#d9d4c6', '#6d8f8f'],
+  // (its whites all #E2D6C0, the page's paper colour: G, 18/10/2026: "em thay tất cả màu trắng thành #E2D6C0")
+  modern: ['#e2d6c0', '#e2d6c0', '#e2d6c0', '#e2d6c0', '#e2d6c0', '#4f8a8b', '#3c7377', '#2c3e5a', '#3b5578', '#7c90a4', '#b8bcbf', '#9aa4a8', '#2b2b2b', '#c49b4c', '#a6593d', '#8ba08a', '#e2d6c0', '#5f7c91', '#e2d6c0', '#6d8f8f'],
   old: ['#6b4a32', '#7c5a3c', '#4e3526', '#2e3b55', '#6e2f2f', '#3f5340', '#b8a487', '#6f6f6a', '#a8322d', '#8b6b48', '#3a2e28', '#556a7a', '#9b8a6a', '#c9b48e', '#5b4636', '#2f4a4a', '#7a3b2b', '#cfc2a2'],
 };
 /* fill one shelf cell; o = left-bottom-front corner, along = unit axis to the right, out = spine normal (into the room) */
@@ -412,12 +509,15 @@ function rowOfBooks(cell, len, seed) {
 }
 function buildBookInstances() {
   const geo = bookGeometry(); const n = BOOK.list.length;
-  const mesh = new THREE.InstancedMesh(geo, bookMaterial(BOOK.atlas), n);
+  const mesh = new THREE.InstancedMesh(geo, bookMaterial(BOOK.atlas || (BOOK.atlas = plainCloth())), n);
   const va = new Float32Array(n);
   BOOK.list.forEach((b, i) => { mesh.setMatrixAt(i, b.m); mesh.setColorAt(i, b.c); va[i] = b.v; });
   geo.setAttribute('aVar', new THREE.InstancedBufferAttribute(va, 1));
   mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false; room.add(mesh); return mesh;
 }
+
+/* a book of the page keeps no made-up lettering under its own title (G, 18/10/2026) */
+function titledSpine(mesh, idx) { BOOK.list[idx].v = TITLED; const a = mesh.geometry.getAttribute('aVar'); a.setX(idx, TITLED); a.needsUpdate = true; }
 /* ---------------------------------------------------------------- shelves */
 const SHELF = {};
 function buildShelves() {
@@ -425,15 +525,15 @@ function buildShelves() {
   // ---- tall bookshelf on the right wall: columns along z, rows along y
   const z0 = R.zB + 0.02, z1 = R.zF - 0.02, colW = 0.64, rowH = 0.37, dep = R.xW - R.xS, th = 0.028;
   const ncol = Math.round((z1 - z0) / colW), cw = (z1 - z0) / ncol; const nrow = Math.floor((R.H - 0.12) / rowH), rh = (R.H - 0.12) / nrow;
-  const backPanel = new THREE.Mesh(boardGeo(0.02, R.H, z1 - z0, 1), MAT.shelfBack); backPanel.position.set(R.xW - 0.01, R.H / 2, (z0 + z1) / 2); backPanel.receiveShadow = true; room.add(backPanel);
-  for (let i = 0; i <= ncol; i++) parts.push(place(boardGeo(dep, R.H, th, 1), R.xS + dep / 2, R.H / 2, z0 + i * cw));
-  parts.push(place(boardGeo(dep + 0.01, 0.1, z1 - z0, 1), R.xS + dep / 2, 0.05, (z0 + z1) / 2)); // plinth
+  const backPanel = new THREE.Mesh(boardGeo(0.02, R.H, z1 - z0, 1), MAT.shelfBack); backPanel.position.set(R.xW - 0.01, R.H / 2, (z0 + z1) / 2); backPanel.receiveShadow = true; room.add(backPanel); paintLightly(backPanel, 0.1);   // (G, 18/10/2026: "kệ sách và toàn bộ sách 10% less water color")
+  for (let i = 0; i <= ncol; i++) parts.push(place(boardGeo(dep, R.H, th, 1, RND), R.xS + dep / 2, R.H / 2, z0 + i * cw));
+  parts.push(place(boardGeo(dep + 0.01, 0.1, z1 - z0, 1, RND), R.xS + dep / 2, 0.05, (z0 + z1) / 2)); // plinth
   for (let j = 1; j <= nrow; j++) {
     const y = 0.1 + j * rh - (j === nrow ? 0.02 : 0);
     if (j === CLOCK_CELL.j + 1) {   // (the board over the clock's lower cell: out of its column, the two cells one: clock.js)
       const za = z0 + CLOCK_CELL.i * cw, zb = z0 + (CLOCK_CELL.i + 1) * cw;
-      parts.push(place(boardGeo(dep, th, za - z0, 1), R.xS + dep / 2, y, (z0 + za) / 2), place(boardGeo(dep, th, z1 - zb, 1), R.xS + dep / 2, y, (zb + z1) / 2));
-    } else parts.push(place(boardGeo(dep, th, z1 - z0, 1), R.xS + dep / 2, y, (z0 + z1) / 2));
+      parts.push(place(boardGeo(dep, th, za - z0, 1, RND), R.xS + dep / 2, y, (z0 + za) / 2), place(boardGeo(dep, th, z1 - zb, 1, RND), R.xS + dep / 2, y, (zb + z1) / 2));
+    } else parts.push(place(boardGeo(dep, th, z1 - z0, 1, RND), R.xS + dep / 2, y, (z0 + z1) / 2));
   }
   const along = new THREE.Vector3(0, 0, 1), out = new THREE.Vector3(-1, 0, 0);
   SHELF.R = { z0, cw, rh, th, dep, ncol, nrow };
@@ -445,15 +545,16 @@ function buildShelves() {
     if (j === nrow - 1 && rand() < .3) continue;
     fillCell(o, along, out, len, hgt, dep - 0.03, PAL.modern, { stack: j > 9 ? .08 : .05, cell: { shelf: 'R', i, j } });
   }
+  const nTall = parts.length;   // (the parts after these are the low bookcases')
   // ---- low bookcases under back and front glass
   for (const [zf, s] of [[R.zB + R.caseD, 1], [R.zF - R.caseD, -1]]) {
     const zc = zf - s * R.caseD / 2; const X = [R.xL, 0.05, 1.15, R.xS];
-    parts.push(place(boardGeo(R.xS - R.xL, 0.1, R.caseD, 1), (R.xL + R.xS) / 2, 0.05, zc));
-    parts.push(place(boardGeo(R.xS - R.xL + 0.04, 0.045, R.caseD + 0.03, 1), (R.xL + R.xS) / 2, R.caseTop - 0.0225, zc + s * 0.015));
-    for (const x of X) { const big = [R.xL, 0.05, 1.15, R.xS].includes(x); parts.push(place(boardGeo(big ? 0.05 : 0.028, R.caseTop, R.caseD, 1), x, R.caseTop / 2, zc)); }
+    parts.push(place(boardGeo(R.xS - R.xL, 0.1, R.caseD, 1, RND), (R.xL + R.xS) / 2, 0.05, zc));
+    parts.push(place(boardGeo(R.xS - R.xL + 0.04, 0.045, R.caseD + 0.03, 1, RND), (R.xL + R.xS) / 2, R.caseTop - 0.0225, zc + s * 0.015));
+    for (const x of X) { const big = [R.xL, 0.05, 1.15, R.xS].includes(x); parts.push(place(boardGeo(big ? 0.05 : 0.028, R.caseTop, R.caseD, 1, RND), x, R.caseTop / 2, zc)); }
     const rows = 7, rh2 = (R.caseTop - 0.145) / rows;
     if (s > 0) SHELF.B = { X, rh2, zf, th };
-    for (let j = 1; j < rows; j++) parts.push(place(boardGeo(R.xS - R.xL, th, R.caseD, 1), (R.xL + R.xS) / 2, 0.1 + j * rh2, zc));
+    for (let j = 1; j < rows; j++) parts.push(place(boardGeo(R.xS - R.xL, th, R.caseD, 1, RND), (R.xL + R.xS) / 2, 0.1 + j * rh2, zc));
     const along2 = new THREE.Vector3(s, 0, 0), out2 = new THREE.Vector3(0, 0, s);
     for (let i = 0; i < X.length - 1; i++) for (let j = 0; j < rows; j++) {
       const xa = X[i] + 0.025, xb = X[i + 1] - 0.025; const len = xb - xa; const yb = 0.1 + j * rh2 + th / 2;
@@ -465,9 +566,24 @@ function buildShelves() {
       }
     }
   }
-  const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.shelfOak); shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
+  // the cells darker toward their backs, as little of the room's light reaches in there; the boards' undersides darker
+  // still (vertex colours: 1 at a cell's front, CAVE at its back). The tall shelf's front is x = R.xS, a low case's z = zf.
+  parts.forEach((g, j) => {
+    const p = g.attributes.position, n = g.attributes.normal, c = new Float32Array(p.count * 3);
+    g.computeBoundingBox(); const back = (g.boundingBox.min.z + g.boundingBox.max.z) / 2 < (R.zB + R.zF) / 2, zf = back ? R.zB + R.caseD : R.zF - R.caseD;
+    for (let i = 0; i < p.count; i++) {
+      const t = j < nTall ? (p.getX(i) - R.xS) / dep : (back ? zf - p.getZ(i) : p.getZ(i) - zf) / R.caseD;
+      const k = (1 - (1 - CAVE) * Math.pow(THREE.MathUtils.clamp(t, 0, 1), 0.8)) * (n.getY(i) < -0.6 ? 0.8 : 1);
+      c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = k;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  });
+  MAT.shelfOak.vertexColors = true;
+  const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.shelfOak); paintLightly(shelves, 0.1, 0.85);   // (10 % less watercolour, near 75 %, then each 10 % less again: G, 18/10/2026: "kệ sách và toàn bộ sách 10% less water color")
+  shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
 }
 
+const RND = 0.004, CAVE = 0.5;   // the boards' edges rounded off 4 mm; the light left at the back of a cell (G, 18/10/2026: the shelves made realistic)
 const B7_CELL = { i: 0, j: 4, books: 0.4 };
 const CLOCK_CELL = { i: 3, j: 6 };   // the medieval clock's place: the tall shelf's 4th column, rows 6 and 7 made one cell (clock.js)   // the cell the 747 stands in (the back bookcase's left bay, its middle row: b747.js), and the books kept at its left end (m)
 /* ---------------------------------------------------------------- decor on shelves
@@ -492,7 +608,7 @@ function decorItem() {   // gathers a piece's parts: geometry (moved into the pi
     return add(new THREE.CylinderGeometry(r1, r0, L, seg), col, fin, { p: A.addScaledVector(d, 0.5).toArray(), q: new THREE.Quaternion().setFromUnitVectors(DK_Y, d.normalize()), m });
   };
   // a book: standing with its spine to the room, or lying flat (spine to the room as well)
-  const book = (w, h, d, cover, o = {}) => add(new THREE.BoxGeometry(w, h, d), o.lying ? [PAGES, PAGES, cover, cover, cover, PAGES] : [cover, cover, PAGES, PAGES, cover, PAGES], 'matte', o);
+  const book = (w, h, d, cover, o = {}) => add(new THREE.BoxGeometry(w, h, d), o.lying ? [PAGES, PAGES, cover, cover, cover, PAGES] : [cover, cover, PAGES, PAGES, cover, PAGES], 'book', o);   // (a mesh of their own: painted as the books are, decor/build.js)
   // a picture in a frame, standing on its lower edge and leaning back against the shelf
   const frame = (w, h, col, slot, { fin = 'matte', b = 0.02, depth = 0.018, lean = 0.12, x = 0, z = 0, ry = 0, mount = 0 } = {}) => {
     const m = new THREE.Matrix4().makeTranslation(x, 0, z).multiply(new THREE.Matrix4().makeRotationY(ry)).multiply(new THREE.Matrix4().makeRotationX(-lean)).multiply(new THREE.Matrix4().makeTranslation(0, h / 2, 0));
@@ -873,7 +989,7 @@ function buildDecor(assets) {
   const g = new THREE.Group(); room.add(g);
   const r = rng(4242), rnd = (a, b) => a + (b - a) * r(), atlas = decorAtlas(), C = new THREE.Color();
   const deck = DECOR_ITEMS.map(f => [r(), f]).sort((a, b) => a[0] - b[0]).map(x => x[1]);   // shuffled: one piece per cell
-  const bins = { matte: [], gloss: [], metal: [], glass: [], art: [] }, W = new THREE.Matrix4(), Q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
+  const bins = { matte: [], gloss: [], metal: [], glass: [], art: [], book: [] }, W = new THREE.Matrix4(), Q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
   DECOR.forEach((d, k) => {
     if (k >= deck.length) return;
     const c = d.o.clone().addScaledVector(d.along, d.len / 2).addScaledVector(d.out, -d.dep / 2 + 0.05);
@@ -890,14 +1006,15 @@ function buildDecor(assets) {
       if (p.slot) { const [u0, v0, u1, v1] = atlas.slots[p.slot], uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0)); }
       bins[p.fin].push(geo);
     }
-    if (model) { model.position.copy(c); model.rotation.y += yaw; model.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = true; }); g.add(model); }
+    if (model) { model.position.copy(c); model.rotation.y += yaw; model.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = true; }); g.add(model); if (deck[k].name === 'bookPile') paintLightly(model, 0.2); }
   });
   const std = o => new THREE.MeshStandardMaterial(o);
   const mats = { matte: std({ vertexColors: true, roughness: 0.85 }), gloss: std({ vertexColors: true, roughness: 0.3 }), metal: std({ vertexColors: true, metalness: 0.9, roughness: 0.38 }),
-    glass: std({ vertexColors: true, roughness: 0.08, transparent: true, opacity: 0.3, depthWrite: false }), art: std({ map: atlas.tex, roughness: 0.75 }) };
+    glass: std({ vertexColors: true, roughness: 0.08, transparent: true, opacity: 0.3, depthWrite: false }), art: std({ map: atlas.tex, roughness: 0.75 }) }; mats.book = mats.matte;
   for (const [fin, list] of Object.entries(bins)) {
     if (!list.length) continue;
     const m = new THREE.Mesh(mergeGeometries(list), mats[fin]); m.castShadow = fin !== 'glass'; m.receiveShadow = true; if (fin === 'glass') m.renderOrder = 1; g.add(m);
+    if (fin === 'book') paintLightly(m, 0.2);   // (the books among the pieces: as every book, 20 % less watercolour)
   }
   // The old shelf pieces drew from the room's random sequence: take the same number of draws, so everything built after
   // them (the garden) stays where it was.
@@ -1992,16 +2109,17 @@ const DENT_FOLDS = DENT_U + `
     float a = atan(uv.y, uv.x), ph = a * 11.0 + 1.3 * sin(a * 3.0 + 1.7) + 2.0 * q, aa = 1.0 - smoothstep(0.6, 1.5, fwidth(ph));
     return -h * ring * aa * min(1.2, uDentB.z / 0.03) * 0.0022 * pow(0.5 + 0.5 * cos(ph), 2.0);
   }`;
-function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, normalMap = null, normalScale = null, ao = false, pleat = 0, crease = 0.4, allFaces = 0, crush = 1, seam = 0, freq = 1, spec = 0.1, sheenAmt = 0.8, dent = false }) {
+function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, normalMap = null, normalScale = null, ao = false, pleat = 0, crease = 0.4, allFaces = 0, crush = 1, seam = 0, freq = 1, spec = 0.1, sheenAmt = 0.8, dent = false, nap = false, wear = false }) {
   const m = new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, sheen: sheenAmt, sheenColor: new THREE.Color(sheen), sheenRoughness: sheenRough, specularIntensity: spec, side: THREE.DoubleSide, vertexColors: ao });
+  if (nap || wear) m.defines = Object.assign(m.defines || {}, nap || wear ? { VELVET_NAP: '' } : {}, wear ? { VELVET_WEAR: '' } : {});   // (its geometry carries aCB, aCY: setNap)
   if (map) m.map = map; if (normalMap) { m.normalMap = normalMap; if (normalScale) m.normalScale.copy(normalScale); }
   const U = { uPleat: { value: pleat }, uCrease: { value: crease }, uAll: { value: allFaces }, uCrush: { value: crush }, uSeam: { value: seam }, uFreq: { value: freq } };
   m.userData.velvet = U;
   if (dent) m.customProgramCacheKey = () => 'velvet-dent';
   m.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObjP;\nvarying vec3 vObjN;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjP = position;\nvObjN = objectNormal;');
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObjP;\nvarying vec3 vObjN;\n#ifdef VELVET_NAP\nattribute vec4 aCB; attribute vec3 aCY; varying vec4 vCB; varying vec3 vCY;\n#endif')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObjP = position;\nvObjN = objectNormal;\n#ifdef VELVET_NAP\nvCB = aCB; vCY = aCY;\n#endif');
     if (dent) {
       Object.assign(sh.uniforms, SOFT.u);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>' + DENT_GLSL)
@@ -2041,19 +2159,54 @@ function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, 
         float sn = (abs(n.y) - 0.74) / 0.05, cord = exp(-sn * sn) - 0.55 * exp(-pow((abs(n.y) - 0.62) / 0.05, 2.0));
         return uPleat * side * pleat * 0.012 + uCrease * top * (crease * 0.003 + lump * 0.005) + uSeam * cord * 0.0025;
       }
+      #ifdef VELVET_NAP
+        varying vec4 vCB; varying vec3 vCY;   // its part's box (object space): centre x, z, half x, z; foot y, top y; the nap's lie
+      #endif
+      float vWorn;
+      #ifdef VELVET_WEAR
+      // a seat cushion as it is after use (Maverick Frame's furniture CGI notes; velvet makers' care guides): a shallow dish
+      // where one sits, a little forward of the middle, its pile crushed (so its sheen changes); under the front welt a
+      // soft roll where the front gives; and at the top corners, where the cover turns round them, a fan of small folds
+      float wearH(vec3 p, vec3 n) {
+        vec2 hs = max(vCB.zw, vec2(1e-3)), l = (p.xz - vCB.xy) / hs;   // -1..1 across it (y: toward its front)
+        float H = max(vCY.y - vCY.x, 1e-3), ly = (p.y - vCY.x) / H, h = 0.0;
+        float top = smoothstep(0.55, 0.85, n.y), front = smoothstep(0.55, 0.85, n.z), side = smoothstep(0.55, 0.85, abs(n.x));
+        vec2 q = (l - vec2(0.0, 0.12)) / vec2(0.66, 0.6); float q2 = dot(q, q), k = max(0.0, 1.0 - q2);
+        float wob = vn3(p * 7.0) - 0.5;
+        h -= top * k * k * 0.011 * (1.0 + 0.3 * wob);
+        vWorn = top * smoothstep(1.0, 0.25, sqrt(q2)) * (0.75 + 0.5 * vn3(p * 11.0 + 4.0));
+        float ax = 1.0 - smoothstep(0.55, 0.92, abs(l.x));
+        h += front * ax * (exp(-pow((ly - 0.84) / 0.035, 2.0)) - 0.6 * exp(-pow((ly - 0.75) / 0.03, 2.0))) * 0.0045 * (0.7 + 0.6 * vn3(p * 9.0));
+        h += (front + side) * 0.0015 * (vfbm(p * vec3(3.0, 26.0, 3.0)) - 0.5) * smoothstep(0.1, 0.35, ly);   // (and a little slack: soft folds across it, uneven)
+        // the fans: from each top corner of the front, on the front and on the sides, gone within ~11 cm
+        vec2 cf = vec2(hs.x - abs(p.x - vCB.x), vCY.y - p.y), cs = vec2(hs.y - (p.z - vCB.y), vCY.y - p.y);
+        float rf = length(cf), rs = length(cs), wf = 2.0 * vn3(p * 13.0);
+        float fanF = cos(atan(cf.y, max(cf.x, 1e-4)) * 10.0 + wf) * exp(-rf * rf / 0.011) * smoothstep(0.004, 0.03, rf);
+        float fanS = cos(atan(cs.y, max(cs.x, 1e-4)) * 10.0 + wf) * exp(-rs * rs / 0.011) * smoothstep(0.004, 0.03, rs);
+        return h + (front * fanF + side * fanS) * 0.003;
+      }
+      #endif
       float vCav, vHt;
       float vCrush;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         vCrush = smoothstep(0.28, 0.72, vfbm(vObjP * uFreq * 5.0 + 11.0));
         {
+          vWorn = 0.0;
           float hF = fabricH(vObjP, normalize(vObjN) * (gl_FrontFacing ? 1.0 : -1.0));
+          #ifdef VELVET_WEAR
+            hF += wearH(vObjP, normalize(vObjN) * (gl_FrontFacing ? 1.0 : -1.0));
+            vCrush = mix(vCrush, 0.82 + 0.18 * vfbm(vObjP * 16.0), 0.8 * vWorn);   // (the pile pressed flat where one sits)
+          #endif
           // crushed pile: a gentle undulation whose slope tilts the fibres in patches
           float hC = (vfbm(vObjP * uFreq * 3.0 + 1.3) - 0.5) * 0.012 * uCrush * (0.4 + vCrush);
           vHt = (hF + hC) * length(modelMatrix[0].xyz);           // metres in world space
           vCav = clamp(1.0 + hF * 30.0, 0.55, 1.0);                // fold valleys hold shadow
           ${dent ? 'vHt += dentFolds(vDentW); vCav *= 1.0 - 0.16 * smoothstep(0.0, 0.035, vDentD);   // (the cover drawn in round the cat; the hollow\'s floor a little in shadow)' : ''}
         }
-        diffuseColor.rgb *= mix(0.9, 1.07, vCrush * uCrush + (1.0 - uCrush) * 0.5) * vCav;`)
+        diffuseColor.rgb *= mix(0.9, 1.07, vCrush * uCrush + (1.0 - uCrush) * 0.5) * vCav * (1.0 + 0.05 * vWorn);
+        #ifdef VELVET_NAP
+          diffuseColor.rgb *= mix(1.0, vCY.z, 0.3);   // (each module's pile lies its own way: a shade lighter or darker)
+        #endif`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           // surface-gradient bump from screen-space derivatives (Mikkelsen 2010) with unnormalised sigmas,
@@ -2069,12 +2222,22 @@ function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, 
       .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
         #ifdef USE_SHEEN
           material.sheenColor *= mix(0.55, 1.3, vCrush * uCrush + (1.0 - uCrush) * 0.5) * vCav * vCav;
+          #ifdef VELVET_NAP
+            material.sheenColor *= vCY.z;
+          #endif
           #ifdef USE_COLOR
             material.sheenColor *= vColor.r;
           #endif
         #endif`);
   };
   return m;
+}
+/* a sofa part's box (object space) and the lie of its pile, on every vertex: the velvet's nap (and a seat's wear) read
+   them (aCB: centre x, z, half x, z; aCY: foot y, top y, nap ~0.9-1.1) */
+function setNap(g, nap) {
+  g.computeBoundingBox(); const b = g.boundingBox, n = g.attributes.position.count, cb = new Float32Array(n * 4), cy = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { cb.set([(b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2, (b.max.x - b.min.x) / 2, (b.max.z - b.min.z) / 2], i * 4); cy.set([b.min.y, b.max.y, nap], i * 3); }
+  g.setAttribute('aCB', new THREE.BufferAttribute(cb, 4)); g.setAttribute('aCY', new THREE.BufferAttribute(cy, 3));
 }
 /* stuffed bolster: rounded ends gathered into a button, soft body wrinkles; axis along x */
 function bolsterGeometry(L = 0.62, R = 0.13, seed = 3) {
@@ -2134,14 +2297,18 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const sofa = new THREE.Group(); const S = 0.92; sofa.scale.setScalar(S);
   sofa.position.set(R.xS - 3.7213 * S, 0, R.zB + R.caseD + 0.26); F.add(sofa);
   const ref = B.sofa_seat_mid.material; const nS = ref.normalScale.clone();
-  MAT.sofaCushion = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 1, crease: 1, seam: 1, freq: 1, dent: true });   // (gives under the cat)
-  MAT.sofaBack = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 0, crease: 0.8, allFaces: 1, seam: 1, freq: 1 });
-  MAT.sofaFrame = makeVelvet({ color: 0x3b5a3c, sheen: 0xd6dfbd, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.7), ao: true, pleat: 0, crease: 0.35, freq: 1 });
+  // (the seat cushions: no gathered pleats round them, which read as stripes, but the wear of use: velvet.js wearH; each
+  // module's pile its own way: setNap. G, 18/10/2026: "do research and improve the texture, detailing")
+  MAT.sofaCushion = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 0, crease: 1, seam: 1.4, freq: 1, dent: true, wear: true });   // (gives under the cat)
+  MAT.sofaBack = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 0, crease: 0.8, allFaces: 1, seam: 1.4, freq: 1, nap: true });
+  MAT.sofaFrame = makeVelvet({ color: 0x3b5a3c, sheen: 0xd6dfbd, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.7), ao: true, pleat: 0, crease: 0.35, freq: 1, nap: true });
   const parts = [], aoT = [], aoO = []; let pid = 0;
+  const NAP = { sofa_seat_end: 1.07, sofa_seat_mid: 0.93, sofa_seat_corner: 1.03, sofa_seat_chaise: 0.9, sofa_back_end: 0.95, sofa_back_mid: 1.05, sofa_back_corner: 0.97, sofa_back_side: 1.04, sofa_arm: 1.02, sofa_pillow: 0.96 };   // (each module's pile its own way)
   for (const m of Object.values(B)) {
     if (!m.name.startsWith('sofa_') || m.name === 'sofa_legs') continue;
     const mat = /seat/.test(m.name) ? MAT.sofaCushion : /back|arm|pillow/.test(m.name) ? MAT.sofaBack : MAT.sofaFrame;
     const mesh = new THREE.Mesh(m.geometry.clone(), mat); mesh.name = m.name; mesh.castShadow = mesh.receiveShadow = true;
+    setNap(mesh.geometry, NAP[m.name] ?? 1);
     sofa.add(mesh); parts.push(mesh); const e = { mesh, id: ++pid }; aoT.push(e); aoO.push(e);
   }
   // recessed dark plinth instead of the little leg cubes
@@ -2174,6 +2341,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   F.updateMatrixWorld(true);
   bakeContactAO(aoT, aoO);
   F.userData.sofa = sofa; LIGHTS.sofa = sofa;
+  paintLightly(sofa, 0.3); for (const e of aoT) if (e.mesh.parent === F) paintLightly(e.mesh, 0.3);   // (the sofa, its bolsters and its pillows 30 % less watercolour: G, 18/10/2026)
   await tick();
   // ---- coffee table (GLB, scaled to an oval) + wooden legs
   const tbl = new THREE.Group(); const tS = new THREE.Vector3(0.95 / 2, 0.42 / 0.907, 0.6 / 2);
@@ -2185,7 +2353,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const cj = candleJar(); cj.position.set(-0.72, 0.42, -6.25); F.add(cj); LIGHTS.candle = cj;
   const tb1 = flatBook(B.book_book002, 0.35 + Math.PI / 2, 1.15); tb1.position.set(-0.13, 0.42, -6.22); F.add(tb1);
   const tb2 = flatBook(B.book_book01, 0.2 + Math.PI / 2, 1.1); tb2.position.set(-0.13, 0.42 + tb1.userData.h, -6.21); F.add(tb2);
-  paintLightly(tb1, 0.1); paintLightly(tb2, 0.1);   // (every book 10 % less watercolour: G, 17/10/2026)
+  paintLightly(tb1, 0.2); paintLightly(tb2, 0.2);   // (every book 10 % less watercolour: G, 17/10/2026; 10 % less again: G, 18/10/2026: "kệ sách và toàn bộ sách 10% less water color")
   // ---- floor lamp in the back-right corner, behind the sofa, turned so its shade hangs over the seat (G, 18/10/2026:
   // "fix the position, em nên xoay tới sofa (above sofa)": it reached along the bookcase, its shade among the books); its
   // counterweight arm shorter, so it stays clear of the bookcase behind it
@@ -2200,7 +2368,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up;
   // the page's sky clock is centred over it (build.py: 39.92 painting px right of the middle; moved with it)
   const pd = pendantLamp(R.H - 3.27); pd.position.set(0.43, R.H, -7.2); F.add(pd); LIGHTS.pendant = pd;
-  paintLightly(pd, 0.875);   // (75 % less watercolour, then half of what was left: G, 17/10/2026)
+  paintLightly(pd, 0.5);   // (75 % less watercolour, then half of what was left: G, 17/10/2026; back to half: G, 18/10/2026)
   // ---- stump side table + plant
   const st = stumpTable(); st.position.set(R.xL + 0.32, 0, -5.85); F.add(st);
   const pot = new THREE.Mesh(new THREE.LatheGeometry([[.001, 0], [.1, 0], [.14, .05], [.15, .11], [.14, .12]].map(p => new THREE.Vector2(p[0], p[1])), 28), MAT.stone); pot.position.set(R.xL + 0.28, 0.53, -5.98); pot.castShadow = true; F.add(pot);
@@ -2227,7 +2395,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
     obj.position.set(x, y, z); obj.rotation.set(-tiltX, yaw, tiltZ, 'YXZ'); F.add(obj); return y; };
   const toW = (lx, lz) => new THREE.Vector3(lx, 0, lz).applyAxisAngle(new THREE.Vector3(0, 1, 0), pouf.rotation.y).add(pouf.position);
   const b1 = flatBook(B.book_book002, Math.PI / 2, 1.5), b2 = flatBook(B.book_book005, Math.PI / 2 + 0.07, 1.42), b3 = flatBook(B.book_book006, Math.PI / 2, 1.55);
-  for (const b of [b1, b2, b3]) paintLightly(b, 0.1);
+  for (const b of [b1, b2, b3]) paintLightly(b, 0.2);   // (as every book)
   { const p = toW(-0.17, -0.22); restOn(b1, p.x, p.z, 0.22, 0.13, 0.17); }
   const y2 = b1.position.y + b1.userData.h; b2.position.set(b1.position.x + 0.006, y2, b1.position.z - 0.004); b2.rotation.copy(b1.rotation); b2.rotation.y += 0.06; F.add(b2); LIGHTS.gardenBook = b2;   // (its cover the 3D garden's: world/gardenbook.js)
   { const p = toW(-0.33, 0.05); restOn(b3, p.x, p.z, 0.36, 0.14, 0.19); }
@@ -2253,7 +2421,7 @@ function dust() {
 }
 /* ---------------------------------------------------------------- post: watercolour */
 // (light: the parts of the room painted lightly, drawLight below)
-const POST = { light: { scene: new THREE.Scene(), parts: [], mats: new Map(), k: { value: 1 } } };   // (k: all of each part's own share)
+const POST = { light: { scene: new THREE.Scene(), parts: [], mats: new Map(), k: { value: 1 }, close: { value: 0 } } };   // (k: all of each part's own share; close: 0 in the room's view, 1 in a close view of the shelves)
 /* The watercolour picture is made in three passes:
    1. tone: the scene's colours through the tone curve, once per pixel (the paint pass reads each one ~50 times);
    2. paper: the noise fields that only depend on the screen position (wobble, pigment, fibres, blotches, paper grain),
@@ -2373,10 +2541,12 @@ function buildPost() {
    - The tone pass hands 1 − alpha on, and the paint pass lets that share of the paint go, the part as drawn under the
      paper's lift and warmth.
    - The parts stay in the room: lit, shadowed, in its depth. An instanced mesh's stand-in shares its instances. */
-function paintLightly(obj, k = 0.75) {
-  const L = POST.light; let mat = L.mats.get(k);
-  if (!mat) L.mats.set(k, mat = new THREE.ShaderMaterial({ vertexShader: 'void main(){ vec4 p = vec4(position, 1.0);\n#ifdef USE_INSTANCING\n  p = instanceMatrix * p;\n#endif\n  gl_Position = projectionMatrix * modelViewMatrix * p; }',
-    fragmentShader: `void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, ${(1 - k).toFixed(3)}); }`, side: THREE.DoubleSide, depthTest: true, depthWrite: false,
+// kClose: its share in a close view of the shelves instead (G, 18/10/2026: "render close up Research và Books làm cho kệ sách
+// và sách realistic"): the shelves and their books, seen near, painted far more lightly, so their wood and cloth show
+function paintLightly(obj, k = 0.75, kClose = null) {
+  const L = POST.light, key = kClose === null ? k : `${k}|${kClose}`; let mat = L.mats.get(key);
+  if (!mat) L.mats.set(key, mat = new THREE.ShaderMaterial({ uniforms: { uClose: L.close }, vertexShader: 'void main(){ vec4 p = vec4(position, 1.0);\n#ifdef USE_INSTANCING\n  p = instanceMatrix * p;\n#endif\n  gl_Position = projectionMatrix * modelViewMatrix * p; }',
+    fragmentShader: kClose === null ? `void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, ${(1 - k).toFixed(3)}); }` : `uniform float uClose; void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0 - mix(${k.toFixed(3)}, ${kClose.toFixed(3)}, uClose)); }`, side: THREE.DoubleSide, depthTest: true, depthWrite: false,
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,   // (its own surface, drawn twice, always passes the depth test)
     blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.ZeroFactor }));
   if (!L.reset) L.reset = new FullScreenQuad(new THREE.ShaderMaterial({ vertexShader: QUAD_VS, fragmentShader: 'void main(){ gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }',
@@ -2495,9 +2665,10 @@ let A = null, booksMesh, motes;
 async function main() {
   const bufP = getLibBuffer(); bufP.catch(() => {});   // the models download while the room is built
   const texP = buildTextures();   // (the wood, painted in workers: materials.js)
+  const spinesP = spineAtlas();   // (the books' spines, drawn in a worker: books.js)
   buildMaterials();
   buildRoom();
-  BOOK.atlas = buildSpineAtlas(); buildShelves(); booksMesh = buildBookInstances(); paintLightly(booksMesh, 0.1); await tick();   // (the shelves' books: 10 % less watercolour, G, 17/10/2026)
+  buildShelves(); booksMesh = buildBookInstances(); paintLightly(booksMesh, 0.2, 0.95); await tick();   // (the shelves' books: 10 % less watercolour, G, 17/10/2026, and 10 % less again, G, 18/10/2026: "kệ sách và toàn bộ sách 10% less water color"; seen near 95 % less: 80 %, then 75 % of what was left, G, 18/10/2026)
   buildLights(); buildPost();
   A = await loadAssets(await bufP); await tick();
   await buildFurniture(A); await tick(); buildDecor(A); motes = dust(); await tick();
@@ -2505,7 +2676,7 @@ async function main() {
   scene.fog = new THREE.FogExp2(0xd6e2e6, 0.03);   // a light blue haze over the far trees, matching the sky
   room.traverse(o => { if (o.material) [].concat(o.material).forEach(m => m.fog = false); });
   buildGlass();   // (the panes' glass: the room is first seen in it once the garden and the sky are in, loop.js)
-  await texP;
+  await texP; setSpineAtlas(booksMesh, await spinesP);
 }
 // after the room's first picture: the garden (its trees built in code, the lawn, the shrubs, the far woods) and the
 // sky's dome, hidden until they are let in (loop.js: reveal). Of all that is built only the shelves, their books and
@@ -2981,6 +3152,7 @@ function buildSections() {
       if (hsl.l < 0.45) {   // a book that will be read in front of the camera is never a very dark one (lifted on the shelf too)
         bl.c.setHSL(hsl.h, Math.min(hsl.s, 0.5), 0.45, THREE.SRGBColorSpace); booksMesh.setColorAt(c0.idx, bl.c); booksMesh.instanceColor.needsUpdate = true;
       }
+      titledSpine(booksMesh, c0.idx);
       const bk = { sec, it, idx: c0.idx, m0: bl.m.clone(), color: bl.c.clone(), t: c0.t, h: c0.h, d: c0.d, out: false, slide: 0, hero: null, pose: null, goal: null, fk: 1 };
       bk.normal = box.normal.clone(); it.book = bk; sec.books.push(bk); if (it.src) UIS.bySrc.set(it.src, bk);
       // an invisible box over the shelf book: the pointer finds it to select its row in the card, a click plays it
@@ -3048,7 +3220,8 @@ function wrapText(g, text, maxW) {
   for (const w of words) { const tryL = line ? line + ' ' + w : w; if (g.measureText(tryL).width > maxW && line) { lines.push(line); line = w; } else line = tryL; }
   if (line) lines.push(line); return lines;
 }
-function inkFor(col) { const hsl = {}; col.getHSL(hsl, THREE.SRGBColorSpace); return hsl.l < 0.55 ? '#f3ead6' : '#2a2118'; }
+function inkFor(col) { const hsl = {}; col.getHSL(hsl, THREE.SRGBColorSpace); return hsl.l < 0.55 ? INK_LIGHT : '#2a2118'; }
+const INK_LIGHT = '#e2d6c0';   // (the page's whites: G, 18/10/2026)
 // the book's own lights (on its layer only), as a product is lit: a key lamp a third of a metre off to the viewer's upper
 // left, its light falling off across the cover, bringing out the rounded edges, the groove of the joint and the stamping;
 // and a weak fill from the right, low, so the fore-edge (turned away from the key) shows its pages; softer and warmer at
@@ -3265,7 +3438,7 @@ function heroFace(bk, W, H, cloth, layout, ink) {
     gb.fillStyle = '#8c8c8c'; gb.fillRect(0, 0, W, H); gb.globalAlpha = 0.5; gb.fillStyle = gb.createPattern(cloth, 'repeat'); gb.fillRect(0, 0, W, H); gb.globalAlpha = 1;   // (the weave)
     gr.fillStyle = 'rgb(0,214,0)'; gr.fillRect(0, 0, W, H);
     if (layout) {   // (the cloth pressed round the stamping darkens a little: it also keeps the words clear of the cloth)
-      gc.save(); gc.shadowColor = ink === '#2a2118' ? 'rgba(255,248,232,.55)' : 'rgba(20,14,8,.6)'; gc.shadowBlur = Math.max(3, W * 0.012);
+      gc.save(); gc.shadowColor = ink === '#2a2118' ? 'rgba(226,214,192,.55)' : 'rgba(20,14,8,.6)'; gc.shadowBlur = Math.max(3, W * 0.012);
       gc.fillStyle = gc.strokeStyle = ink; layout(gc); gc.restore();
       gb.filter = 'blur(1.2px)'; gb.fillStyle = gb.strokeStyle = '#1a1a1a'; layout(gb); gb.filter = 'none';
       gr.fillStyle = gr.strokeStyle = 'rgb(0,92,96)'; layout(gr);
@@ -3317,7 +3490,7 @@ function heroPagesMat(bk, base) {
   return m;
 }
 function heroBand(bk) {   // the headband: silk wound on its core, two colours
-  const c = canvas(64, 16), g = c.getContext('2d'), a = inkFor(bk.color) === '#f3ead6' ? '#e9dcc0' : '#7c2b26';
+  const c = canvas(64, 16), g = c.getContext('2d'), a = inkFor(bk.color) === INK_LIGHT ? '#e9dcc0' : '#7c2b26';
   g.fillStyle = '#8f2f29'; g.fillRect(0, 0, 64, 16); g.fillStyle = a;
   for (let x = -16; x < 80; x += 8) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 4, 0); g.lineTo(x + 8, 16); g.lineTo(x + 4, 16); g.fill(); }
   const t = heroCanvasTex(c, true, true); t.repeat.set(14, 1); return t;
@@ -4302,7 +4475,7 @@ function crispMaterial(map) {
 }
 function wordsCanvas(W, H, bk) {   // ink that suits the cover, with a soft halo of the opposite tone so it reads on any paint
   const c = canvas(W, H), g = c.getContext('2d'), ink = inkFor(bk.color);
-  g.fillStyle = ink; g.textAlign = 'center'; g.shadowColor = ink === '#2a2118' ? 'rgba(255,248,232,.55)' : 'rgba(20,14,8,.6)'; g.shadowBlur = Math.max(4, W * 0.012);
+  g.fillStyle = ink; g.textAlign = 'center'; g.shadowColor = ink === '#2a2118' ? 'rgba(226,214,192,.55)' : 'rgba(20,14,8,.6)'; g.shadowBlur = Math.max(4, W * 0.012);
   return { c, g };
 }
 function spineWords(bk) {   // the title along the spine, as large as the spine allows (narrowed a little rather than cut)
@@ -4314,7 +4487,7 @@ function spineWords(bk) {   // the title along the spine, as large as the spine 
   while (g.measureText(txt).width > room * (two ? 2 : 1) && size > Math.round(W * (two ? 0.34 : 0.5))) { size -= 1; g.font = font(size); }
   const fit = (t, k) => { while (g.measureText(t).width * k > room && t.length > 4) t = t.slice(0, -2).trimEnd() + '…'; return t; };
   // a soft strip under the words, in the tone opposite the ink, so they read over any printed pattern on the spine
-  const band = (w, h) => { g.save(); g.shadowBlur = 0; g.fillStyle = g.fillStyle === '#2a2118' ? 'rgba(255,248,232,.5)' : 'rgba(22,16,10,.42)';
+  const band = (w, h) => { g.save(); g.shadowBlur = 0; g.fillStyle = g.fillStyle === '#2a2118' ? 'rgba(226,214,192,.5)' : 'rgba(22,16,10,.42)';
     g.beginPath(); g.roundRect(-w / 2 - size * 0.35, -h / 2, w + size * 0.7, h, size * 0.3); g.fill(); g.restore(); };
   if (two && g.measureText(txt).width > room) {
     const words = txt.split(/\s+/); let a = '', i = 0; while (i < words.length && g.measureText((a ? a + ' ' : '') + words[i]).width <= room) a += (a ? ' ' : '') + words[i++];
@@ -5809,7 +5982,7 @@ function sharpQuad(P) {
           for (int i = 0; i < 24; i++) { float an = 6.2831853 * (float(i) + 0.5) / 24.0; vec2 d = vec2(cos(an), sin(an)) * uTexel;
             near = max(near, max(aAt(uv + d * uOutW), aAt(uv + d * uOutW * 0.5))); far = max(far, aAt(uv + d * (uOutW + uHalo))); }
           float w = smoothstep(0.2, 0.6, near) * (1.0 - smoothstep(0.3, 0.8, here)) * 0.95 * uOut, h = smoothstep(0.1, 0.6, far) * (1.0 - here) * 0.55 * uOut;
-          vec4 ring = vec4(vec3(w), w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
+          vec4 ring = vec4(vec3(0.886, 0.839, 0.753) * w, w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
         }
         res *= uFade; if (res.a < 0.002) discard; gl_FragColor = res; }` : `if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }`}` }));
 }
@@ -7564,6 +7737,10 @@ function wantOf(bk) {
 }
 function stepBooks(dt, t) {
   let moving = false;
+  {   // the shelves painted lightly in their close views (fx/post.js paintLightly kClose)
+    const C = POST.light.close, want = UIS.mode !== 'home' && !offMode() ? 1 : 0;
+    if (C.value !== want) { C.value += Math.sign(want - C.value) * Math.min(Math.abs(want - C.value), dt / 1.2); moving = true; }
+  }
   for (const bk of [...UIS.touched]) {
     const want = wantOf(bk);
     if (!bk.out) {
@@ -7721,7 +7898,7 @@ function buildRecordPlayer() {
           for (int i = 0; i < 24; i++) { float an = 6.2831853 * (float(i) + 0.5) / 24.0; vec2 d = vec2(cos(an), sin(an)) * uTexel;
             near = max(near, max(aAt(uv + d * uOutW), aAt(uv + d * uOutW * 0.5))); far = max(far, aAt(uv + d * (uOutW + uHalo))); }
           float w = smoothstep(0.2, 0.6, near) * (1.0 - smoothstep(0.3, 0.8, here)) * 0.95 * uOut, h = smoothstep(0.1, 0.6, far) * (1.0 - here) * 0.55 * uOut;
-          vec4 ring = vec4(vec3(w), w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
+          vec4 ring = vec4(vec3(0.886, 0.839, 0.753) * w, w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
         }
         if (res.a < 0.002) discard; gl_FragColor = res; }` }));
   // its contact shadow on the floor (in the room, so it is painted with it)

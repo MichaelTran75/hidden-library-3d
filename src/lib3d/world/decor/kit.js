@@ -23,7 +23,7 @@ function decorItem() {   // gathers a piece's parts: geometry (moved into the pi
     return add(new THREE.CylinderGeometry(r1, r0, L, seg), col, fin, { p: A.addScaledVector(d, 0.5).toArray(), q: new THREE.Quaternion().setFromUnitVectors(DK_Y, d.normalize()), m });
   };
   // a book: standing with its spine to the room, or lying flat (spine to the room as well)
-  const book = (w, h, d, cover, o = {}) => add(new THREE.BoxGeometry(w, h, d), o.lying ? [PAGES, PAGES, cover, cover, cover, PAGES] : [cover, cover, PAGES, PAGES, cover, PAGES], 'matte', o);
+  const book = (w, h, d, cover, o = {}) => add(new THREE.BoxGeometry(w, h, d), o.lying ? [PAGES, PAGES, cover, cover, cover, PAGES] : [cover, cover, PAGES, PAGES, cover, PAGES], 'book', o);   // (a mesh of their own: painted as the books are, decor/build.js)
   // a picture in a frame, standing on its lower edge and leaning back against the shelf
   const frame = (w, h, col, slot, { fin = 'matte', b = 0.02, depth = 0.018, lean = 0.12, x = 0, z = 0, ry = 0, mount = 0 } = {}) => {
     const m = new THREE.Matrix4().makeTranslation(x, 0, z).multiply(new THREE.Matrix4().makeRotationY(ry)).multiply(new THREE.Matrix4().makeRotationX(-lean)).multiply(new THREE.Matrix4().makeTranslation(0, h / 2, 0));

@@ -8,7 +8,7 @@ import { buildRug } from './rug.js';
 import { candleJar, floorLamp, pendantLamp, plant, stumpTable, tableLamp } from './furniture.js';
 import { LIGHTS } from './lights.js';
 import { paintLightly } from '../fx/post.js';
-import { bolsterGeometry, makeVelvet } from './velvet.js';
+import { bolsterGeometry, makeVelvet, setNap } from './velvet.js';
 
 /* contact AO baked into vertex colour: nearest occluding point of another part in front of the surface,
    plus a darkening towards the floor. Parts are compared in world space.                                 */
@@ -50,14 +50,18 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const sofa = new THREE.Group(); const S = 0.92; sofa.scale.setScalar(S);
   sofa.position.set(R.xS - 3.7213 * S, 0, R.zB + R.caseD + 0.26); F.add(sofa);
   const ref = B.sofa_seat_mid.material; const nS = ref.normalScale.clone();
-  MAT.sofaCushion = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 1, crease: 1, seam: 1, freq: 1, dent: true });   // (gives under the cat)
-  MAT.sofaBack = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 0, crease: 0.8, allFaces: 1, seam: 1, freq: 1 });
-  MAT.sofaFrame = makeVelvet({ color: 0x3b5a3c, sheen: 0xd6dfbd, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.7), ao: true, pleat: 0, crease: 0.35, freq: 1 });
+  // (the seat cushions: no gathered pleats round them, which read as stripes, but the wear of use: velvet.js wearH; each
+  // module's pile its own way: setNap. G, 18/10/2026: "do research and improve the texture, detailing")
+  MAT.sofaCushion = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 0, crease: 1, seam: 1.4, freq: 1, dent: true, wear: true });   // (gives under the cat)
+  MAT.sofaBack = makeVelvet({ color: 0x40603f, sheen: 0xdfe6c4, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.9), ao: true, pleat: 0, crease: 0.8, allFaces: 1, seam: 1.4, freq: 1, nap: true });
+  MAT.sofaFrame = makeVelvet({ color: 0x3b5a3c, sheen: 0xd6dfbd, sheenAmt: 1, map: ref.map, normalMap: ref.normalMap, normalScale: nS.clone().multiplyScalar(0.7), ao: true, pleat: 0, crease: 0.35, freq: 1, nap: true });
   const parts = [], aoT = [], aoO = []; let pid = 0;
+  const NAP = { sofa_seat_end: 1.07, sofa_seat_mid: 0.93, sofa_seat_corner: 1.03, sofa_seat_chaise: 0.9, sofa_back_end: 0.95, sofa_back_mid: 1.05, sofa_back_corner: 0.97, sofa_back_side: 1.04, sofa_arm: 1.02, sofa_pillow: 0.96 };   // (each module's pile its own way)
   for (const m of Object.values(B)) {
     if (!m.name.startsWith('sofa_') || m.name === 'sofa_legs') continue;
     const mat = /seat/.test(m.name) ? MAT.sofaCushion : /back|arm|pillow/.test(m.name) ? MAT.sofaBack : MAT.sofaFrame;
     const mesh = new THREE.Mesh(m.geometry.clone(), mat); mesh.name = m.name; mesh.castShadow = mesh.receiveShadow = true;
+    setNap(mesh.geometry, NAP[m.name] ?? 1);
     sofa.add(mesh); parts.push(mesh); const e = { mesh, id: ++pid }; aoT.push(e); aoO.push(e);
   }
   // recessed dark plinth instead of the little leg cubes
@@ -90,6 +94,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   F.updateMatrixWorld(true);
   bakeContactAO(aoT, aoO);
   F.userData.sofa = sofa; LIGHTS.sofa = sofa;
+  paintLightly(sofa, 0.3); for (const e of aoT) if (e.mesh.parent === F) paintLightly(e.mesh, 0.3);   // (the sofa, its bolsters and its pillows 30 % less watercolour: G, 18/10/2026)
   await tick();
   // ---- coffee table (GLB, scaled to an oval) + wooden legs
   const tbl = new THREE.Group(); const tS = new THREE.Vector3(0.95 / 2, 0.42 / 0.907, 0.6 / 2);
@@ -101,7 +106,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   const cj = candleJar(); cj.position.set(-0.72, 0.42, -6.25); F.add(cj); LIGHTS.candle = cj;
   const tb1 = flatBook(B.book_book002, 0.35 + Math.PI / 2, 1.15); tb1.position.set(-0.13, 0.42, -6.22); F.add(tb1);
   const tb2 = flatBook(B.book_book01, 0.2 + Math.PI / 2, 1.1); tb2.position.set(-0.13, 0.42 + tb1.userData.h, -6.21); F.add(tb2);
-  paintLightly(tb1, 0.1); paintLightly(tb2, 0.1);   // (every book 10 % less watercolour: G, 17/10/2026)
+  paintLightly(tb1, 0.2); paintLightly(tb2, 0.2);   // (every book 10 % less watercolour: G, 17/10/2026; 10 % less again: G, 18/10/2026: "kệ sách và toàn bộ sách 10% less water color")
   // ---- floor lamp in the back-right corner, behind the sofa, turned so its shade hangs over the seat (G, 18/10/2026:
   // "fix the position, em nên xoay tới sofa (above sofa)": it reached along the bookcase, its shade among the books); its
   // counterweight arm shorter, so it stays clear of the bookcase behind it
@@ -116,7 +121,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   // caption, between two posts of the back glass (G, 17/10/2026: his screenshot, ~2077 × 1500 CSS px), its middle 3.27 m up;
   // the page's sky clock is centred over it (build.py: 39.92 painting px right of the middle; moved with it)
   const pd = pendantLamp(R.H - 3.27); pd.position.set(0.43, R.H, -7.2); F.add(pd); LIGHTS.pendant = pd;
-  paintLightly(pd, 0.875);   // (75 % less watercolour, then half of what was left: G, 17/10/2026)
+  paintLightly(pd, 0.5);   // (75 % less watercolour, then half of what was left: G, 17/10/2026; back to half: G, 18/10/2026)
   // ---- stump side table + plant
   const st = stumpTable(); st.position.set(R.xL + 0.32, 0, -5.85); F.add(st);
   const pot = new THREE.Mesh(new THREE.LatheGeometry([[.001, 0], [.1, 0], [.14, .05], [.15, .11], [.14, .12]].map(p => new THREE.Vector2(p[0], p[1])), 28), MAT.stone); pot.position.set(R.xL + 0.28, 0.53, -5.98); pot.castShadow = true; F.add(pot);
@@ -143,7 +148,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
     obj.position.set(x, y, z); obj.rotation.set(-tiltX, yaw, tiltZ, 'YXZ'); F.add(obj); return y; };
   const toW = (lx, lz) => new THREE.Vector3(lx, 0, lz).applyAxisAngle(new THREE.Vector3(0, 1, 0), pouf.rotation.y).add(pouf.position);
   const b1 = flatBook(B.book_book002, Math.PI / 2, 1.5), b2 = flatBook(B.book_book005, Math.PI / 2 + 0.07, 1.42), b3 = flatBook(B.book_book006, Math.PI / 2, 1.55);
-  for (const b of [b1, b2, b3]) paintLightly(b, 0.1);
+  for (const b of [b1, b2, b3]) paintLightly(b, 0.2);   // (as every book)
   { const p = toW(-0.17, -0.22); restOn(b1, p.x, p.z, 0.22, 0.13, 0.17); }
   const y2 = b1.position.y + b1.userData.h; b2.position.set(b1.position.x + 0.006, y2, b1.position.z - 0.004); b2.rotation.copy(b1.rotation); b2.rotation.y += 0.06; F.add(b2); LIGHTS.gardenBook = b2;   // (its cover the 3D garden's: world/gardenbook.js)
   { const p = toW(-0.33, 0.05); restOn(b3, p.x, p.z, 0.36, 0.14, 0.19); }

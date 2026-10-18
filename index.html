@@ -1085,7 +1085,7 @@
      'examples/jsm/utils/BufferGeometryUtils.js', 'examples/jsm/postprocessing/Pass.js'].forEach(function (u) {
       var l = document.createElement('link'); l.rel = 'modulepreload'; l.href = 'https://cdn.jsdelivr.net/npm/three@0.170.0/' + u; document.head.appendChild(l);
     });
-    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=beed85a1d4'; document.head.appendChild(p);
+    var g = document.createElement('link'); g.rel = 'preload'; g.as = 'fetch'; g.href = 'lib.glb'; g.crossOrigin = 'anonymous'; document.head.appendChild(g); var p = document.createElement('link'); p.rel = 'modulepreload'; p.href = 'lib3d.js?v=32aeb82516'; document.head.appendChild(p);
   }
   // the room replaces the painted backgrounds: drop them before anything paints, so they are never downloaded
   (function () {
@@ -1098,7 +1098,7 @@
   /* ---- the accent: black by day, the page's beige by night, where it was blue (G, 17/10/2026: "trong light theme: em
      thay tất cả màu xanh dương thành màu đen, dark theme thì xanh thành màu #E2D6C0"), on every screen; what stands on
      it (words, icons) turns dark by night. The day/night switch keeps its sky. */
-  :root { --accent: #000; --accent-rgb: 0, 0, 0; --accent-hover: #3a3a3a; --on-accent: #fff; --on-accent-rgb: 255, 255, 255; }
+  :root { --accent: #000; --accent-rgb: 0, 0, 0; --accent-hover: #3a3a3a; --on-accent: #E2D6C0; --on-accent-rgb: 226, 214, 192; }
   body.dark-mode { --accent: #E2D6C0; --accent-rgb: 226, 214, 192; --accent-hover: #efe6d5; --on-accent: #1d1913; --on-accent-rgb: 29, 25, 19;
     --chip-hover: rgba(var(--accent-rgb), .38); }
   body.dark-mode .chip:hover { border-color: rgba(var(--accent-rgb), .6); }
@@ -1140,7 +1140,7 @@
     html.lib3d-capable:not(.lib3d-failed) body.dark-mode .np { background: rgba(16, 13, 10, .5); }
     /* the sidebar floats on the room: no panel, a soft halo keeps the words readable */
     html.lib3d-capable:not(.lib3d-failed) .toc { background: none; border-right-color: transparent; text-shadow: var(--halo); --ink-soft: rgba(0, 0, 0, .8); }
-    html.lib3d-capable:not(.lib3d-failed) body.dark-mode .toc { --ink-soft: rgba(255, 255, 255, .84); }
+    html.lib3d-capable:not(.lib3d-failed) body.dark-mode .toc { --ink-soft: rgba(226, 214, 192, .84); }
     /* the page's record player waits in the left corner until the deck on the room's floor is clicked */
     html.lib3d-capable:not(.lib3d-failed) body:not(.l3-player-open) .dock .player { position: absolute; left: 22px; bottom: 14px; width: calc(var(--sidebar-w) - 44px);
       visibility: hidden; opacity: 0; pointer-events: none; }   /* out of the way but laid out, so its deck is drawn and ready */
@@ -1160,18 +1160,18 @@
   .ck-out-ui { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
   .ck-out-ui.is-on { opacity: 1; }
   .ck-head { position: absolute; top: 18px; left: calc(var(--sidebar-w) + (100vw - var(--sidebar-w)) / 2); transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
-    padding: 8px 10px 8px 16px; border-radius: 999px; background: rgba(246, 240, 228, .92); color: #2a2118; box-shadow: 0 8px 26px rgba(20, 14, 8, .28); font: 13px/1.3 var(--font); white-space: nowrap; }
+    padding: 8px 10px 8px 16px; border-radius: 999px; background: rgba(226, 214, 192, .92); color: #2a2118; box-shadow: 0 8px 26px rgba(20, 14, 8, .28); font: 13px/1.3 var(--font); white-space: nowrap; }
   .ck-head b { font-size: 14px; } .ck-head small { opacity: .7; }
   .ck-x { pointer-events: auto; width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(60, 45, 25, .12); color: inherit; font-size: 18px; line-height: 1; cursor: pointer; }
   .ck-x:hover { background: var(--accent); color: var(--on-accent); }
-  .ck-name { position: absolute; left: 0; top: 0; padding: 4px 10px 5px; border-radius: 999px; background: rgba(246, 240, 228, .9); color: #2a2118; font: 600 12.5px/1.25 var(--font);
+  .ck-name { position: absolute; left: 0; top: 0; padding: 4px 10px 5px; border-radius: 999px; background: rgba(226, 214, 192, .9); color: #2a2118; font: 600 12.5px/1.25 var(--font);
     box-shadow: 0 5px 16px rgba(20, 14, 8, .25); white-space: nowrap; opacity: 0; transition: opacity .3s ease; }
   .ck-name.is-on { opacity: 1; }
   .ck-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
   .ck-lines g { opacity: 0; transition: opacity .3s ease; } .ck-lines g.is-on { opacity: 1; }
-  .ck-lines line { stroke: rgba(246, 240, 228, .78); stroke-width: 1.2; } .ck-lines circle { fill: rgba(246, 240, 228, .95); stroke: rgba(30, 22, 14, .55); stroke-width: 1; }
-  body.dark-mode .ck-head, body.dark-mode .ck-name { background: rgba(22, 18, 14, .9); color: #f3ead9; }
-  body.dark-mode .ck-x { background: rgba(255, 240, 215, .12); }
+  .ck-lines line { stroke: rgba(226, 214, 192, .78); stroke-width: 1.2; } .ck-lines circle { fill: rgba(226, 214, 192, .95); stroke: rgba(30, 22, 14, .55); stroke-width: 1; }
+  body.dark-mode .ck-head, body.dark-mode .ck-name { background: rgba(22, 18, 14, .9); color: #E2D6C0; }
+  body.dark-mode .ck-x { background: rgba(226, 214, 192, .12); }
   body.ck-out #l3-lines, body.ck-out .l3-label, body.ck-out .l3-cap { opacity: 0 !important; pointer-events: none !important; }
   /* ---- labels and leader lines */
   #l3-ui { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-family: var(--font); }
@@ -1179,15 +1179,15 @@
   #l3-lines { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
   #l3-lines path { fill: none; stroke: rgba(43, 33, 22, .62); stroke-width: 1.6; }
   #l3-lines .l3-card-line { stroke-dasharray: 4 3; }
-  #l3-lines .l3-outline { fill: none; stroke: #fff; stroke-width: 2; stroke-linejoin: round; opacity: .95; filter: drop-shadow(0 0 1.5px rgba(20, 14, 8, .6)); }
+  #l3-lines .l3-outline { fill: none; stroke: #E2D6C0; stroke-width: 2; stroke-linejoin: round; opacity: .95; filter: drop-shadow(0 0 1.5px rgba(20, 14, 8, .6)); }
   #l3-lines .l3-outline.is-open { opacity: .5; stroke-width: 1.5; }
-  #l3-lines circle { fill: #fff8ea; stroke: rgba(43, 33, 22, .75); stroke-width: 1.2; }
-  body.dark-mode #l3-lines path { stroke: rgba(245, 232, 205, .62); }
+  #l3-lines circle { fill: #E2D6C0; stroke: rgba(43, 33, 22, .75); stroke-width: 1.2; }
+  body.dark-mode #l3-lines path { stroke: rgba(226, 214, 192, .62); }
   body.dark-mode #l3-lines circle { fill: #ffd9a0; stroke: rgba(30, 22, 14, .8); }
   /* the section labels and group names over the room: twice their first size (G, 15/10/2026), a little smaller on a
      narrower window (1.5 % of its width, 15 to 23 px); every measure in em, so they keep their shape at any size */
   .l3-label { position: absolute; left: 0; top: 0; pointer-events: auto; display: inline-flex; align-items: center; gap: .5em; max-width: 25em;
-    padding: .43em .6em .43em .95em; border-radius: 999px; border: 1px solid rgba(60, 45, 25, .28); background: rgba(246, 240, 228, .9); color: #2a2118;
+    padding: .43em .6em .43em .95em; border-radius: 999px; border: 1px solid rgba(60, 45, 25, .28); background: rgba(226, 214, 192, .9); color: #2a2118;
     font: 600 clamp(12px, 1.2vw, 18.4px)/1.25 var(--font); box-shadow: 0 7px 24px rgba(60, 40, 15, .18); cursor: pointer; white-space: nowrap;
     transition: opacity .35s ease, background-color .2s ease, color .2s ease, border-color .2s ease; }
   .l3-label.l3-books { font-size: calc(clamp(12px, 1.2vw, 18.4px) * var(--l3-k, 1)); }   /* (20 % smaller: G, 17/10/2026) */   /* (smaller only where the shelf's frame is too narrow: overlay.js) */
@@ -1207,31 +1207,31 @@
   .l3-cap.is-off { opacity: 0; pointer-events: none; }
   #l3-ui, .page .wx { transition: opacity .6s ease; }   /* the words over the room and the weather line come in last (loop.js reveal) */
   html.l3-wait:not(.lib3d-failed) #l3-ui, html.l3-wait:not(.lib3d-failed) .page .wx { opacity: 0 !important; }
-  body.dark-mode .l3-cap { color: #f3ead9; }
+  body.dark-mode .l3-cap { color: #E2D6C0; }
   /* a book under the pointer, named beside it */
   .l3-tip { position: absolute; left: 0; top: 0; max-width: 300px; padding: 7px 11px 8px; border-radius: 10px; pointer-events: none; opacity: 0; transition: opacity .15s ease;
-    background: rgba(246, 240, 228, .96); color: #2a2118; border: 1px solid rgba(60, 45, 25, .24); box-shadow: 0 8px 22px rgba(50, 35, 15, .22); font: 13px/1.3 var(--font); }
+    background: rgba(226, 214, 192, .96); color: #2a2118; border: 1px solid rgba(60, 45, 25, .24); box-shadow: 0 8px 22px rgba(50, 35, 15, .22); font: 13px/1.3 var(--font); }
   .l3-tip.is-on { opacity: 1; }
   .l3-tip b { display: block; font-weight: 700; }
   .l3-tip small { display: block; margin-top: 3px; font-size: 11.5px; opacity: .68; }
-  body.dark-mode .l3-tip { background: rgba(22, 18, 14, .94); color: #f3ead9; border-color: rgba(255, 240, 215, .18); }
-  body.dark-mode .l3-label { background: rgba(22, 18, 14, .86); color: #f3ead9; border-color: rgba(255, 240, 215, .2); }
-  body.dark-mode .l3-label i { background: rgba(255, 240, 215, .12); }
+  body.dark-mode .l3-tip { background: rgba(22, 18, 14, .94); color: #E2D6C0; border-color: rgba(226, 214, 192, .18); }
+  body.dark-mode .l3-label { background: rgba(22, 18, 14, .86); color: #E2D6C0; border-color: rgba(226, 214, 192, .2); }
+  body.dark-mode .l3-label i { background: rgba(226, 214, 192, .12); }
   body.dark-mode .l3-label:hover, body.dark-mode .l3-label.is-hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }   /* (chosen: the accent by night too) */
   body.dark-mode .l3-label:hover i, body.dark-mode .l3-label.is-hover i { background: rgba(var(--on-accent-rgb), .25); }
 
   /* ---- the section card */
   .l3-card { position: absolute; left: calc(var(--sidebar-w) + 22px); top: 118px; width: min(400px, calc(100vw - var(--sidebar-w) - 44px)); max-height: calc(100vh - 220px);
-    display: flex; flex-direction: column; pointer-events: auto; border-radius: 14px; background: rgba(246, 240, 228, .94); color: #2a2118;
+    display: flex; flex-direction: column; pointer-events: auto; border-radius: 14px; background: rgba(226, 214, 192, .94); color: #2a2118;
     border: 1px solid rgba(60, 45, 25, .22); box-shadow: 0 18px 50px rgba(50, 35, 15, .25);
     opacity: 0; transform: translateX(-14px); transition: opacity .3s var(--ease), transform .3s var(--ease); }
   .l3-card.is-in { opacity: 1; transform: none; }
-  body.dark-mode .l3-card { background: rgba(20, 16, 12, .92); color: #f1e9d8; border-color: rgba(255, 240, 215, .14); }
+  body.dark-mode .l3-card { background: rgba(20, 16, 12, .92); color: #E2D6C0; border-color: rgba(226, 214, 192, .14); }
   .l3-card-head { display: flex; align-items: center; gap: 10px; padding: 14px 10px 10px 18px; border-bottom: 1px solid rgba(60, 45, 25, .14); }
-  body.dark-mode .l3-card-head { border-bottom-color: rgba(255, 240, 215, .1); }
+  body.dark-mode .l3-card-head { border-bottom-color: rgba(226, 214, 192, .1); }
   .l3-card-head h3 { flex: 1; font: 700 15px/1.3 Georgia, 'Times New Roman', serif; }
   .l3-count { font: 700 11px/1 var(--font); padding: 4px 8px; border-radius: 999px; background: rgba(60, 45, 25, .1); }
-  body.dark-mode .l3-count { background: rgba(255, 240, 215, .12); }
+  body.dark-mode .l3-count { background: rgba(226, 214, 192, .12); }
   .l3-close { width: 30px; height: 30px; border-radius: 50%; font-size: 20px; line-height: 1; opacity: .65; transition: opacity .2s ease, background-color .2s ease; }
   .l3-close:hover { opacity: 1; background: rgba(0, 0, 0, .06); }
   .l3-items { overflow: auto; padding: 6px 8px 10px; overscroll-behavior: contain; }
@@ -1240,12 +1240,12 @@
   .l3-map { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--accent); background: rgba(var(--accent-rgb), .1); }   /* an atlas: opens on its map */
   .l3-map svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
   .l3-item.is-current .l3-map { background: var(--accent); color: var(--on-accent); }
-  .l3-item:hover { background: rgba(255, 255, 255, .55); }
-  body.dark-mode .l3-item:hover { background: rgba(255, 255, 255, .07); }
+  .l3-item:hover { background: rgba(60, 45, 25, .07); }
+  body.dark-mode .l3-item:hover { background: rgba(226, 214, 192, .07); }
   .l3-item.is-current { background: rgba(var(--accent-rgb), .12); box-shadow: inset 2px 0 0 var(--accent); }
   .l3-item.is-hot { background: rgba(var(--accent-rgb), .2); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), .55); }   /* its book is under the pointer */
   .l3-play { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: rgba(60, 45, 25, .08); transition: background-color .2s ease, color .2s ease; }
-  body.dark-mode .l3-play { background: rgba(255, 240, 215, .1); }
+  body.dark-mode .l3-play { background: rgba(226, 214, 192, .1); }
   .l3-play .i { width: 15px; height: 15px; }
   .l3-play .ic-pause, .l3-item.is-playing .l3-play .ic-play { display: none; }
   .l3-item.is-playing .l3-play .ic-pause { display: block; }
@@ -1259,19 +1259,19 @@
   .l3-by { font: 12px/1.3 var(--font); opacity: .62; }
   .l3-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
   .l3-chip { font: 600 11px/1 var(--font); padding: 5px 9px; border-radius: 999px; border: 1px solid rgba(60, 45, 25, .25); text-decoration: none; transition: background-color .2s ease; }
-  .l3-chip:hover { background: rgba(255, 255, 255, .6); }
-  body.dark-mode .l3-chip { border-color: rgba(255, 240, 215, .22); }
-  body.dark-mode .l3-chip:hover { background: rgba(255, 255, 255, .1); }
+  .l3-chip:hover { background: rgba(60, 45, 25, .09); }
+  body.dark-mode .l3-chip { border-color: rgba(226, 214, 192, .22); }
+  body.dark-mode .l3-chip:hover { background: rgba(226, 214, 192, .1); }
   .l3-time { font: 500 11.5px/1 var(--font); font-variant-numeric: tabular-nums; opacity: .7; white-space: nowrap; }
   .l3-sub { display: flex; align-items: center; gap: 8px; margin: 14px 10px 4px; padding-bottom: 6px; border-bottom: 1px solid rgba(60, 45, 25, .16);
     font: 700 10.5px/1.3 var(--font); letter-spacing: .08em; text-transform: uppercase; opacity: .7; transition: opacity .3s ease, color .3s ease; }
   .l3-sub:first-child { margin-top: 6px; }
   .l3-sub i { font-style: normal; font-weight: 700; letter-spacing: 0; padding: 2px 6px; border-radius: 999px; background: rgba(60, 45, 25, .1); }
   .l3-sub.is-target { opacity: 1; color: var(--accent); }
-  body.dark-mode .l3-sub { border-bottom-color: rgba(255, 240, 215, .14); }
-  body.dark-mode .l3-sub i { background: rgba(255, 240, 215, .12); }
+  body.dark-mode .l3-sub { border-bottom-color: rgba(226, 214, 192, .14); }
+  body.dark-mode .l3-sub i { background: rgba(226, 214, 192, .12); }
   .l3-sep { height: 1px; margin: 6px 10px; background: rgba(60, 45, 25, .14); }
-  body.dark-mode .l3-sep { background: rgba(255, 240, 215, .1); }
+  body.dark-mode .l3-sep { background: rgba(226, 214, 192, .1); }
 </style>
 <style id="sky-weather">
   /* ---- live weather on the sky clock (weather/sky-weather.js) */
@@ -3635,6 +3635,6 @@ var ZONES = 'Africa:Abidjan 53 -40,Accra 56 -2,Addis_Ababa 90 387,Algiers 368 30
 <script id="garden-cover" type="application/octet-stream" data-src="garden-cover.webp"></script>
 <script id="book-covers" type="application/json">{"80-20-principle":"covers/80-20-principle.webp","blind-watchmaker":"covers/blind-watchmaker.webp","brief-history-of-time":"covers/brief-history-of-time.webp","damn-right":"covers/damn-right.webp","deep-simplicity":"covers/deep-simplicity.webp","encouragement-of-learning":"covers/encouragement-of-learning.webp","guns-germs-and-steel":"covers/guns-germs-and-steel.webp","innovators-dilemma":"covers/innovators-dilemma.webp","laws-of-human-nature":"covers/laws-of-human-nature.webp","money-masters":"covers/money-masters.webp","motivation-and-personality":"covers/motivation-and-personality.webp","nvidia-way":"covers/nvidia-way.webp","paths-to-wealth":"covers/paths-to-wealth.webp","poor-charlies-almanack":"covers/poor-charlies-almanack.webp","power-game":"covers/power-game.webp","predictably-irrational":"covers/predictably-irrational.webp","prisoners-of-geography":"covers/prisoners-of-geography.webp","psychology-of-money":"covers/psychology-of-money.webp","quirkology":"covers/quirkology.webp","rise-and-fall-of-nations":"covers/rise-and-fall-of-nations.webp","think-again":"covers/think-again.webp","think-like-a-freak":"covers/think-like-a-freak.webp","wealth-and-poverty-of-nations":"covers/wealth-and-poverty-of-nations.webp","when-to-rob-a-bank":"covers/when-to-rob-a-bank.webp"}</script>
 <script id="book-summaries" type="application/json" data-src="summaries.json"></script>
-<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=beed85a1d4'; document.body.appendChild(m); }</script>
+<script>if (document.documentElement.classList.contains('lib3d-capable')) { var m = document.createElement('script'); m.type = 'module'; m.src = 'lib3d.js?v=32aeb82516'; document.body.appendChild(m); }</script>
 </body>
 </html>

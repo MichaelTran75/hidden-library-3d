@@ -6,12 +6,13 @@ import { room } from '../room.js';
 import { DECOR, DK_Y, decorItem } from './kit.js';
 import { decorAtlas } from './atlas.js';
 import { DECOR_ITEMS } from './items.js';
+import { paintLightly } from '../../fx/post.js';
 
 function buildDecor(assets) {
   const g = new THREE.Group(); room.add(g);
   const r = rng(4242), rnd = (a, b) => a + (b - a) * r(), atlas = decorAtlas(), C = new THREE.Color();
   const deck = DECOR_ITEMS.map(f => [r(), f]).sort((a, b) => a[0] - b[0]).map(x => x[1]);   // shuffled: one piece per cell
-  const bins = { matte: [], gloss: [], metal: [], glass: [], art: [] }, W = new THREE.Matrix4(), Q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
+  const bins = { matte: [], gloss: [], metal: [], glass: [], art: [], book: [] }, W = new THREE.Matrix4(), Q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1);
   DECOR.forEach((d, k) => {
     if (k >= deck.length) return;
     const c = d.o.clone().addScaledVector(d.along, d.len / 2).addScaledVector(d.out, -d.dep / 2 + 0.05);
@@ -28,14 +29,15 @@ function buildDecor(assets) {
       if (p.slot) { const [u0, v0, u1, v1] = atlas.slots[p.slot], uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0)); }
       bins[p.fin].push(geo);
     }
-    if (model) { model.position.copy(c); model.rotation.y += yaw; model.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = true; }); g.add(model); }
+    if (model) { model.position.copy(c); model.rotation.y += yaw; model.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = true; }); g.add(model); if (deck[k].name === 'bookPile') paintLightly(model, 0.2); }
   });
   const std = o => new THREE.MeshStandardMaterial(o);
   const mats = { matte: std({ vertexColors: true, roughness: 0.85 }), gloss: std({ vertexColors: true, roughness: 0.3 }), metal: std({ vertexColors: true, metalness: 0.9, roughness: 0.38 }),
-    glass: std({ vertexColors: true, roughness: 0.08, transparent: true, opacity: 0.3, depthWrite: false }), art: std({ map: atlas.tex, roughness: 0.75 }) };
+    glass: std({ vertexColors: true, roughness: 0.08, transparent: true, opacity: 0.3, depthWrite: false }), art: std({ map: atlas.tex, roughness: 0.75 }) }; mats.book = mats.matte;
   for (const [fin, list] of Object.entries(bins)) {
     if (!list.length) continue;
     const m = new THREE.Mesh(mergeGeometries(list), mats[fin]); m.castShadow = fin !== 'glass'; m.receiveShadow = true; if (fin === 'glass') m.renderOrder = 1; g.add(m);
+    if (fin === 'book') paintLightly(m, 0.2);   // (the books among the pieces: as every book, 20 % less watercolour)
   }
   // The old shelf pieces drew from the room's random sequence: take the same number of draws, so everything built after
   // them (the garden) stays where it was.
