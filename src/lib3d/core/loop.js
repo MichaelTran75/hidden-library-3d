@@ -23,6 +23,7 @@ import { PETS, loadPets } from '../world/pets.js';
 import { buildPlane, stepPlane } from '../world/b747.js';
 import { CLOCK, buildClock, stepClock } from '../world/clock.js';
 import { buildIss, stepIss } from '../world/iss.js';
+import { buildCamera, stepCamera } from '../world/camera.js';
 import { buildGardenBook, stepGardenBook } from '../world/gardenbook.js';
 import { RAIN, readWeather } from '../fx/rain.js';
 
@@ -64,7 +65,7 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepIss(dt) | stepGardenBook(dt);      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepCamera(dt) | stepIss(dt) | stepGardenBook(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
@@ -134,6 +135,7 @@ async function start() {
   buildPlane().catch(e => console.warn('747 unavailable', e));
   buildClock().catch(e => console.warn('clock unavailable', e));
   buildIss().catch(e => console.warn('ISS unavailable', e));
+  buildCamera().catch(e => console.warn('camera unavailable', e));   // (the vintage camera on the tall shelf)
   buildGardenBook().catch(e => console.warn('garden book unavailable', e));   // (the 3D garden's book on the pouf)   // (the ISS over the Geography bay)   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
   buildNightSky(); buildFireflies();
@@ -167,10 +169,57 @@ async function precompileLightStates() {
   } catch (e) { /* compiled on first use instead */ }
   L.sun.visible = was.sun; L.rects.forEach((r, i) => { r.visible = was.rects[i]; }); spl.forEach((s, i) => { s.visible = was.spots[i]; });
   hold = false; needs = true; REVEAL.lit = true; mark('precompiled');
+  (window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => releaseSources(), { timeout: 2000 });
+}
+/* Pictures the GPU holds that nothing here draws again are let go on this side once they are up (G, 19/10/2026: "em đo
+   xem có thể giảm ram xuống đc ko?"; ~65 MB of the page's memory): the models' images (bitmaps, closed), the wood and
+   the books' atlas (pixel arrays), canvases drawn once (shrunk to a pixel). Each is uploaded first (initTexture), so a
+   part not yet seen keeps its picture on the GPU. Pictures drawn again (a book out of its shelf, its pages, the titles
+   on the spines) carry userData.keep and stay; so do render targets. Nothing is uploaded again after a lost WebGL
+   context. */
+function releaseSources() {
+  const seen = new Set(), list = [];
+  const take = t => { if (!t || !t.isTexture || seen.has(t)) return; seen.add(t);
+    if (t.isRenderTargetTexture || t.isDepthTexture || t.isVideoTexture || t.isCubeTexture || t.isCompressedTexture || t.isData3DTexture || t.isDataArrayTexture || t.userData.keep || !t.image) return; list.push(t); };
+  const visit = o => { for (const m of [].concat(o.material || [])) { for (const v of Object.values(m)) take(v); if (m.uniforms) for (const u of Object.values(m.uniforms)) { const v = u && u.value; if (Array.isArray(v)) v.forEach(take); else take(v); } } };
+  for (const sc of [scene, OVER.scene, OVER.skyScene, POST.light.scene]) if (sc) sc.traverse(visit);
+  for (const t of list) { try { renderer.initTexture(t); } catch (e) { t.userData.keep = true; } }
+  let freed = 0;
+  for (const t of list) {
+    const im = t.image, w = im.width, h = im.height; if (t.userData.keep || !w || !h) continue;
+    if (typeof ImageBitmap !== 'undefined' && im instanceof ImageBitmap) im.close();
+    else if (typeof HTMLCanvasElement !== 'undefined' && im instanceof HTMLCanvasElement) { im.width = im.height = 1; }
+    else if (!(im.data || (typeof HTMLImageElement !== 'undefined' && im instanceof HTMLImageElement))) continue;
+    t.source.data = { width: w, height: h, data: null }; freed += w * h * 4;
+  }
+  RELEASED.mb = +(freed / 1048576).toFixed(1); RELEASED.n = list.length;
+  releaseGeometry();
+}
+const RELEASED = { mb: 0, n: 0 };   // (what releaseSources let go: tools/perf/mem.cjs)
+/* and the room's still things' normals, texture coordinates and colours (G, 19/10/2026: the page's memory, ~10-15 MB):
+   everything on the room's layer drawn once into a 1 px target of the picture's kind with nothing culled, so all of it
+   is up on the GPU, then those arrays emptied (positions and indices stay: the pointer's rays and the boxes need them;
+   a ray reading an emptied attribute gets NaN, not an error). Left as they are: instanced and skinned meshes, morphs,
+   what is redrawn (dynamic attributes), what is hidden or not drawn now, and every layer but the room's. */
+function releaseGeometry() {
+  const list = [], keep = new Map();
+  scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || o.layers.mask !== 1 || o.morphTargetInfluences) return;
+    let v = o.visible; for (let p = o.parent; v && p; p = p.parent) v = p.visible; if (!v) return;
+    if ([].concat(o.material).some(m => !m || m.visible === false)) return; list.push(o); });
+  for (const o of list) { keep.set(o, o.frustumCulled); o.frustumCulled = false; }
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+  try { renderer.setRenderTarget(rt); renderer.render(scene, camera); } catch (e) { list.length = 0; }
+  renderer.setRenderTarget(null); rt.dispose(); for (const [o, c] of keep) o.frustumCulled = c;
+  let freed = 0; const done = new Set();
+  for (const o of list) for (const n of ['normal', 'uv', 'uv1', 'color', 'tangent']) {
+    const a = o.geometry.attributes[n]; if (!a || done.has(a) || a.isInterleavedBufferAttribute || a.usage !== THREE.StaticDrawUsage || !a.array || !a.array.length) continue;
+    done.add(a); freed += a.array.byteLength; a.array = new a.array.constructor(0);
+  }
+  RELEASED.geoMb = +(freed / 1048576).toFixed(1); setNeeds(true);
 }
 
 // other modules change these through a setter (an imported binding is read-only)
 function setNeeds(v) { needs = v; }
 function setReady(v) { ready = v; }
 
-export { REVEAL, clock, draw, hold, loop, on, ready, setNeeds, setReady, start, updateOn };
+export { RELEASED, REVEAL, clock, draw, hold, loop, on, ready, setNeeds, setReady, start, updateOn };

@@ -19,7 +19,9 @@ function buildDecor(assets) {
     const yaw = Math.atan2(d.out.x, d.out.z), it = decorItem();
     const model = deck[k](it, rnd, { assets, len: d.len, hgt: d.hgt });
     if (d.skip) return;   // (a cell given to something else, the clock: its piece made all the same, so the random draws after it stay as they were)
-    W.compose(c, Q.setFromAxisAngle(DK_Y, yaw + rnd(-0.12, 0.12)), one);
+    const turn = yaw + rnd(-0.12, 0.12);
+    if (deck[k].name === 'mantelClock') { DECOR.camera = { at: c.clone(), yaw, o: d.o.clone(), along: d.along.clone(), out: d.out.clone(), len: d.len, hgt: d.hgt, dep: d.dep }; return; }   // (its cell the vintage camera's: world/camera.js; G, 19/10/2026)
+    W.compose(c, Q.setFromAxisAngle(DK_Y, turn), one);
     for (const p of it.parts) {
       const geo = p.geo; geo.applyMatrix4(W);
       const n = geo.attributes.position.count, col = new Float32Array(n * 3);

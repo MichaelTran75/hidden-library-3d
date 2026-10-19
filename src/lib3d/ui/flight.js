@@ -1,4 +1,4 @@
-import '../world/gardenbook.js';   // build order: the module before this one runs first
+import '../world/camera.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { reduceMotion } from '../core/base.js';
 import { camera, setShadowsDirty } from '../core/renderer.js';

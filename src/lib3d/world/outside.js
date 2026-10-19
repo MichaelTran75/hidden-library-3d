@@ -1,7 +1,7 @@
 import './bush.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { R, REF } from '../core/base.js';
-import { canvas, ctex, fbm, hsl, pick, rand, rng } from '../core/utils.js';
+import { canvas, ctex, fbm, halfCanvas, hsl, pick, rand, rng } from '../core/utils.js';
 import { scene } from '../core/renderer.js';
 import { LIGHTS } from './lights.js';
 import { WIND } from './wind.js';
@@ -120,7 +120,7 @@ function buildOutside(assets) {
     const theta = az => { const dx = -Math.sin(az), dz = -Math.cos(az), ox = 2, oz = 3, b = ox * dx + oz * dz, t = -b + Math.sqrt(b * b - (ox * ox + oz * oz - 4900));
       return (Math.atan2(ox + t * dx, oz + t * dz) + Math.PI * 2) % (Math.PI * 2); };   // cylinder angle (x = r sin θ, z = r cos θ) seen at azimuth az
     const g0 = theta(5 * Math.PI / 180), g1 = theta(31 * Math.PI / 180), gap = g1 - g0, rest = Math.PI * 2 - gap;
-    const t = ctex(c); t.wrapT = THREE.ClampToEdgeWrapping; t.repeat.set(3 * rest / (Math.PI * 2), 1);
+    const t = ctex(halfCanvas(halfCanvas(c))); t.wrapT = THREE.ClampToEdgeWrapping; t.repeat.set(3 * rest / (Math.PI * 2), 1);   // (the far woods at a quarter: utils.js halfCanvas)
     const mat = new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.3, side: THREE.BackSide, fog: true, color: 0xb8c4a8 });
     const ring = new THREE.Mesh(new THREE.CylinderGeometry(70, 70, 26, 64, 1, true, g1, rest), mat);
     ring.position.set(-2, 11, -3); outside.add(ring); LIGHTS.ring = ring;

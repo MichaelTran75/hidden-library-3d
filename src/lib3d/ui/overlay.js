@@ -2,7 +2,7 @@ import './deck.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { CANVAS, body } from '../core/base.js';
 import { camera } from '../core/renderer.js';
-import { V3, goView, homeView } from '../core/views.js';
+import { LIFT, V3, goView, homeView, setLift } from '../core/views.js';
 import { NIGHT } from '../fx/night.js';
 import { UIS, booksView, esc, focusView, offMode, researchView } from './library.js';
 import { setSpine } from './picking.js';
@@ -33,6 +33,21 @@ function showTip(bk, x, y, map, say) {   // (map: the pointer is on an open atla
   t.style.left = Math.max(8, Math.min(x + 16, innerWidth - t.offsetWidth - 8)) + 'px';
   t.style.top = (y - t.offsetHeight - 14 > 8 ? y - t.offsetHeight - 14 : y + 22) + 'px';
 }
+// the view up or down (core/views.js LIFT): a scroll bar on the right edge, its thumb the window's share of all there is to
+// see, dragged, or the track clicked where to go
+function buildLift(ui) {
+  const el = document.createElement('div'); el.id = 'l3-lift'; el.innerHTML = '<div class="l3-lift-thumb"></div>'; ui.appendChild(el);
+  const th = el.firstChild, span = () => LIFT.max - LIFT.min, frac = () => 1 / (1 + span()); UIEL.lift = el; UIEL.liftThumb = th; let drag = null;
+  th.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); th.setPointerCapture(e.pointerId); drag = { y: e.clientY, v: LIFT.to }; el.classList.add('is-drag'); });
+  th.addEventListener('pointermove', e => { if (drag) setLift(drag.v + (e.clientY - drag.y) / Math.max(1, el.clientHeight * (1 - frac())) * span()); });
+  const end = () => { drag = null; el.classList.remove('is-drag'); }; th.addEventListener('pointerup', end); th.addEventListener('pointercancel', end);
+  el.addEventListener('pointerdown', e => { if (e.target !== el) return; const r = el.getBoundingClientRect(), f = frac(), t = (e.clientY - r.top) / r.height; setLift(LIFT.min + Math.min(1, Math.max(0, (t - f / 2) / (1 - f))) * span()); });
+  placeLift();
+}
+function placeLift() {
+  const th = UIEL.liftThumb; if (!th) return; const f = 1 / (1 + LIFT.max - LIFT.min), p = (LIFT.cur - LIFT.min) / (LIFT.max - LIFT.min);
+  th.style.height = (f * 100).toFixed(2) + '%'; th.style.top = (p * (1 - f) * 100).toFixed(2) + '%';
+}
 function buildOverlay() {
   // (the two parts' names a little painted, as the room is: a brushed copy of the letters, their edges wandering, the
   // pigment thinner inside and denser at the edge, laid 30 % over the letters as they are: G, 18/10/2026)
@@ -53,6 +68,7 @@ function buildOverlay() {
       <ul class="l3-items" id="l3-items"></ul></section>
     <div id="l3-tip" class="l3-tip" aria-hidden="true"></div>`;
   body.appendChild(ui); Object.assign(UIEL, { ui, svg: ui.querySelector('#l3-lines'), labels: ui.querySelector('#l3-labels'), card: ui.querySelector('#l3-card'), items: ui.querySelector('#l3-items'), tip: ui.querySelector('#l3-tip') });
+  buildLift(ui);   // (the view up or down: the scroll bar)
   for (const sec of UIS.secs) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'l3-label l3-' + sec.group; b.dataset.sec = sec.id;
     b.innerHTML = `<span class="en">${esc(sec.en)}</span><span class="vi">${esc(sec.vi || sec.en)}</span><i>${sec.count}</i>`;
@@ -161,6 +177,7 @@ function faceAnchor(b, sx, sy) {   // the point of a section's face seen at scre
 function project(v) { _p.copy(v).project(camera); return { x: (_p.x * 0.5 + 0.5) * innerWidth, y: (-_p.y * 0.5 + 0.5) * innerHeight, ok: _p.z > -1 && _p.z < 1 }; }
 function layoutOverlay() {
   if (!UIEL.ui) return;
+  placeLift();
   const side = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 290;
   const show = !offMode(), home = UIS.mode === 'home';
   const boxes = [], lines = [];

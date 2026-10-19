@@ -1,5 +1,6 @@
 import './flight.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
+import { crispSeen } from '../world/pets.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { body } from '../core/base.js';
 import { canvas, ctex } from '../core/utils.js';
@@ -38,25 +39,26 @@ function drawDeck() {   // the deck over the finished picture
     const px = (v.x + 1) / 2 * W, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
   x0 = Math.max(0, Math.floor(x0) - 12); y0 = Math.max(0, Math.floor(y0) - 12); x1 = Math.min(W, Math.ceil(x1) + 12); y1 = Math.min(H, Math.ceil(y1) + 12);   // (room for its outline)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return;
-  if (!DECKR.rt || DECKR.rt.width < w || DECKR.rt.height < h) {
+  const k = Math.min(1, 1.5 / pr), tw = Math.max(2, Math.round(w * k)), th = Math.max(2, Math.round(h * k));   // (at 1.5 px a CSS px: pets.js crispPass)
+  if (!DECKR.rt || DECKR.rt.width < tw || DECKR.rt.height < th) {
     if (DECKR.rt) DECKR.rt.dispose();
-    DECKR.rt = new THREE.WebGLRenderTarget(Math.ceil(w * 1.25), Math.ceil(h * 1.25), { samples: 4, type: THREE.HalfFloatType });
+    DECKR.rt = new THREE.WebGLRenderTarget(Math.ceil(tw * 1.25), Math.ceil(th * 1.25), { samples: 2, type: THREE.HalfFloatType });
     DECKR.quad.material.uniforms.t.value = DECKR.rt.texture;
   }
   // the camera's projection narrowed to the rectangle (x, y scaled in clip space; depth as in the picture)
   const cx = (x0 + x1) / W - 1, cy = (y0 + y1) / H - 1, sx = W / w, sy = H / h, C = DECKR.cam;
   C.projectionMatrix.set(sx, 0, 0, -sx * cx, 0, sy, 0, -sy * cy, 0, 0, 1, 0, 0, 0, 0, 1).multiply(camera.projectionMatrix);
   C.projectionMatrixInverse.copy(C.projectionMatrix).invert(); C.matrix.copy(camera.matrixWorld); C.updateMatrixWorld(true);
-  DECKR.u.uFull.value.set(W, H); DECKR.u.uOff.value.set(x0, y0);
+  DECKR.u.uFull.value.set(W * k, H * k); DECKR.u.uOff.value.set(x0 * k, y0 * k);
   DECK.body3.uniforms.uLight.value.set(-0.45, 0.85, 0.35).transformDirection(DECK.deck.matrixWorld).transformDirection(camera.matrixWorldInverse);
   const cc = renderer.getClearColor(TMPC), ca = renderer.getClearAlpha();
-  DECKR.rt.viewport.set(0, 0, w, h); DECKR.rt.scissor.set(0, 0, w, h); DECKR.rt.scissorTest = true;
+  DECKR.rt.viewport.set(0, 0, tw, th); DECKR.rt.scissor.set(0, 0, tw, th); DECKR.rt.scissorTest = true;
   renderer.setRenderTarget(DECKR.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(DECK.scene, C);
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca);
-  { const Q = DECKR.quad.material.uniforms; Q.uOut.value = DECK.out; Q.uOutW.value = 2 * pr; Q.uHalo.value = 1.6 * pr; }
-  DECKR.quad.material.uniforms.uScale.value.set(w / DECKR.rt.width, h / DECKR.rt.height); setPaint(DECKR.quad.material.uniforms, DECKR.rt, W, H);
+  { const Q = DECKR.quad.material.uniforms; Q.uOut.value = DECK.out; Q.uOutW.value = 2 * pr * k; Q.uHalo.value = 1.6 * pr * k; }   // (its width on screen kept)
+  DECKR.quad.material.uniforms.uScale.value.set(tw / DECKR.rt.width, th / DECKR.rt.height); setPaint(DECKR.quad.material.uniforms, DECKR.rt, W, H);
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); DECKR.quad.render(renderer);   // over the picture: no clear
-  renderer.setViewport(0, 0, W / pr, H / pr); renderer.autoClear = true;
+  renderer.setViewport(0, 0, W / pr, H / pr); renderer.autoClear = true; crispSeen(DECKR);   // (its target let go when it is off the screen: pets.js sweepCrisp)
 }
 const TMPC = new THREE.Color();
 function buildRecordPlayer() {

@@ -9,7 +9,7 @@ import { room } from './room.js';
 import { CLOCK_CELL, SHELF } from './shelves.js';
 import { POST, QUAD_VS, setPaint } from '../fx/post.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
-import { SHARP, crispPass, sharpQuad } from './pets.js';
+import { SHARP, crispPass, crispSeen, sharpQuad } from './pets.js';
 import { DECKR } from '../ui/deck.js';
 import { OVER } from '../ui/words.js';
 import { setNeeds } from '../core/loop.js';
@@ -275,7 +275,7 @@ function bigPass() {
   const rs = Math.min(1, 1.25 / pr), tw = Math.max(2, Math.round(w * rs)), thh = Math.max(2, Math.round(h * rs));
   if (!P.rt || P.rt.width < tw || P.rt.height < thh) {
     if (P.rt) P.rt.dispose();
-    P.rt = new THREE.WebGLRenderTarget(Math.ceil(tw * 1.15), Math.ceil(thh * 1.15), { samples: 4, type: THREE.HalfFloatType });
+    P.rt = new THREE.WebGLRenderTarget(Math.ceil(tw * 1.15), Math.ceil(thh * 1.15), { samples: 2, type: THREE.HalfFloatType });
     P.quad.material.uniforms.t.value = P.rt.texture;
   }
   const cx = (x0 + x1) / W_ - 1, cy = (y0 + y1) / Hh - 1, sx = W_ / w, sy = Hh / h, C = CKV.cam; C.layers.set(CLOCK.layer);
@@ -287,7 +287,7 @@ function bigPass() {
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); scene.background = bg;
   const Q = P.quad.material.uniforms; Q.uScale.value.set(tw / P.rt.width, thh / P.rt.height); setPaint(Q, P.rt, W_, Hh);
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);
-  renderer.setViewport(0, 0, W_ / pr, Hh / pr); renderer.autoClear = true;
+  renderer.setViewport(0, 0, W_ / pr, Hh / pr); renderer.autoClear = true; crispSeen(P);
   CLOCK.view.rect = [x0 / pr, (Hh - y1) / pr, x1 / pr, (Hh - y0) / pr];   // (CSS pixels: where it is, for a click on it)
 }
 // ---- its names, and the panel over it (the page's language)

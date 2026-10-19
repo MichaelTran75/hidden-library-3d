@@ -51,6 +51,9 @@ function fbm(x, y, oct = 4, px = 256, py = 256) { let s = 0, a = 0.5, f = 1, n =
 function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 function ctex(c, { srgb = true, rep = true } = {}) { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
 const hsl = (h, s, l) => new THREE.Color().setHSL(h / 360, s, l);
+// a picture at half its size, drawn at full size first so its strokes keep their weight: the trees' (G, 19/10/2026: "giảm độ nét của cây cối xuống 1";
+// they are seen in the picture at ~0.8 px a CSS px, so their full-size textures held twice the detail anyone sees)
+function halfCanvas(c) { const h = canvas(Math.max(1, c.width >> 1), Math.max(1, c.height >> 1)), g = h.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(c, 0, 0, h.width, h.height); return h; }
 
 /* Box with world-scaled UVs: v runs along the longest in-plane side, 1 UV = `tile` metres */
 function boardGeo(w, h, d, tile = 1, round = 0) {   // (round: its edges rounded off by that radius, so they catch the light)
@@ -996,7 +999,9 @@ function buildDecor(assets) {
     const yaw = Math.atan2(d.out.x, d.out.z), it = decorItem();
     const model = deck[k](it, rnd, { assets, len: d.len, hgt: d.hgt });
     if (d.skip) return;   // (a cell given to something else, the clock: its piece made all the same, so the random draws after it stay as they were)
-    W.compose(c, Q.setFromAxisAngle(DK_Y, yaw + rnd(-0.12, 0.12)), one);
+    const turn = yaw + rnd(-0.12, 0.12);
+    if (deck[k].name === 'mantelClock') { DECOR.camera = { at: c.clone(), yaw, o: d.o.clone(), along: d.along.clone(), out: d.out.clone(), len: d.len, hgt: d.hgt, dep: d.dep }; return; }   // (its cell the vintage camera's: world/camera.js; G, 19/10/2026)
+    W.compose(c, Q.setFromAxisAngle(DK_Y, turn), one);
     for (const p of it.parts) {
       const geo = p.geo; geo.applyMatrix4(W);
       const n = geo.attributes.position.count, col = new Float32Array(n * 3);
@@ -1464,9 +1469,9 @@ function bushAtlas() {
     }
   }
   // as data (a canvas keeps no colour where it is clear): the empty texels made a mid green
-  const d = g.getImageData(0, 0, BUSH.N, BUSH.N).data;
+  const hc = halfCanvas(halfCanvas(c)), n = hc.width, d = hc.getContext('2d').getImageData(0, 0, n, n).data;   // (at a quarter: utils.js halfCanvas; G, 19/10/2026: "tiếp tục giảm độ nét của toàn bộ cây")
   for (let i = 0; i < d.length; i += 4) if (d[i + 3] === 0) { d[i] = 80; d[i + 1] = 112; d[i + 2] = 50; }
-  const t = new THREE.DataTexture(d, BUSH.N, BUSH.N);   // (rows top first: the canvas's top is v = 0)
+  const t = new THREE.DataTexture(d, n, n);   // (rows top first: the canvas's top is v = 0)
   t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.anisotropy = 4; t.needsUpdate = true;
   return t;
 }
@@ -1645,7 +1650,7 @@ function buildOutside(assets) {
     const theta = az => { const dx = -Math.sin(az), dz = -Math.cos(az), ox = 2, oz = 3, b = ox * dx + oz * dz, t = -b + Math.sqrt(b * b - (ox * ox + oz * oz - 4900));
       return (Math.atan2(ox + t * dx, oz + t * dz) + Math.PI * 2) % (Math.PI * 2); };   // cylinder angle (x = r sin θ, z = r cos θ) seen at azimuth az
     const g0 = theta(5 * Math.PI / 180), g1 = theta(31 * Math.PI / 180), gap = g1 - g0, rest = Math.PI * 2 - gap;
-    const t = ctex(c); t.wrapT = THREE.ClampToEdgeWrapping; t.repeat.set(3 * rest / (Math.PI * 2), 1);
+    const t = ctex(halfCanvas(halfCanvas(c))); t.wrapT = THREE.ClampToEdgeWrapping; t.repeat.set(3 * rest / (Math.PI * 2), 1);   // (the far woods at a quarter: utils.js halfCanvas)
     const mat = new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.3, side: THREE.BackSide, fog: true, color: 0xb8c4a8 });
     const ring = new THREE.Mesh(new THREE.CylinderGeometry(70, 70, 26, 64, 1, true, g1, rest), mat);
     ring.position.set(-2, 11, -3); outside.add(ring); LIGHTS.ring = ring;
@@ -1684,7 +1689,7 @@ const LIGHTS = {};
 function buildLights() {
   const hemi = new THREE.HemisphereLight(0xeef3e4, 0x8a6a48, 0.5); scene.add(hemi); LIGHTS.hemi = hemi;
   const sun = new THREE.DirectionalLight(0xfff0d6, 3.6); sun.position.set(-8, 6.2, 3.2); sun.target.position.set(0.5, 0, -3.6);
-  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); const sc = sun.shadow.camera; sc.left = -8; sc.right = 8; sc.top = 8; sc.bottom = -8; sc.near = 1; sc.far = 40; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 4;
+  sun.castShadow = true; sun.shadow.mapSize.set(1536, 1536);   /* (2048 before: G, 19/10/2026, the page's memory) */ const sc = sun.shadow.camera; sc.left = -8; sc.right = 8; sc.top = 8; sc.bottom = -8; sc.near = 1; sc.far = 40; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 4;
   scene.add(sun, sun.target); LIGHTS.sun = sun;
   const left = new THREE.RectAreaLight(0xf3f6ea, 1.15, R.zF - R.zB, R.H); left.position.set(R.xL - 0.05, R.H / 2, (R.zB + R.zF) / 2); left.lookAt(R.xL + 5, R.H / 2, (R.zB + R.zF) / 2); scene.add(left);
   const back = new THREE.RectAreaLight(0xf3f6ea, 1.2, R.xS - R.xL, R.H - R.caseTop); back.position.set((R.xL + R.xS) / 2, (R.caseTop + R.H) / 2, R.zB - 0.05); back.lookAt((R.xL + R.xS) / 2, (R.caseTop + R.H) / 2, 0); scene.add(back);
@@ -1695,6 +1700,7 @@ function buildLights() {
     vertexShader: 'varying vec3 p; void main(){ p = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
     fragmentShader: 'varying vec3 p; void main(){ vec3 c = p.y>0.0 ? mix(vec3(0.55,0.62,0.48), vec3(0.9,0.93,0.9), smoothstep(0.0,0.6,p.y)) : mix(vec3(0.55,0.42,0.28), vec3(0.35,0.26,0.18), -p.y); if (p.x < -0.2) c *= 1.25; gl_FragColor = vec4(c,1.0);}' }));
   env.add(s); const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(env, 0.02).texture; scene.environmentIntensity = 0.55;
+  pm.dispose(); s.geometry.dispose(); s.material.dispose();   // (its working targets let go: ~6 MB on the GPU, G, 19/10/2026)
 }
 /* ---------------------------------------------------------------- trees, built in code
    The garden's three trees, rebuilt from measurements of the GLB models they replace (credits in the page): A and C
@@ -1703,7 +1709,7 @@ function buildLights() {
 async function makeTrees() {
   const V3 = THREE.Vector3, tv = (x, y, z) => new V3(x, y, z), UP = tv(0, 1, 0), TAU = Math.PI * 2;
   const lerp = (a, b, t) => a + (b - a) * t, clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-  const tex = (c, srgb = true, rep = false) => { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };
+  const tex = (c, srgb = true, rep = false) => { const t = new THREE.CanvasTexture(c.width >= 512 ? halfCanvas(halfCanvas(c)) : c.width >= 256 ? halfCanvas(c) : c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };   // (the large ones at a quarter, the small ones at half: utils.js halfCanvas; G, 19/10/2026: "tiếp tục giảm độ nét của toàn bộ cây")
 
   /* ---------- geometry */
   const anyPerp = d => new V3().crossVectors(d, Math.abs(d.y) < 0.9 ? UP : tv(1, 0, 0)).normalize();
@@ -2291,6 +2297,40 @@ function flatBook(src, yaw = 0, s = 1) {
   const inner = new THREE.Group(); inner.add(m); inner.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(m); const c = b.getCenter(new THREE.Vector3());
   m.position.set(-c.x, -b.min.y, -c.z); const g = new THREE.Group(); g.add(inner); inner.rotation.y = yaw; g.userData.h = b.max.y - b.min.y; return g;
 }
+/* a magazine lying on soft things (a pouf, a book on it): W across (x) by D deep (z), T thick, its middle at c, turned by
+   yaw. Each point of a grid over it finds what is under it (rays down onto `under`); the sheet then settles as paper
+   does: it rests on what is highest and spans across between, its weight bending it down over the edges (each point no
+   lower than what is under it, eased toward its neighbours' height and let sink a little, over and over). Its cover (group 0) is userData.cover, its picture
+   set later (world/gardenbook.js); the back (1) and the page edges (2) round it. */
+function magazine(W, D, T, c, yaw, under) {
+  const nx = 30, nz = 24, ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), cs = Math.cos(yaw), sn = Math.sin(yaw);
+  const at = (i, j) => { const u = (i / nx - 0.5) * W, v = (j / nz - 0.5) * D; return [c.x + u * cs + v * sn, c.z - u * sn + v * cs, u, v]; };
+  const floor = new Float32Array((nx + 1) * (nz + 1)); let h = new Float32Array(floor.length);
+  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { const [x, z] = at(i, j); ray.set(new THREE.Vector3(x, 2, z), down); const hit = ray.intersectObjects(under, true)[0]; floor[j * (nx + 1) + i] = h[j * (nx + 1) + i] = (hit ? hit.point.y : 0.5) + 0.0015; }
+  // too stiff to go down into the cushion's small folds: it rests on their tops (the highest point within ~6 cm)
+  { const f = floor.slice(), R = 3; for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { let m = -1e9; for (let b = Math.max(0, j - R); b <= Math.min(nz, j + R); b++) for (let a = Math.max(0, i - R); a <= Math.min(nx, i + R); a++) m = Math.max(m, f[b * (nx + 1) + a]); floor[j * (nx + 1) + i] = m; h[j * (nx + 1) + i] = m; } }
+  for (let it = 0; it < 160; it++) {   // (and its weight: it sinks a little each round where nothing holds it up)
+    const n = new Float32Array(h.length);
+    for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { let s = 0, k = 0; for (const [a, b] of [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]) if (a >= 0 && a <= nx && b >= 0 && b <= nz) { s += h[b * (nx + 1) + a]; k++; }
+      const q = j * (nx + 1) + i; n[q] = Math.max(floor[q], 0.5 * h[q] + 0.5 * s / k - 0.0003); }
+    h = n;
+  }
+  const pos = [], uv = [], idx = [], groups = [], g = new THREE.BufferGeometry();
+  const quadGrid = (yOff, flip) => { const o = pos.length / 3; for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { const [x, z] = at(i, j); pos.push(x - c.x, h[j * (nx + 1) + i] + yOff, z - c.z); uv.push(i / nx, 1 - j / nz); }
+    const s0 = idx.length; for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const a = o + j * (nx + 1) + i, b = a + 1, d = a + nx + 1, e = d + 1; if (flip) idx.push(a, b, d, b, e, d); else idx.push(a, d, b, b, d, e); } return [s0, idx.length - s0]; };
+  groups.push(quadGrid(T, false), quadGrid(0, true));
+  // the edges: round the rim, from the back's height to the cover's
+  const rim = []; for (let i = 0; i <= nx; i++) rim.push([i, 0]); for (let j = 1; j <= nz; j++) rim.push([nx, j]); for (let i = nx - 1; i >= 0; i--) rim.push([i, nz]); for (let j = nz - 1; j >= 0; j--) rim.push([0, j]);
+  const o = pos.length / 3; rim.forEach(([i, j], k) => { const [x, z] = at(i, j), y = h[j * (nx + 1) + i]; pos.push(x - c.x, y, z - c.z, x - c.x, y + T, z - c.z); uv.push(k / rim.length, 0, k / rim.length, 1); });
+  const s0 = idx.length; for (let k = 0; k < rim.length - 1; k++) { const a = o + 2 * k; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); } groups.push([s0, idx.length - s0]);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+  groups.forEach(([s, n], m) => g.addGroup(s, n, m)); g.computeVertexNormals();
+  const mats = [new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.32, metalness: 0 }), new THREE.MeshStandardMaterial({ color: 0xd9ccb2, roughness: 0.4, metalness: 0 }),
+    new THREE.MeshStandardMaterial({ color: 0xe2d6c0, roughness: 0.85, metalness: 0 })];   // (a glossy cover; its back; the pages' edges, the page's paper colour)
+  const mesh = new THREE.Mesh(g, mats); mesh.castShadow = mesh.receiveShadow = true;
+  const grp = new THREE.Group(); grp.position.set(c.x, 0, c.z); grp.add(mesh); grp.userData.cover = mesh; grp.userData.ar = W / D; grp.userData.h = T;
+  return grp;
+}
 async function buildFurniture(A) {   // async: it yields between its heavy parts so the page stays responsive while it loads
   const F = new THREE.Group(); room.add(F); const B = A.byName;
   // ---- sofa (re-arranged sectional, one mesh per part): local back at z=0, left end at x=0
@@ -2394,10 +2434,9 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
       tiltX = Math.atan2(((ys[2] + ys[3]) - (ys[0] + ys[1])) / 2, 2 * hd), tiltZ = Math.atan2(((ys[1] + ys[2]) - (ys[0] + ys[3])) / 2, 2 * hw);
     obj.position.set(x, y, z); obj.rotation.set(-tiltX, yaw, tiltZ, 'YXZ'); F.add(obj); return y; };
   const toW = (lx, lz) => new THREE.Vector3(lx, 0, lz).applyAxisAngle(new THREE.Vector3(0, 1, 0), pouf.rotation.y).add(pouf.position);
-  const b1 = flatBook(B.book_book002, Math.PI / 2, 1.5), b2 = flatBook(B.book_book005, Math.PI / 2 + 0.07, 1.42), b3 = flatBook(B.book_book006, Math.PI / 2, 1.55);
-  for (const b of [b1, b2, b3]) paintLightly(b, 0.2);   // (as every book)
+  const b1 = flatBook(B.book_book002, Math.PI / 2, 1.5), b3 = flatBook(B.book_book006, Math.PI / 2, 1.55);
+  for (const b of [b1, b3]) paintLightly(b, 0.2);   // (as every book)
   { const p = toW(-0.17, -0.22); restOn(b1, p.x, p.z, 0.22, 0.13, 0.17); }
-  const y2 = b1.position.y + b1.userData.h; b2.position.set(b1.position.x + 0.006, y2, b1.position.z - 0.004); b2.rotation.copy(b1.rotation); b2.rotation.y += 0.06; F.add(b2); LIGHTS.gardenBook = b2;   // (its cover the 3D garden's: world/gardenbook.js)
   { const p = toW(-0.33, 0.05); restOn(b3, p.x, p.z, 0.36, 0.14, 0.19); }
   // the weight of a book flattens the velvet under it; the fabric rises softly around its edges
   const pressUnder = (book, hw, hd) => {
@@ -2408,6 +2447,10 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
       const allowed = -0.002 + (out / m) * (out / m) * 0.045; if (v.y > allowed) { v.y = allowed; v.applyMatrix4(back); Pp.setXYZ(i, v.x, v.y, v.z); } }
     Pp.needsUpdate = true; };
   pressUnder(b1, 0.13, 0.17); pressUnder(b3, 0.14, 0.19); pouf.geometry.computeVertexNormals(); pouf.geometry.computeBoundingSphere();
+  // the 3D garden's magazine (G, 19/10/2026: "em cuốn sách này thành tạp chí mỏng to x2"): the book that lay on b1, made a
+  // magazine twice its size and 6 mm thick, lying over b1 and the pouf and bent to them (its cover: world/gardenbook.js)
+  { const gb = B.book_book005.geometry; gb.computeBoundingBox(); const bs = gb.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(1.42 * 2);
+    const c = toW(-0.05, -0.12), mag = magazine(Math.max(bs.y, bs.z), Math.min(bs.y, bs.z), 0.006, c, 0.3, [pouf, b1, b3]); F.add(mag); LIGHTS.gardenBook = mag; }
   // some GLB hardcovers face-out on the shelf
   return F;
 }
@@ -2434,7 +2477,7 @@ const POST = { light: { scene: new THREE.Scene(), parts: [], mats: new Map(), k:
    edges) and keeps the line for the big forms.  */
 const QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy,0.0,1.0); }';
 function buildPost() {
-  POST.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(4, 4) });
+  POST.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 2, depthTexture: new THREE.DepthTexture(4, 4) });
   const exposure = { value: 0.87 }, quad = (uniforms, fragmentShader) => new FullScreenQuad(new THREE.ShaderMaterial({ uniforms, vertexShader: QUAD_VS, fragmentShader, depthTest: false, depthWrite: false }));
   POST.tone = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });
   POST.toneQuad = quad({ tColor: { value: null }, exposure }, /* glsl */`
@@ -2624,6 +2667,12 @@ function setPaint(u, rt, W, H) {
 const STATE = { paint: true, frame: false };
 const V3 = THREE.Vector3;
 const CAM = { cur: null, from: null, to: null, k: 1, dur: 1.3 };
+/* the view moved up or down (G, 19/10/2026: "add vertical scroll bar để xem được hết khung cảnh": the home view is cropped
+   as a cover is, top and bottom on a wide window): the lens shifted as an architect's camera's is, the walls kept upright,
+   from LIFT.min (higher: the beams) to LIFT.max (lower: the floor, the pouf), in heights of the window. The scroll bar on
+   the right (ui/overlay.js buildLift), the wheel or a trackpad, the arrow keys (ui/picking.js). A new view starts level. */
+const LIFT = { cur: 0, to: 0, min: -0.3, max: 0.45 };
+function setLift(v) { const t = Math.min(LIFT.max, Math.max(LIFT.min, v)); if (t !== LIFT.to) { LIFT.to = t; setNeeds(true); } }
 function homeView() {
   const s = Math.max(innerWidth / REF.w, innerHeight / REF.h), ch = innerHeight / s;
   const dir = new V3((REF.w / 2 - REF.px) / REF.f, -(REF.h / 2 - REF.py) / REF.f, -1);
@@ -2636,15 +2685,16 @@ function applyView(v) {
   const W = innerWidth, H = innerHeight;
   camera.position.copy(v.pos);
   camera.fov = v.fov; camera.aspect = W / H; camera.up.set(0, 1, 0); camera.lookAt(v.tgt);
-  if (Math.abs(v.shift) > 1e-4) camera.setViewOffset(W, H, -v.shift * W, 0, W, H); else camera.clearViewOffset();
+  if (Math.abs(v.shift) > 1e-4 || Math.abs(LIFT.cur) > 1e-4) camera.setViewOffset(W, H, -v.shift * W, LIFT.cur * H, W, H); else camera.clearViewOffset();
   camera.updateProjectionMatrix(); camera.updateMatrixWorld();
 }
 function goView(v, dur = 1.3) {
-  CAM.from = CAM.cur; CAM.to = v; CAM.k = 0; CAM.dur = reduceMotion ? 0.001 : dur; setNeeds(true);
+  CAM.from = CAM.cur; CAM.to = v; CAM.k = 0; CAM.dur = reduceMotion ? 0.001 : dur; LIFT.to = 0; setNeeds(true);
 }
 function stepCam(dt) {
   let moving = false;
   if (CAM.k < 1) { CAM.k = Math.min(1, CAM.k + dt / CAM.dur); const k = CAM.k, e = k * k * k * (k * (k * 6 - 15) + 10); CAM.cur = lerpView(CAM.from, CAM.to, e); moving = true; }
+  if (LIFT.cur !== LIFT.to) { const d = LIFT.to - LIFT.cur; LIFT.cur = Math.abs(d) < 5e-4 ? LIFT.to : LIFT.cur + d * Math.min(1, dt / 0.12); moving = true; }   // (eased: ~0.12 s)
   if (moving) applyView(CAM.cur);
   return moving;
 }
@@ -3366,7 +3416,7 @@ function heroCloth(bk, S = 256) {   // a tile of the book's cloth, ~5 cm square:
   return c;
 }
 function heroCanvasTex(c, color, rep) {
-  const t = new THREE.CanvasTexture(c); if (color) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+  const t = new THREE.CanvasTexture(c); if (color) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; t.userData.keep = true; return t;   // (keep: drawn again, core/loop.js releaseSources)
 }
 // the front: the cover's own picture, or the cloth with a ruled frame, the title as large as fits above the author
 // (italics) and the year, all centred on the board (the groove of the joint takes the strip on the left)
@@ -4499,7 +4549,7 @@ function spineWords(bk) {   // the title along the spine, as large as the spine 
     const sx = Math.max(0.8, Math.min(1, room / g.measureText(txt).width)); txt = fit(txt, sx); g.scale(sx, 1);
     band(g.measureText(txt).width, size * 1.3); g.fillText(txt, 0, 0);
   }
-  const t = ctex(c, { srgb: false, rep: false }); t.anisotropy = 8; return (bk.spineTex = t);
+  const t = ctex(c, { srgb: false, rep: false }); t.anisotropy = 8; t.userData.keep = true; return (bk.spineTex = t);
 }
 function shelfSpine(bk) {   // the same title on the book standing in its place (shown once the spine is wide enough to read)
   if (bk.shelfSpine) return bk.shelfSpine;
@@ -4521,6 +4571,7 @@ function spinePx(bk) {   // how wide the spine shows on screen, in pixels
   return Math.hypot((_sa.x - _sb.x) * innerWidth, (_sa.y - _sb.y) * innerHeight) / 2;
 }
 function drawWords() {   // the sharp layer: titles on the spines, words of the books on the move, and the night sky
+  sweepCrisp();   // (targets of things off the screen a while let go: pets.js)
   let any = false;
   for (const sec of UIS.secs) for (const bk of sec.books) {
     // only in the close-up of its own section (G, 17/10/2026: "các text này ko nên hiện ra khi chưa close up"), and wide enough to read there
@@ -4535,12 +4586,13 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   // the night sky first: it darkens the dome behind it (fx/sky.js), so the rain, the deck, the animals and the rest stand in front of it
   if (OVER.sky && OVER.sky.visible) { renderer.autoClear = false; renderer.render(OVER.skyScene, camera); renderer.autoClear = true; }
-  drawRain(); drawDeck(); drawPlane(); drawIss(); drawGardenBook(); drawClock(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
+  drawRain(); drawDeck(); drawPlane(); drawIss(); drawGardenBook(); drawClock(); drawCamera(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
   // the shelves' titles and the fireflies, then the book out of the shelf over them (sharp: it is not in the picture, so the
   // room's depth does not hide the titles behind it)
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
   drawSharpBooks();
   drawInspect();   // (the clock out of its shelf: over all of it, the room dimmed)
+  drawCamInspect();   // (the camera out of its shelf: the same)
 }
 /* The Yale Bright Star Catalogue, 5th edition (Hoffleit & Warren, Yale / NASA ADC): its 2887 stars to magnitude 5.5,
    J2000 positions, from github.com/brettonw/YaleBrightStarCatalog (bsc5-short.json, MIT licence), packed as the 3D
@@ -5951,9 +6003,9 @@ function contactShadow(w, d) {
 function sharpQuad(P) {
   const out = !!P.outline;   // (the 747 on the shelf: its selection outline when the pointer is on it, and its fade in: b747.js)
   P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, uWash: { value: P.wash || 0 }, uToneK: { value: P.toneK }, ...SHARP.u, ...paintUniforms(),
-      ...(out ? { uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, uFade: { value: 1 } } : {}) },
+      ...(out ? { uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, uFade: { value: 1 }, uRk: { value: 1 } } : {}) },
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
-    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK; varying vec2 vUv;${out ? ' uniform float uOut, uOutW, uHalo, uFade;' : ''}
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK; varying vec2 vUv;${out ? ' uniform float uOut, uOutW, uHalo, uFade, uRk;' : ''}
       ${PAINT_GLSL}
       vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
@@ -5980,7 +6032,7 @@ function sharpQuad(P) {
         if (uOut > 0.001) {   // the outline: where the picture is near (within uOutW pixels) but not here, white; just beyond that a soft dark edge
           float near = 0.0, far = 0.0, here = aAt(uv);
           for (int i = 0; i < 24; i++) { float an = 6.2831853 * (float(i) + 0.5) / 24.0; vec2 d = vec2(cos(an), sin(an)) * uTexel;
-            near = max(near, max(aAt(uv + d * uOutW), aAt(uv + d * uOutW * 0.5))); far = max(far, aAt(uv + d * (uOutW + uHalo))); }
+            near = max(near, max(aAt(uv + d * uOutW * uRk), aAt(uv + d * uOutW * uRk * 0.5))); far = max(far, aAt(uv + d * (uOutW + uHalo) * uRk)); }
           float w = smoothstep(0.2, 0.6, near) * (1.0 - smoothstep(0.3, 0.8, here)) * 0.95 * uOut, h = smoothstep(0.1, 0.6, far) * (1.0 - here) * 0.55 * uOut;
           vec4 ring = vec4(vec3(0.886, 0.839, 0.753) * w, w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
         }
@@ -5988,7 +6040,7 @@ function sharpQuad(P) {
 }
 const SHARP = { cam: new THREE.Camera(), v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } },
   cat: { rt: null, quad: null, paint: 0, layer: 1, toneK: 1 }, hen: { rt: null, quad: null, paint: 0.15, wash: 1, layer: 1, toneK: 1 },   // (each its own target; the chicken 15 % painted over a watercolour's surface: G, 15/10/2026)
-  book: { rt: null, quad: null, paint: 0, layer: 3, toneK: 0.35 } };   // the book out of the shelf: sharp, its colours nearly as printed (G, 15/10/2026)
+  book: { rt: null, quad: null, paint: 0, layer: 3, toneK: 0.35, dpr: 2 } };   // (a book's words and pages: at the canvas's full 2 px a CSS px)   // the book out of the shelf: sharp, its colours nearly as printed (G, 15/10/2026)
 PETS.sharp = SHARP;   // (for tests)
 function crispPatch(sh) {
   sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
@@ -6725,6 +6777,7 @@ function drawPets() {
 // one crisp pass: what is shown on layer 1 inside a box (centre, half widths, height), into a target just covering it on
 // screen (the camera's projection narrowed to that rectangle, depth as in the picture), then laid over the picture
 function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
+  CRISP.add(P);
   const W_ = OVER.u.uRes.value.x, H = OVER.u.uRes.value.y, pr = renderer.getPixelRatio();
   let x0 = W_, y0 = H, x1 = 0, y1 = 0, any = false;
   for (let i = 0; i < 8; i++) { const v = SHARP.v.set(bx + (i & 1 ? rx : -rx), by + (i & 2 ? ry : 0), bz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
@@ -6733,27 +6786,38 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
   const pad = P.pad || 8;
   x0 = Math.max(0, Math.floor(x0) - pad); y0 = Math.max(0, Math.floor(y0) - pad); x1 = Math.min(W_, Math.ceil(x1) + pad); y1 = Math.min(H, Math.ceil(y1) + pad);   // (room for the paint's strokes, and an outline's)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return false;
-  if (!P.rt || P.rt.width < w || P.rt.height < h) {
+  // drawn at 1.5 px a CSS px, laid over the canvas's 2 (P.dpr: a book's words keep the canvas's): G, 19/10/2026, "giảm tất
+  // cả xuống 1,5 riêng chữ thì vẫn để 2"; its depth looked up through the scaled offset (uFull, uOff times k)
+  const k = Math.min(1, (P.dpr || 1.5) / pr), tw = Math.max(2, Math.round(w * k)), th = Math.max(2, Math.round(h * k));
+  if (!P.rt || P.rt.width < tw || P.rt.height < th) {
     if (P.rt) P.rt.dispose();
-    P.rt = new THREE.WebGLRenderTarget(Math.ceil(w * 1.25), Math.ceil(h * 1.25), { samples: 4, type: THREE.HalfFloatType });
+    P.rt = new THREE.WebGLRenderTarget(Math.ceil(tw * 1.25), Math.ceil(th * 1.25), { samples: 2, type: THREE.HalfFloatType });
     P.quad.material.uniforms.t.value = P.rt.texture;
   }
   const cx = (x0 + x1) / W_ - 1, cy = (y0 + y1) / H - 1, sx = W_ / w, sy = H / h, C = SHARP.cam; C.layers.set(P.layer);
   C.projectionMatrix.set(sx, 0, 0, -sx * cx, 0, sy, 0, -sy * cy, 0, 0, 1, 0, 0, 0, 0, 1).multiply(camera.projectionMatrix);
   C.projectionMatrixInverse.copy(C.projectionMatrix).invert(); camera.matrixWorld.decompose(C.position, C.quaternion, C.scale); C.updateMatrixWorld(true);
-  DECKR.u.uFull.value.set(W_, H); DECKR.u.uOff.value.set(x0, y0);
+  DECKR.u.uFull.value.set(W_ * k, H * k); DECKR.u.uOff.value.set(x0 * k, y0 * k);
   const cc = renderer.getClearColor(_c), ca = renderer.getClearAlpha();
   // no backdrop in these passes: until the sky is let in the room's is a plain colour (core/loop.js reveal), which filled
   // the target, so an opaque box showed round the animals as they came in, and the fur's light (fur.js) went wrong
   const bg = scene.background; scene.background = null;
   if (before) before(C);
-  P.rt.viewport.set(0, 0, w, h); P.rt.scissor.set(0, 0, w, h); P.rt.scissorTest = true;
+  P.rt.viewport.set(0, 0, tw, th); P.rt.scissor.set(0, 0, tw, th); P.rt.scissorTest = true;
   renderer.setRenderTarget(P.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, C);
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); scene.background = bg;
-  const Q = P.quad.material.uniforms; Q.uScale.value.set(w / P.rt.width, h / P.rt.height); setPaint(Q, P.rt, W_, H);
+  const Q = P.quad.material.uniforms; Q.uScale.value.set(tw / P.rt.width, th / P.rt.height); setPaint(Q, P.rt, W_, H); if (Q.uRk) Q.uRk.value = k;
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);   // over the picture: no clear
-  renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true;
+  renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true; P.seen = performance.now();
   return true;
+}
+/* the sharp passes' targets (each a few to ~30 MB of the GPU's memory) let go once their thing has been off the screen
+   5 s (G, 19/10/2026: the page's memory); made again the next time it shows. crispSeen: for a pass drawn elsewhere. */
+const CRISP = new Set(); let crispSwept = 0;
+function crispSeen(P) { CRISP.add(P); P.seen = performance.now(); }
+function sweepCrisp(now = performance.now()) {
+  if (now - crispSwept < 2000) return; crispSwept = now;
+  for (const P of CRISP) if (P.rt && now - (P.seen || 0) > 5000) { P.rt.dispose(); P.rt = null; if (P.quad) P.quad.material.uniforms.t.value = null; }
 }
 
 /* ---- the book out of the shelf (hero-books.js), sharp over the picture: one pass for each one showing */
@@ -7375,7 +7439,7 @@ function bigPass() {
   const rs = Math.min(1, 1.25 / pr), tw = Math.max(2, Math.round(w * rs)), thh = Math.max(2, Math.round(h * rs));
   if (!P.rt || P.rt.width < tw || P.rt.height < thh) {
     if (P.rt) P.rt.dispose();
-    P.rt = new THREE.WebGLRenderTarget(Math.ceil(tw * 1.15), Math.ceil(thh * 1.15), { samples: 4, type: THREE.HalfFloatType });
+    P.rt = new THREE.WebGLRenderTarget(Math.ceil(tw * 1.15), Math.ceil(thh * 1.15), { samples: 2, type: THREE.HalfFloatType });
     P.quad.material.uniforms.t.value = P.rt.texture;
   }
   const cx = (x0 + x1) / W_ - 1, cy = (y0 + y1) / Hh - 1, sx = W_ / w, sy = Hh / h, C = CKV.cam; C.layers.set(CLOCK.layer);
@@ -7387,7 +7451,7 @@ function bigPass() {
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); scene.background = bg;
   const Q = P.quad.material.uniforms; Q.uScale.value.set(tw / P.rt.width, thh / P.rt.height); setPaint(Q, P.rt, W_, Hh);
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);
-  renderer.setViewport(0, 0, W_ / pr, Hh / pr); renderer.autoClear = true;
+  renderer.setViewport(0, 0, W_ / pr, Hh / pr); renderer.autoClear = true; crispSeen(P);
   CLOCK.view.rect = [x0 / pr, (Hh - y1) / pr, x1 / pr, (Hh - y0) / pr];   // (CSS pixels: where it is, for a click on it)
 }
 // ---- its names, and the panel over it (the page's language)
@@ -7631,6 +7695,11 @@ async function buildGardenBook() {
   const bk = LIGHTS.gardenBook; if (!bk) return;
   const im = await gardenCover(); if (!im) return;
   bk.updateMatrixWorld(true);
+  if (bk.userData.cover) {   // the magazine (world/furnish.js): its cover face takes the picture, cut to its shape
+    const ar = bk.userData.ar, c = document.createElement('canvas'); c.width = ar >= 1 ? 1024 : Math.round(1024 * ar); c.height = ar >= 1 ? Math.round(1024 / ar) : 1024;
+    const g = c.getContext('2d'), s = Math.max(c.width / im.width, c.height / im.height); g.drawImage(im, (c.width - im.width * s) / 2, (c.height - im.height * s) / 2, im.width * s, im.height * s);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; const m = bk.userData.cover.material[0]; m.map = tex; m.needsUpdate = true;
+  } else {
   // the cover: the book's top face (in the book's own frame: it lies on its back cover), the picture cut to its shape
   const inv = bk.matrixWorld.clone().invert(), lb = new THREE.Box3();
   bk.traverse(o => { if (o.isMesh) { o.geometry.computeBoundingBox(); lb.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld.clone().premultiply(inv))); } });
@@ -7642,7 +7711,9 @@ async function buildGardenBook() {
   cover.rotation.x = -Math.PI / 2; cover.position.set((lb.min.x + lb.max.x) / 2, lb.max.y + 0.0012, (lb.min.z + lb.max.z) / 2);
   // which way is "up" on the picture: its top toward the book's far edge from the room's eye (the camera looks from +z)
   bk.add(cover);
-  bk.traverse(o => { if (!o.isMesh) return; o.layers.set(GBOOK.layer); o.material = o.material.clone(); o.material.fog = false; o.material.onBeforeCompile = crispPatch; o.material.needsUpdate = true; });
+  }
+  const sharpen = m => { m = m.clone(); m.fog = false; m.onBeforeCompile = crispPatch; m.needsUpdate = true; return m; };   // (a magazine's faces are several)
+  bk.traverse(o => { if (!o.isMesh) return; o.layers.set(GBOOK.layer); o.material = Array.isArray(o.material) ? o.material.map(sharpen) : sharpen(o.material); });
   bk.updateMatrixWorld(true);
   const bb = new THREE.Box3().setFromObject(bk, true), bc = bb.getCenter(new THREE.Vector3());
   GBOOK.box = [bc.x, bb.min.y - 0.005, bc.z, (bb.max.x - bb.min.x) / 2 + 0.01, bb.max.y - bb.min.y + 0.01, (bb.max.z - bb.min.z) / 2 + 0.01];
@@ -7665,6 +7736,231 @@ function drawGardenBook() {
   U.uOut.value = GBOOK.out; U.uOutW.value = 2 * pr; U.uHalo.value = 1.6 * pr; U.uFade.value = 1;
   SHARP.u.uExp.value = PU.exposure.value; SHARP.u.uLift.value = PU.lift.value; SHARP.u.uVeil.value = PU.veil.value;
   crispPass(GBOOK.P, GBOOK.box);
+}
+/* ---------------------------------------------------------------- the vintage camera on the tall shelf
+   "Vintage Camera ~ Asahi Pentax H2" by Robin Vandenberghe (Sketchfab, CC BY 4.0; tools/camera/make.mjs), in its
+   leather case, where the mantel clock stood (decor/build.js gives that cell up: DECOR.camera; G, 19/10/2026: "em cho
+   vintage camera vào với 10% water color"). Its body 0.24 m wide, 1.7 times the H2's 143 mm, so it reads from across
+   the room as the clock there did (G: "to ra 20%"). Upright as the file has it (y up); its lens, found from its parts
+   (Lence_LP from Body_LP), toward the room, turned a little to show its side. Its strap is left out: the model has it
+   hanging straight down, as from a hook, and on a shelf it went through the board; the rings it hung from stay, the
+   pins and buckles at its ends go with it.
+   Drawn sharp over the painted room on a layer of its own, with a tenth of the room's watercolour (its pass's paint),
+   as the clock is drawn (G, 19/10/2026: "cho chuột hover vào máy ảnh to show white border line; click vào thì show 3D
+   structures"): under the pointer it is outlined; a click brings it out of the shelf, three times its size, the room
+   dimmed, tipped a little to show its top, and it comes apart, each part named (the Asahi Pentax H2 of 1959, from its
+   makers' specifications: one shutter speed dial on top, 1 s to 1/500 s; a rapid wind lever with the frame counter; the
+   release on top; no self-timer; the M42 screw mount; a cloth focal-plane shutter, an instant-return mirror and a
+   pentaprism finder). Dragged, it turns; a click on it puts it together or apart; Esc, the × or a click beside it puts
+   it back. The part placed from its measured pieces: the lens in front, the eyepiece at the back, the rewind knob on the
+   viewer's right (the user's left), the wind lever, the speed dial and the release on the other side. */
+const VCAM = { ok: false, layer: 8, bodyW: 0.24, turn: 0.42, big: 3, tilt: 0.32, group: null, hover: false, out: 0, home: null, local: null, box: null,
+  parts: {}, span: null, key: null, fill: null, view: { on: false, k: 0, e: 0, eT: 0, yaw: 0, sway: 0, ph: 0, held: 0, drag: null, el: null, labels: null, rects: null },
+  P: { rt: null, quad: null, paint: 0.1, wash: 0, layer: 8, toneK: 1, pad: 12, outline: true },   // on its shelf (a tenth of the watercolour; its outline)
+  PI: { rt: null, quad: null, paint: 0, wash: 0, layer: 8, toneK: 1, pad: 6, dpr: 1.25 } };     // out, in front of the room (large on the screen: 1.25 px a CSS px)
+const VCU = { uRoomDepth: { value: 1 } };   // 1: hidden where the room is nearer (on its shelf); 0: out in front of it
+// its parts apart: the model's pieces, the way they go (its own frame: x to the right of one facing it, y up, z toward
+// one facing it; metres at its size on the shelf) and their names
+const VC_PARTS = {
+  lens: { nodes: ['Lence_LP', 'LensInside_LP', 'Iris_LP'], to: [0, 0, 0.13], name: ['Lens, on the M42 screw mount', 'Ống kính, ngàm ren M42'] },
+  eye: { nodes: ['ViewPort_LP'], to: [0, 0.03, -0.11], name: ['Eyepiece of the pentaprism finder', 'Thị kính của lăng kính ngắm'] },
+  rewind: { nodes: ['Knop4_LP', 'Knop4_Onder_LP'], to: [0.03, 0.09, 0], name: ['Rewind knob', 'Núm tua phim'] },
+  lever: { nodes: ['Knop1_LP', 'Knop1_Onder_LP'], to: [-0.05, 0.07, -0.01], name: ['Rapid wind lever, frame counter', 'Cần lên phim, bộ đếm khung'] },
+  dial: { nodes: ['Knop3_LP', 'Knop3_Onder_LP'], to: [-0.01, 0.12, -0.02], name: ['Shutter speed dial, 1 s – 1/500 s', 'Núm tốc độ màn trập, 1 s – 1/500 s'] },
+  release: { nodes: ['Knop2_LP'], to: [0.01, 0.16, 0.03], name: ['Shutter release', 'Nút chụp'] },
+  case: { nodes: ['Bag_LP', 'Haakjes_LP', 'Rings_LP'], to: [0, -0.12, 0], name: ['Leather ever-ready case', 'Bao da'] },
+  body: { nodes: ['Body_LP', 'Knop5_LP'], to: [0, 0, 0], name: ['Body: cloth focal-plane shutter, mirror, pentaprism', 'Thân máy: màn trập vải, gương lật, lăng kính'] },
+};
+async function cameraBytes() {   // inline (base64) in the one-file build, a file next to the page on GitHub Pages
+  const el = document.getElementById('camera-glb'); if (!el) return null;
+  if (el.dataset.src) { const r = await fetch(el.dataset.src); if (!r.ok) throw new Error('camera ' + r.status); return r.arrayBuffer(); }
+  if (el.textContent.trim().length > 100) return (await fetch('data:application/octet-stream;base64,' + el.textContent.trim())).arrayBuffer();
+  return null;
+}
+function vcPatch(sh) {   // (hidden where the room is nearer, as the clock: on its shelf only)
+  sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff; sh.uniforms.uRoomDepth = VCU.uRoomDepth;
+  sh.fragmentShader = 'uniform sampler2D uDepth; uniform vec2 uFull, uOff; uniform float uRoomDepth;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (uRoomDepth > 0.5 && gl_FragCoord.z > texture2D(uDepth, (gl_FragCoord.xy + uOff) / uFull).r + 2e-6) discard;');
+}
+const _vcv = new THREE.Vector3();
+function boxIn(objs, inv) {   // pieces' box in a frame (inv: that frame's inverse world matrix)
+  const B = new THREE.Box3(), M = new THREE.Matrix4();
+  for (const o of objs) o.traverse(m => { if (!m.isMesh) return; m.geometry.computeBoundingBox(); const b = m.geometry.boundingBox; M.multiplyMatrices(inv, m.matrixWorld);
+    for (let i = 0; i < 8; i++) B.expandByPoint(_vcv.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(M)); });
+  return B;
+}
+async function buildCamera() {
+  const spot = DECOR.camera; if (!spot) return;
+  const buf = await cameraBytes(); if (!buf) return;
+  const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(buf, '');
+  const model = gltf.scene; model.updateMatrixWorld(true);
+  for (const n of ['Ribbon_LP', 'Pins_LP', 'IronPieces_LP']) { const o = model.getObjectByName(n); if (o) o.parent.remove(o); }   // (the strap and the metal at its ends)
+  const centre = name => { const o = model.getObjectByName(name); return o ? new THREE.Box3().setFromObject(o, true).getCenter(new THREE.Vector3()) : null; };
+  const body = centre('Body_LP'), lens = centre('Lence_LP');
+  // turned about the vertical so its lens looks along +z (the cell's way into the room)
+  const f = lens.clone().sub(body); f.y = 0; f.normalize();
+  const inner = new THREE.Group(); inner.add(model); inner.rotation.y = -Math.atan2(-f.x, f.z); inner.updateMatrixWorld(true);
+  const bodyBox = new THREE.Box3().setFromObject(model.getObjectByName('Body_LP'), true), s = VCAM.bodyW / (bodyBox.max.x - bodyBox.min.x);
+  inner.scale.setScalar(s); inner.updateMatrixWorld(true);
+  const all = new THREE.Box3().setFromObject(inner, true), c = all.getCenter(new THREE.Vector3());
+  inner.position.set(-c.x, -all.min.y, -c.z);   // (its foot on the board, its middle over the cell's)
+  const g = new THREE.Group(); g.add(inner); g.position.copy(spot.at); g.rotation.y = spot.yaw + VCAM.turn;
+  g.traverse(o => { if (!o.isMesh) return; o.layers.set(VCAM.layer); o.castShadow = false; o.receiveShadow = true; o.frustumCulled = false;
+    o.material = [].concat(o.material).map(m => { m = m.clone(); m.fog = false; if (m.transparent) m.depthWrite = false; m.onBeforeCompile = vcPatch; m.customProgramCacheKey = () => 'vcam-crisp'; return m; });
+    if (o.material.length === 1) o.material = o.material[0]; });
+  scene.add(g); g.updateMatrixWorld(true);
+  VCAM.group = g; VCAM.home = { pos: g.position.clone(), yaw: g.rotation.y };
+  const inv = g.matrixWorld.clone().invert(); VCAM.local = boxIn([g], inv); VCAM.size = VCAM.local.getSize(new THREE.Vector3()).toArray();
+  // its parts: their boxes (its frame), and how far each piece moves apart in its own parent's frame
+  for (const [k, P] of Object.entries(VC_PARTS)) {
+    const objs = P.nodes.map(n => model.getObjectByName(n)).filter(Boolean); if (!objs.length) continue;
+    const to = new THREE.Vector3().fromArray(P.to), pieces = objs.map(o => { const m3 = new THREE.Matrix3().setFromMatrix4(o.parent.matrixWorld.clone().invert().multiply(g.matrixWorld)); return { o, base: o.position.clone(), d: to.clone().applyMatrix3(m3) }; });
+    VCAM.parts[k] = { box: boxIn(objs, inv), to, pieces };
+  }
+  VCAM.span = [0, 1].map(e => { const b = new THREE.Box3(), pb = new THREE.Box3(); for (const k in VCAM.parts) { const p = VCAM.parts[k]; b.union(pb.copy(p.box).translate(_vcv.copy(p.to).multiplyScalar(e))); } return b; });
+  const wb = new THREE.Box3().setFromObject(g, true), wc = wb.getCenter(new THREE.Vector3());
+  VCAM.box = [wc.x, wb.min.y - 0.01, wc.z, (wb.max.x - wb.min.x) / 2 + 0.03, wb.max.y - wb.min.y + 0.04, (wb.max.z - wb.min.z) / 2 + 0.03];
+  {   // its shadow on the board: a soft patch under it (its layer is not in the room's shadows)
+    const c2 = canvas(128, 128), gc = c2.getContext('2d'), gr = gc.createRadialGradient(64, 64, 4, 64, 64, 62);
+    gr.addColorStop(0, 'rgba(18,11,5,.5)'); gr.addColorStop(0.65, 'rgba(18,11,5,.2)'); gr.addColorStop(1, 'rgba(18,11,5,0)'); gc.fillStyle = gr; gc.fillRect(0, 0, 128, 128);
+    const L = VCAM.local, m = new THREE.Mesh(new THREE.PlaneGeometry((L.max.x - L.min.x) * 1.15, (L.max.z - L.min.z) * 1.3), new THREE.MeshBasicMaterial({ map: ctex(c2, { rep: false }), transparent: true, depthWrite: false, fog: false }));
+    m.rotation.set(-Math.PI / 2, 0, g.rotation.y, 'YXZ'); m.position.copy(spot.at); m.position.y += 0.001; m.renderOrder = 1; room.add(m);
+  }
+  scene.traverse(o => { if (o.isLight) o.layers.enable(VCAM.layer); });   // (the room's lights light it on its layer)
+  VCAM.key = new THREE.DirectionalLight(0xfff4e6, 0); VCAM.key.layers.set(VCAM.layer); scene.add(VCAM.key, VCAM.key.target);   // (its own lights when out: dark until then)
+  VCAM.fill = new THREE.DirectionalLight(0xdfe8ff, 0); VCAM.fill.layers.set(VCAM.layer); scene.add(VCAM.fill, VCAM.fill.target);
+  sharpQuad(VCAM.P); sharpQuad(VCAM.PI);
+  if (renderer.compileAsync) { SHARP.cam.layers.set(VCAM.layer); renderer.setRenderTarget(POST.rt); try { await renderer.compileAsync(g, SHARP.cam, scene); } catch (e) { /* compiled on first use */ } renderer.setRenderTarget(null); }
+  buildCamUI(); VCAM.ok = true; setNeeds(true);
+}
+
+// ---- on its shelf, and out of it
+const vcEase = k => k * k * (3 - 2 * k), vcLerp = (a, b, k) => a + (b - a) * k;
+const VCV = { q: new THREE.Quaternion(), e: new THREE.Euler(0, 0, 0, 'YXZ'), f: new THREE.Vector3(), r: new THREE.Vector3(), c: new THREE.Vector3(), w: new THREE.Vector3(), box: new THREE.Box3(), dim: null, side: 0 };
+function vcPlace() {   // its parts apart (as far as they are), and where it is: on its shelf, out in front of the camera, or between
+  const V = VCAM.view, H = VCAM.group, k = vcEase(V.k), e = vcEase(V.e);
+  for (const k2 in VCAM.parts) for (const p of VCAM.parts[k2].pieces) p.o.position.copy(p.base).addScaledVector(p.d, e);
+  if (k <= 0) { H.position.copy(VCAM.home.pos); H.rotation.set(0, VCAM.home.yaw, 0); H.scale.setScalar(1); H.updateMatrixWorld(true); return; }
+  const cam = camera, f = cam.getWorldDirection(VCV.f), s = VCAM.big;
+  const B = VCV.box.copy(VCAM.span[0]); B.min.lerp(VCAM.span[1].min, e); B.max.lerp(VCAM.span[1].max, e);   // (its extent as it stands, together or apart)
+  const hgt = (B.max.y - B.min.y) * s, wid = Math.max(B.max.x - B.min.x, B.max.z - B.min.z) * s;
+  const th = Math.tan(cam.fov * Math.PI / 360), side = VCV.side = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 0;
+  const free = Math.max(0.4, 1 - side / innerWidth), d = Math.max(hgt / (2 * th * 0.8), wid / (2 * th * cam.aspect * free * 0.9)) + wid * 0.15;
+  const right = VCV.r.set(-f.z, 0, f.x).normalize(), shift = side / 2 / (innerWidth / 2) * d * th * cam.aspect;
+  const centre = VCV.c.copy(cam.position).addScaledVector(f, d).addScaledVector(right, shift);
+  // its lens toward the camera, turned a little to show its side, tipped to show its top; its own turn
+  let yaw = Math.atan2(-f.x, -f.z) + 0.5 + V.yaw + V.sway, y0 = VCAM.home.yaw; while (yaw - y0 > Math.PI) yaw -= Math.PI * 2; while (yaw - y0 < -Math.PI) yaw += Math.PI * 2;
+  H.rotation.set(vcLerp(0, VCAM.tilt, k), vcLerp(y0, yaw, k), 0, 'YXZ'); H.scale.setScalar(vcLerp(1, s, k));
+  const mid = B.getCenter(VCV.w).multiplyScalar(H.scale.x).applyQuaternion(VCV.q.setFromEuler(VCV.e.copy(H.rotation)));
+  H.position.copy(VCAM.home.pos).lerp(centre.sub(mid), k); H.updateMatrixWorld(true);
+  const kl = VCAM.key, fl = VCAM.fill; kl.intensity = 2.6 * k; fl.intensity = 1.1 * k;   // (its light: from above the viewer's left)
+  kl.position.copy(H.position).addScaledVector(right, -3).add(VCV.w.set(0, 4, 0)).addScaledVector(f, -4); kl.target.position.copy(H.position); kl.target.updateMatrixWorld();
+  fl.position.copy(H.position).addScaledVector(right, 4).add(VCV.w.set(0, 1, 0)).addScaledVector(f, -2); fl.target.position.copy(H.position); fl.target.updateMatrixWorld();
+}
+function drawCamera() {   // on its shelf: over the picture, sharp (out of it: drawCamInspect)
+  if (!VCAM.ok || VCAM.view.k > 0.001) return;
+  vcPlace(); VCU.uRoomDepth.value = 1;
+  const PU = POST.mat.uniforms, U = VCAM.P.quad.material.uniforms, pr = renderer.getPixelRatio();
+  SHARP.u.uExp.value = PU.exposure.value; SHARP.u.uLift.value = PU.lift.value; SHARP.u.uVeil.value = PU.veil.value;
+  U.uOut.value = VCAM.out; U.uOutW.value = 2 * pr; U.uHalo.value = 1.6 * pr; U.uFade.value = 1;
+  crispPass(VCAM.P, VCAM.box);
+}
+function stepCamera(dt = 0.016) {   // the outline in and out, the flight out and back, coming apart: true while any of it moves
+  if (!VCAM.ok) return false;
+  const V = VCAM.view, was = VCAM.out + V.k * 3 + V.e * 7, to = VCAM.hover && !V.on ? 1 : 0;
+  VCAM.out += Math.sign(to - VCAM.out) * Math.min(Math.abs(to - VCAM.out), dt / 0.14);
+  V.k = Math.max(0, Math.min(1, V.k + (V.on ? 1 : -1) * dt / 0.85));
+  const eT = V.on && V.k >= 1 ? V.eT : 0; V.e += Math.sign(eT - V.e) * Math.min(Math.abs(eT - V.e), dt / (eT > V.e ? 1.1 : 0.6));
+  if (!V.on && V.e > 0) V.k = Math.max(V.k, 0.999);   // (put together before it flies back)
+  if (V.on && V.k >= 1) V.held += dt;
+  const amp = V.on && V.k >= 1 && !V.drag ? 0.32 * vcEase(Math.min(1, Math.max(0, (V.held - 4) / 3))) : 0;   // (left alone a while, it sways a little either way)
+  if (amp > 0) V.ph += dt * Math.PI * 2 / 18; V.sway = amp * Math.sin(V.ph);
+  return VCAM.out + V.k * 3 + V.e * 7 !== was || (V.on && V.k >= 1);
+}
+function openCamera() { const V = VCAM.view; if (V.on || !VCAM.ok) return; V.on = true; V.eT = 1; V.yaw = V.sway = V.ph = V.held = 0; VCAM.hover = false; document.body.classList.add('ck-out'); setNeeds(true); }
+function closeCamera() { const V = VCAM.view; if (!V.on) return; V.on = false; document.body.classList.remove('ck-out'); setNeeds(true); }
+VCAM.open = openCamera; VCAM.close = closeCamera;   // (tests)
+function drawCamInspect() {   // out: the room dimmed, the camera over it (sharp, not hidden by the room), its parts' names
+  if (!VCAM.ok) return;
+  const V = VCAM.view;
+  if (V.k <= 0.001) { if (V.el) V.el.classList.remove('is-on'); return; }
+  vcPlace(); VCU.uRoomDepth.value = 0;
+  if (!VCV.dim) VCV.dim = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { a: { value: 0 } }, vertexShader: QUAD_VS, fragmentShader: 'uniform float a; void main(){ gl_FragColor = vec4(0.03, 0.025, 0.02, a); }', transparent: true, depthTest: false, depthWrite: false }));
+  VCV.dim.material.uniforms.a.value = 0.78 * vcEase(V.k); renderer.autoClear = false; VCV.dim.render(renderer); renderer.autoClear = true;
+  const PU = POST.mat.uniforms; SHARP.u.uExp.value = Math.max(PU.exposure.value * 1.2, 0.95); SHARP.u.uLift.value = PU.lift.value; SHARP.u.uVeil.value = PU.veil.value;
+  // its box in the world now (as it stands apart): what the pass covers
+  const H = VCAM.group, e = vcEase(V.e), B = VCV.box.copy(VCAM.span[0]); B.min.lerp(VCAM.span[1].min, e); B.max.lerp(VCAM.span[1].max, e);
+  const W = new THREE.Box3(); for (let i = 0; i < 8; i++) W.expandByPoint(_vcv.set(i & 1 ? B.max.x : B.min.x, i & 2 ? B.max.y : B.min.y, i & 4 ? B.max.z : B.min.z).applyMatrix4(H.matrixWorld));
+  const wc = W.getCenter(new THREE.Vector3()), pad = 0.02 * H.scale.x;
+  crispPass(VCAM.PI, [wc.x, W.min.y - pad, wc.z, (W.max.x - W.min.x) / 2 + pad, W.max.y - W.min.y + 2 * pad, (W.max.z - W.min.z) / 2 + pad]);
+  SHARP.u.uExp.value = PU.exposure.value;
+  vcLabels();
+}
+
+// ---- its parts' names: the clock's (clock.js) panel and labels
+function buildCamUI() {
+  const ui = document.getElementById('l3-ui') || document.body, el = document.createElement('div'); el.className = 'ck-out-ui';
+  const named = Object.keys(VC_PARTS);
+  el.innerHTML = '<div class="ck-head"><b>Asahi Pentax H2 <small>(1959)</small></b>'
+    + '<small><span class="en">drag to turn · click it: apart / together · Esc to close</span><span class="vi">kéo để xoay · bấm vào: tách / ráp · Esc để đóng</span></small>'
+    + '<button type="button" class="ck-x" aria-label="Close">&times;</button></div>'
+    + '<svg class="ck-lines" aria-hidden="true">' + named.map(k => `<g data-k="${k}"><line></line><circle r="3"></circle></g>`).join('') + '</svg>'
+    + named.map(k => `<span class="ck-name" data-k="${k}"><span class="en">${VC_PARTS[k].name[0]}</span><span class="vi">${VC_PARTS[k].name[1]}</span></span>`).join('');
+  ui.appendChild(el); const V = VCAM.view; V.el = el; V.head = el.querySelector('.ck-head'); V.labels = [...el.querySelectorAll('.ck-name')];
+  for (const lab of V.labels) { const g = el.querySelector(`.ck-lines g[data-k="${lab.dataset.k}"]`); lab._g = g; lab._l = g.firstChild; lab._d = g.lastChild; }
+  el.querySelector('.ck-x').addEventListener('click', e => { e.stopPropagation(); closeCamera(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && VCAM.view.on) { e.stopImmediatePropagation(); closeCamera(); } }, true);
+}
+function vcRect(k) {   // a part's box on the screen (CSS pixels), where it is now
+  const p = VCAM.parts[k], b = p.box, e = vcEase(VCAM.view.e), r = [1e9, 1e9, -1e9, -1e9], M = VCAM.group.matrixWorld;
+  for (let i = 0; i < 8; i++) {
+    const v = _vcv.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).addScaledVector(p.to, e).applyMatrix4(M).project(camera);
+    const x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight; r[0] = Math.min(r[0], x); r[1] = Math.min(r[1], y); r[2] = Math.max(r[2], x); r[3] = Math.max(r[3], y);
+  }
+  return r;
+}
+const vcOver = (x, y, w, h, r) => Math.max(0, Math.min(x + w, r[2]) - Math.max(x, r[0])) * Math.max(0, Math.min(y + h, r[3]) - Math.max(y, r[1]));
+function vcLabels() {   // each name beside its part (above, right, below or left: whichever is clear of the others' names, the parts, the screen's edges), a fine line to it
+  const V = VCAM.view; if (!V.el) return;
+  V.el.classList.toggle('is-on', V.on && V.k >= 0.98);
+  V.rects = {}; for (const k in VCAM.parts) V.rects[k] = vcRect(k);
+  const show = V.e > 0.9 && V.on, free = [(VCV.side || 0) + 8, V.head ? V.head.offsetTop + V.head.offsetHeight + 8 : 70, innerWidth - 8, innerHeight - 8], placed = [];
+  for (const lab of V.labels) {
+    const k = lab.dataset.k, r = V.rects[k]; lab.classList.toggle('is-on', show); lab._g.classList.toggle('is-on', show); if (!show || !r) { lab._on = false; continue; }
+    const w = lab.offsetWidth, h = lab.offsetHeight, cx = (r[0] + r[2]) / 2, cy = (r[1] + r[3]) / 2, g = 8, A = w * h;
+    const at = [[cx - w / 2, r[1] - g - h], [r[2] + g, cy - h / 2], [cx - w / 2, r[3] + g], [r[0] - g - w, cy - h / 2]];
+    let best = 0, bs = Infinity;
+    at.forEach(([x, y], i) => {
+      let sc = i * 0.05 * A - (i === lab._c ? 0.25 * A : 0) + 6 * (A - vcOver(x, y, w, h, free));
+      for (const q of placed) sc += 4 * vcOver(x, y, w, h, q);
+      for (const o in V.rects) if (o !== k) sc += (o === 'body' ? 0.4 : 1) * vcOver(x, y, w, h, V.rects[o]);
+      if (sc < bs) { bs = sc; best = i; }
+    });
+    lab._c = best;
+    const x = Math.min(Math.max(at[best][0], free[0]), free[2] - w), y = Math.min(Math.max(at[best][1], free[1]), free[3] - h); placed.push([x, y, x + w, y + h]);
+    if (!lab._on) { lab._x = x; lab._y = y; lab._on = true; } else { lab._x += (x - lab._x) * 0.3; lab._y += (y - lab._y) * 0.3; }   // (eased to a new place)
+    lab.style.transform = `translate(${lab._x.toFixed(1)}px, ${lab._y.toFixed(1)}px)`;
+    const px = cx, py = cy, qx = Math.min(Math.max(px, lab._x + h / 2), lab._x + w - h / 2), qy = Math.min(Math.max(py, lab._y), lab._y + h);   // (from the name's nearest edge to the part's middle)
+    lab._l.setAttribute('x1', qx.toFixed(1)); lab._l.setAttribute('y1', qy.toFixed(1)); lab._l.setAttribute('x2', px.toFixed(1)); lab._l.setAttribute('y2', py.toFixed(1));
+    lab._d.setAttribute('cx', px.toFixed(1)); lab._d.setAttribute('cy', py.toFixed(1));
+  }
+}
+// the pointer while it is out: a drag turns it, a click on it puts it together or apart, beside it puts it back
+function camPointer(type, e) {
+  const V = VCAM.view; if (!V.on) return false;
+  if (type === 'down') { V.yaw += V.sway; V.sway = V.ph = V.held = 0; V.drag = { x: e.clientX, y: e.clientY, yaw: V.yaw, moved: false }; }
+  else if (type === 'move' && V.drag) { const dx = e.clientX - V.drag.x; if (Math.abs(dx) > 4) V.drag.moved = true; V.yaw = V.drag.yaw + dx * 0.008; V.held = 0; setNeeds(true); }
+  else if (type === 'up') {
+    const d = V.drag; V.drag = null;
+    if (d && !d.moved && V.k >= 1) { const on = Object.values(V.rects || {}).some(r => r && e.clientX > r[0] - 12 && e.clientX < r[2] + 12 && e.clientY > r[1] - 12 && e.clientY < r[3] + 12); if (on) { V.eT = V.eT > 0.5 ? 0 : 1; setNeeds(true); } else closeCamera(); }
+  }
+  return true;
+}
+// the pointer's ray against it on its shelf (its box, in its own frame)
+const VCR = { inv: new THREE.Matrix4(), ray: new THREE.Ray(), hitP: new THREE.Vector3() };
+function camHit(ray) {
+  if (!VCAM.ok || VCAM.view.k > 0) return false;
+  VCR.inv.copy(VCAM.group.matrixWorld).invert(); VCR.ray.copy(ray).applyMatrix4(VCR.inv);
+  return !!VCR.ray.intersectBox(VCAM.local, VCR.hitP);
 }
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 function setInst(bk, amount) {
@@ -7828,25 +8124,26 @@ function drawDeck() {   // the deck over the finished picture
     const px = (v.x + 1) / 2 * W, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
   x0 = Math.max(0, Math.floor(x0) - 12); y0 = Math.max(0, Math.floor(y0) - 12); x1 = Math.min(W, Math.ceil(x1) + 12); y1 = Math.min(H, Math.ceil(y1) + 12);   // (room for its outline)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return;
-  if (!DECKR.rt || DECKR.rt.width < w || DECKR.rt.height < h) {
+  const k = Math.min(1, 1.5 / pr), tw = Math.max(2, Math.round(w * k)), th = Math.max(2, Math.round(h * k));   // (at 1.5 px a CSS px: pets.js crispPass)
+  if (!DECKR.rt || DECKR.rt.width < tw || DECKR.rt.height < th) {
     if (DECKR.rt) DECKR.rt.dispose();
-    DECKR.rt = new THREE.WebGLRenderTarget(Math.ceil(w * 1.25), Math.ceil(h * 1.25), { samples: 4, type: THREE.HalfFloatType });
+    DECKR.rt = new THREE.WebGLRenderTarget(Math.ceil(tw * 1.25), Math.ceil(th * 1.25), { samples: 2, type: THREE.HalfFloatType });
     DECKR.quad.material.uniforms.t.value = DECKR.rt.texture;
   }
   // the camera's projection narrowed to the rectangle (x, y scaled in clip space; depth as in the picture)
   const cx = (x0 + x1) / W - 1, cy = (y0 + y1) / H - 1, sx = W / w, sy = H / h, C = DECKR.cam;
   C.projectionMatrix.set(sx, 0, 0, -sx * cx, 0, sy, 0, -sy * cy, 0, 0, 1, 0, 0, 0, 0, 1).multiply(camera.projectionMatrix);
   C.projectionMatrixInverse.copy(C.projectionMatrix).invert(); C.matrix.copy(camera.matrixWorld); C.updateMatrixWorld(true);
-  DECKR.u.uFull.value.set(W, H); DECKR.u.uOff.value.set(x0, y0);
+  DECKR.u.uFull.value.set(W * k, H * k); DECKR.u.uOff.value.set(x0 * k, y0 * k);
   DECK.body3.uniforms.uLight.value.set(-0.45, 0.85, 0.35).transformDirection(DECK.deck.matrixWorld).transformDirection(camera.matrixWorldInverse);
   const cc = renderer.getClearColor(TMPC), ca = renderer.getClearAlpha();
-  DECKR.rt.viewport.set(0, 0, w, h); DECKR.rt.scissor.set(0, 0, w, h); DECKR.rt.scissorTest = true;
+  DECKR.rt.viewport.set(0, 0, tw, th); DECKR.rt.scissor.set(0, 0, tw, th); DECKR.rt.scissorTest = true;
   renderer.setRenderTarget(DECKR.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(DECK.scene, C);
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca);
-  { const Q = DECKR.quad.material.uniforms; Q.uOut.value = DECK.out; Q.uOutW.value = 2 * pr; Q.uHalo.value = 1.6 * pr; }
-  DECKR.quad.material.uniforms.uScale.value.set(w / DECKR.rt.width, h / DECKR.rt.height); setPaint(DECKR.quad.material.uniforms, DECKR.rt, W, H);
+  { const Q = DECKR.quad.material.uniforms; Q.uOut.value = DECK.out; Q.uOutW.value = 2 * pr * k; Q.uHalo.value = 1.6 * pr * k; }   // (its width on screen kept)
+  DECKR.quad.material.uniforms.uScale.value.set(tw / DECKR.rt.width, th / DECKR.rt.height); setPaint(DECKR.quad.material.uniforms, DECKR.rt, W, H);
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); DECKR.quad.render(renderer);   // over the picture: no clear
-  renderer.setViewport(0, 0, W / pr, H / pr); renderer.autoClear = true;
+  renderer.setViewport(0, 0, W / pr, H / pr); renderer.autoClear = true; crispSeen(DECKR);   // (its target let go when it is off the screen: pets.js sweepCrisp)
 }
 const TMPC = new THREE.Color();
 function buildRecordPlayer() {
@@ -7969,6 +8266,21 @@ function showTip(bk, x, y, map, say) {   // (map: the pointer is on an open atla
   t.style.left = Math.max(8, Math.min(x + 16, innerWidth - t.offsetWidth - 8)) + 'px';
   t.style.top = (y - t.offsetHeight - 14 > 8 ? y - t.offsetHeight - 14 : y + 22) + 'px';
 }
+// the view up or down (core/views.js LIFT): a scroll bar on the right edge, its thumb the window's share of all there is to
+// see, dragged, or the track clicked where to go
+function buildLift(ui) {
+  const el = document.createElement('div'); el.id = 'l3-lift'; el.innerHTML = '<div class="l3-lift-thumb"></div>'; ui.appendChild(el);
+  const th = el.firstChild, span = () => LIFT.max - LIFT.min, frac = () => 1 / (1 + span()); UIEL.lift = el; UIEL.liftThumb = th; let drag = null;
+  th.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); th.setPointerCapture(e.pointerId); drag = { y: e.clientY, v: LIFT.to }; el.classList.add('is-drag'); });
+  th.addEventListener('pointermove', e => { if (drag) setLift(drag.v + (e.clientY - drag.y) / Math.max(1, el.clientHeight * (1 - frac())) * span()); });
+  const end = () => { drag = null; el.classList.remove('is-drag'); }; th.addEventListener('pointerup', end); th.addEventListener('pointercancel', end);
+  el.addEventListener('pointerdown', e => { if (e.target !== el) return; const r = el.getBoundingClientRect(), f = frac(), t = (e.clientY - r.top) / r.height; setLift(LIFT.min + Math.min(1, Math.max(0, (t - f / 2) / (1 - f))) * span()); });
+  placeLift();
+}
+function placeLift() {
+  const th = UIEL.liftThumb; if (!th) return; const f = 1 / (1 + LIFT.max - LIFT.min), p = (LIFT.cur - LIFT.min) / (LIFT.max - LIFT.min);
+  th.style.height = (f * 100).toFixed(2) + '%'; th.style.top = (p * (1 - f) * 100).toFixed(2) + '%';
+}
 function buildOverlay() {
   // (the two parts' names a little painted, as the room is: a brushed copy of the letters, their edges wandering, the
   // pigment thinner inside and denser at the edge, laid 30 % over the letters as they are: G, 18/10/2026)
@@ -7989,6 +8301,7 @@ function buildOverlay() {
       <ul class="l3-items" id="l3-items"></ul></section>
     <div id="l3-tip" class="l3-tip" aria-hidden="true"></div>`;
   body.appendChild(ui); Object.assign(UIEL, { ui, svg: ui.querySelector('#l3-lines'), labels: ui.querySelector('#l3-labels'), card: ui.querySelector('#l3-card'), items: ui.querySelector('#l3-items'), tip: ui.querySelector('#l3-tip') });
+  buildLift(ui);   // (the view up or down: the scroll bar)
   for (const sec of UIS.secs) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'l3-label l3-' + sec.group; b.dataset.sec = sec.id;
     b.innerHTML = `<span class="en">${esc(sec.en)}</span><span class="vi">${esc(sec.vi || sec.en)}</span><i>${sec.count}</i>`;
@@ -8097,6 +8410,7 @@ function faceAnchor(b, sx, sy) {   // the point of a section's face seen at scre
 function project(v) { _p.copy(v).project(camera); return { x: (_p.x * 0.5 + 0.5) * innerWidth, y: (-_p.y * 0.5 + 0.5) * innerHeight, ok: _p.z > -1 && _p.z < 1 }; }
 function layoutOverlay() {
   if (!UIEL.ui) return;
+  placeLift();
   const side = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-w')) || 290;
   const show = !offMode(), home = UIS.mode === 'home';
   const boxes = [], lines = [];
@@ -8256,6 +8570,7 @@ function pickAt(e) {
   const hb = books.length ? RAY.intersectObjects(books, false)[0] : null; if (hb) return { book: hb.object.userData.book };
   if (PLANE.ok && PLANE.hit && RAY.intersectObject(PLANE.hit, false).length) return { plane: true };   // (the 747 on the Research shelf: b747.js)
   if (clockHit(RAY.ray)) return { clock: true };   // (the medieval clock on the tall shelf: clock.js)
+  if (camHit(RAY.ray)) return { vcam: true };   // (the vintage camera on the tall shelf: camera.js)
   if (issHit(RAY.ray)) return { iss: true };   // (the ISS over the Geography bay: iss.js)
   if (gardenHit(RAY.ray)) return { garden: true };   // (the 3D garden's book on the pouf: gardenbook.js)
   const hs = RAY.intersectObjects(UIS.secs.map(s => s.hit), false)[0], hd = DECK.ok ? RAY.intersectObject(DECK.hit, false)[0] : null;
@@ -8282,20 +8597,20 @@ function bindPicking() {
   let down = null;
   CANVAS.addEventListener('pointermove', e => {
     if (!ready || offMode()) return;
-    if (inspectPointer('move', e)) { CANVAS.style.cursor = CLOCK.view.drag && CLOCK.view.drag.moved ? 'grabbing' : 'grab'; return; }   // (the clock out of its shelf: the room is not picked)
+    if (inspectPointer('move', e) || camPointer('move', e)) { const dv = CLOCK.view.drag || VCAM.view.drag; CANVAS.style.cursor = dv && dv.moved ? 'grabbing' : 'grab'; return; }   // (the clock or the camera out of its shelf: the room is not picked)
     const p = pickAt(e), bk = p && p.book && p.book.sec === UIS.open ? p.book : null;
-    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map), p && p.read ? readHint(p.book, p.read) : null); setHover(!p || p.book || p.deck || p.plane || p.clock || p.iss || p.garden || UIS.open === p.sec ? null : p.sec);
-    CANVAS.style.cursor = p && (p.book || p.deck || p.plane || p.clock || p.iss || p.garden || UIS.open !== p.sec) ? 'pointer' : '';
-    const dh = !!(p && p.deck), ph = !!(p && p.plane), ch = !!(p && p.clock), ih = !!(p && p.iss), gh = !!(p && p.garden), vi = document.documentElement.lang === 'vi';
-    if (dh !== DECK.hover || ph !== PLANE.hover || ch !== CLOCK.hover || ih !== ISS.hover || gh !== GBOOK.hover) {
-      DECK.hover = dh; PLANE.hover = ph; CLOCK.hover = ch; ISS.hover = ih; GBOOK.hover = gh;
-      CANVAS.title = dh ? (vi ? 'Máy hát' : 'Record player') : ph ? 'Boeing 747-8' : ch ? (vi ? 'Đồng hồ trung cổ' : 'Medieval clock') : ih ? (vi ? 'Trạm Vũ trụ Quốc tế (ISS)' : 'International Space Station') : gh ? (vi ? 'Khu vườn 3D' : '3D Garden') : ''; setNeeds(true);
+    setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map), p && p.read ? readHint(p.book, p.read) : null); setHover(!p || p.book || p.deck || p.plane || p.clock || p.vcam || p.iss || p.garden || UIS.open === p.sec ? null : p.sec);
+    CANVAS.style.cursor = p && (p.book || p.deck || p.plane || p.clock || p.vcam || p.iss || p.garden || UIS.open !== p.sec) ? 'pointer' : '';
+    const dh = !!(p && p.deck), ph = !!(p && p.plane), ch = !!(p && p.clock), vh = !!(p && p.vcam), ih = !!(p && p.iss), gh = !!(p && p.garden), vi = document.documentElement.lang === 'vi';
+    if (dh !== DECK.hover || ph !== PLANE.hover || ch !== CLOCK.hover || vh !== VCAM.hover || ih !== ISS.hover || gh !== GBOOK.hover) {
+      DECK.hover = dh; PLANE.hover = ph; CLOCK.hover = ch; VCAM.hover = vh; ISS.hover = ih; GBOOK.hover = gh;
+      CANVAS.title = dh ? (vi ? 'Máy hát' : 'Record player') : ph ? 'Boeing 747-8' : ch ? (vi ? 'Đồng hồ trung cổ' : 'Medieval clock') : vh ? (vi ? 'Máy ảnh Asahi Pentax H2' : 'Asahi Pentax H2 camera') : ih ? (vi ? 'Trạm Vũ trụ Quốc tế (ISS)' : 'International Space Station') : gh ? (vi ? 'Khu vườn 3D' : '3D Garden') : ''; setNeeds(true);
     }
   });
-  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover || PLANE.hover || CLOCK.hover || ISS.hover || GBOOK.hover) { DECK.hover = PLANE.hover = CLOCK.hover = ISS.hover = GBOOK.hover = false; CANVAS.title = ''; setNeeds(true); } });
-  CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; showTip(null); inspectPointer('down', e); });
+  CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover || PLANE.hover || CLOCK.hover || VCAM.hover || ISS.hover || GBOOK.hover) { DECK.hover = PLANE.hover = CLOCK.hover = VCAM.hover = ISS.hover = GBOOK.hover = false; CANVAS.title = ''; setNeeds(true); } });
+  CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; showTip(null); inspectPointer('down', e); camPointer('down', e); });
   CANVAS.addEventListener('pointerup', e => {
-    if (inspectPointer('up', e)) { down = null; return; }   // (the clock out: its own clicks and drags)
+    if (inspectPointer('up', e) || camPointer('up', e)) { down = null; return; }   // (the clock or the camera out: its own clicks and drags)
     if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || performance.now() - down.t > 600 || offMode()) { down = null; return; }
     down = null; const p = pickAt(e);
     if (p && p.book && p.book === UIS.active && p.book.out && p.book !== UIS.mapBook) {   // the book being listened to: a click opens it on its summary, then turns its pages; its board closes it (pause puts it back)
@@ -8311,10 +8626,16 @@ function bindPicking() {
     else if (p && p.iss) window.open(ISS.url, '_blank', 'noopener');
     else if (p && p.garden) window.open(GBOOK.url, '_blank', 'noopener');   // the garden's book: the 3D garden, in a new tab   // the ISS: the station's own page, in a new tab
     else if (p && p.clock) { CLOCK.hover = false; CANVAS.title = ''; openClock(); }   // the clock: out of its shelf, three times as large, apart
+    else if (p && p.vcam) { VCAM.hover = false; CANVAS.title = ''; openCamera(); }   // the camera: the same, its parts named
     else if (p && p.sec) openSection(p.sec);
     else if (UIS.mode !== 'home') closeCard();
   });
   addEventListener('keydown', e => { if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return; if (UIS.mode !== 'home') closeCard(); else togglePlayer(false); });
+  // the view up or down (core/views.js LIFT): the wheel or a trackpad over the room, the arrow keys and page keys
+  CANVAS.addEventListener('wheel', e => { if (!ready || offMode() || e.ctrlKey || CLOCK.view.on || VCAM.view.on) return; e.preventDefault();
+    setLift(LIFT.to + e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1) / innerHeight * 0.8); }, { passive: false });
+  addEventListener('keydown', e => { if (!ready || offMode() || CLOCK.view.on || VCAM.view.on || (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]'))) return;
+    const step = { ArrowDown: 0.08, ArrowUp: -0.08, PageDown: 0.3, PageUp: -0.3 }[e.key]; if (step === undefined) return; e.preventDefault(); setLift(LIFT.to + step); });
   // a title in the sidebar under the pointer: its section is shown chosen in the room, as when its label there is
   // hovered; a group's title (Books, Research) lights all of its sections (G, 15/10/2026)
   const toc = document.getElementById('toc-groups');
@@ -8332,6 +8653,7 @@ function bindPicking() {
   document.addEventListener('click', e => {
     if (!ready) return;
     if (CLOCK.view.on && e.target.closest('.toc')) closeClock();   // (the sidebar steers the room again: the clock back on its shelf)
+    if (VCAM.view.on && e.target.closest('.toc')) closeCamera();
     const lk = e.target.closest('.toc .toc-link[href]'), atlas = lk && !lk.dataset.nav && !offMode() ? atlasOf(lk) : null;
     if (atlas) { e.preventDefault(); openSection(atlas.sec); setMapBook(atlas); return; }   // (an atlas's page: through its map)
     const nav = e.target.closest('.toc-link[data-nav]');
@@ -8390,7 +8712,7 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepIss(dt) | stepGardenBook(dt);      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepCamera(dt) | stepIss(dt) | stepGardenBook(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,
@@ -8460,6 +8782,7 @@ async function start() {
   buildPlane().catch(e => console.warn('747 unavailable', e));
   buildClock().catch(e => console.warn('clock unavailable', e));
   buildIss().catch(e => console.warn('ISS unavailable', e));
+  buildCamera().catch(e => console.warn('camera unavailable', e));   // (the vintage camera on the tall shelf)
   buildGardenBook().catch(e => console.warn('garden book unavailable', e));   // (the 3D garden's book on the pouf)   // (the ISS over the Geography bay)   // (the medieval clock on the tall shelf)   // (the 747 on the Research shelf: built now, faded in when its shaders are made)
   await notBefore(600); reveal(1);
   buildNightSky(); buildFireflies();
@@ -8493,6 +8816,53 @@ async function precompileLightStates() {
   } catch (e) { /* compiled on first use instead */ }
   L.sun.visible = was.sun; L.rects.forEach((r, i) => { r.visible = was.rects[i]; }); spl.forEach((s, i) => { s.visible = was.spots[i]; });
   hold = false; needs = true; REVEAL.lit = true; mark('precompiled');
+  (window.requestIdleCallback || (fn => setTimeout(fn, 300)))(() => releaseSources(), { timeout: 2000 });
+}
+/* Pictures the GPU holds that nothing here draws again are let go on this side once they are up (G, 19/10/2026: "em đo
+   xem có thể giảm ram xuống đc ko?"; ~65 MB of the page's memory): the models' images (bitmaps, closed), the wood and
+   the books' atlas (pixel arrays), canvases drawn once (shrunk to a pixel). Each is uploaded first (initTexture), so a
+   part not yet seen keeps its picture on the GPU. Pictures drawn again (a book out of its shelf, its pages, the titles
+   on the spines) carry userData.keep and stay; so do render targets. Nothing is uploaded again after a lost WebGL
+   context. */
+function releaseSources() {
+  const seen = new Set(), list = [];
+  const take = t => { if (!t || !t.isTexture || seen.has(t)) return; seen.add(t);
+    if (t.isRenderTargetTexture || t.isDepthTexture || t.isVideoTexture || t.isCubeTexture || t.isCompressedTexture || t.isData3DTexture || t.isDataArrayTexture || t.userData.keep || !t.image) return; list.push(t); };
+  const visit = o => { for (const m of [].concat(o.material || [])) { for (const v of Object.values(m)) take(v); if (m.uniforms) for (const u of Object.values(m.uniforms)) { const v = u && u.value; if (Array.isArray(v)) v.forEach(take); else take(v); } } };
+  for (const sc of [scene, OVER.scene, OVER.skyScene, POST.light.scene]) if (sc) sc.traverse(visit);
+  for (const t of list) { try { renderer.initTexture(t); } catch (e) { t.userData.keep = true; } }
+  let freed = 0;
+  for (const t of list) {
+    const im = t.image, w = im.width, h = im.height; if (t.userData.keep || !w || !h) continue;
+    if (typeof ImageBitmap !== 'undefined' && im instanceof ImageBitmap) im.close();
+    else if (typeof HTMLCanvasElement !== 'undefined' && im instanceof HTMLCanvasElement) { im.width = im.height = 1; }
+    else if (!(im.data || (typeof HTMLImageElement !== 'undefined' && im instanceof HTMLImageElement))) continue;
+    t.source.data = { width: w, height: h, data: null }; freed += w * h * 4;
+  }
+  RELEASED.mb = +(freed / 1048576).toFixed(1); RELEASED.n = list.length;
+  releaseGeometry();
+}
+const RELEASED = { mb: 0, n: 0 };   // (what releaseSources let go: tools/perf/mem.cjs)
+/* and the room's still things' normals, texture coordinates and colours (G, 19/10/2026: the page's memory, ~10-15 MB):
+   everything on the room's layer drawn once into a 1 px target of the picture's kind with nothing culled, so all of it
+   is up on the GPU, then those arrays emptied (positions and indices stay: the pointer's rays and the boxes need them;
+   a ray reading an emptied attribute gets NaN, not an error). Left as they are: instanced and skinned meshes, morphs,
+   what is redrawn (dynamic attributes), what is hidden or not drawn now, and every layer but the room's. */
+function releaseGeometry() {
+  const list = [], keep = new Map();
+  scene.traverse(o => { if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || o.layers.mask !== 1 || o.morphTargetInfluences) return;
+    let v = o.visible; for (let p = o.parent; v && p; p = p.parent) v = p.visible; if (!v) return;
+    if ([].concat(o.material).some(m => !m || m.visible === false)) return; list.push(o); });
+  for (const o of list) { keep.set(o, o.frustumCulled); o.frustumCulled = false; }
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+  try { renderer.setRenderTarget(rt); renderer.render(scene, camera); } catch (e) { list.length = 0; }
+  renderer.setRenderTarget(null); rt.dispose(); for (const [o, c] of keep) o.frustumCulled = c;
+  let freed = 0; const done = new Set();
+  for (const o of list) for (const n of ['normal', 'uv', 'uv1', 'color', 'tangent']) {
+    const a = o.geometry.attributes[n]; if (!a || done.has(a) || a.isInterleavedBufferAttribute || a.usage !== THREE.StaticDrawUsage || !a.array || !a.array.length) continue;
+    done.add(a); freed += a.array.byteLength; a.array = new a.array.constructor(0);
+  }
+  RELEASED.geoMb = +(freed / 1048576).toFixed(1); setNeeds(true);
 }
 
 // other modules change these through a setter (an imported binding is read-only)
@@ -8508,7 +8878,7 @@ new MutationObserver(() => { setNeeds(true); updateOn(); if (offMode() && UIS.mo
 new MutationObserver(() => { relabelBooks(); setNeeds(true); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-lang'] });
 document.addEventListener('visibilitychange', () => { setNeeds(true); });
 CANVAS.addEventListener('webglcontextlost', e => { e.preventDefault(); setReady(false); renderer.setAnimationLoop(null); updateOn(); document.documentElement.classList.add('lib3d-failed'); });
-window.__lib3d = { PETS, PLANE, CLOCK, ISS, BULB, GBOOK, readCheck: () => readCheck(UIS.secs.flatMap(s => s.books), bk => (heroMesh(bk), heroRead(bk))), RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
+window.__lib3d = { LIFT, VCAM, RELEASED, PETS, PLANE, CLOCK, ISS, BULB, GBOOK, readCheck: () => readCheck(UIS.secs.flatMap(s => s.books), bk => (heroMesh(bk), heroRead(bk))), RAIN, METEOR, STARU, SKYSET, clock, FLY, DECOR, DECK, togglePlayer, state: () => ({ ready, hold, scale: RT_SCALE }), setRtScale, BOOK, SHELF, HERO, scene, camera, renderer, LIGHTS, MAT, POST, NIGHT, HOUR, UIS, CAM, applyHour, sunPlace, setClock: d => { HOUR.pin = d ? new Date(d) : null; setNeeds(true); }, draw, resize, applyRefCamera, openSection, closeCard, goView, homeView, focusView, loop,
   atlas: (which, lang, w = 1024, h = 1371) => { const c = canvas(w, h), t0 = performance.now(); drawAtlas(c, which, lang); return { url: c.toDataURL('image/png'), ms: performance.now() - t0 }; } };   // (tests: the Geography books' page on its own)
 // The page's day/night switch, pressed by hand, always sets the room's light: a ?at= hour (a preview link) is let go, and
 // the room follows the switch as it does without one (G, 16/10/2026: the switch did nothing on such a link). And a page

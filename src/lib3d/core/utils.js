@@ -20,6 +20,9 @@ function fbm(x, y, oct = 4, px = 256, py = 256) { let s = 0, a = 0.5, f = 1, n =
 function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 function ctex(c, { srgb = true, rep = true } = {}) { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t; }
 const hsl = (h, s, l) => new THREE.Color().setHSL(h / 360, s, l);
+// a picture at half its size, drawn at full size first so its strokes keep their weight: the trees' (G, 19/10/2026: "giảm độ nét của cây cối xuống 1";
+// they are seen in the picture at ~0.8 px a CSS px, so their full-size textures held twice the detail anyone sees)
+function halfCanvas(c) { const h = canvas(Math.max(1, c.width >> 1), Math.max(1, c.height >> 1)), g = h.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(c, 0, 0, h.width, h.height); return h; }
 
 /* Box with world-scaled UVs: v runs along the longest in-plane side, 1 UV = `tile` metres */
 function boardGeo(w, h, d, tile = 1, round = 0) {   // (round: its edges rounded off by that radius, so they catch the light)
@@ -35,4 +38,4 @@ function boardGeo(w, h, d, tile = 1, round = 0) {   // (round: its edges rounded
 }
 function place(geo, x, y, z, ry = 0) { const g = geo.clone(); if (ry) g.rotateY(ry); g.translate(x, y, z); return g; }
 
-export { PERM, boardGeo, canvas, ctex, fade, fbm, hsl, pick, place, rand, rng, rr, vnoise };
+export { PERM, boardGeo, canvas, ctex, fade, fbm, halfCanvas, hsl, pick, place, rand, rng, rr, vnoise };

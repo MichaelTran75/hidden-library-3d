@@ -193,7 +193,7 @@ function heroCloth(bk, S = 256) {   // a tile of the book's cloth, ~5 cm square:
   return c;
 }
 function heroCanvasTex(c, color, rep) {
-  const t = new THREE.CanvasTexture(c); if (color) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; return t;
+  const t = new THREE.CanvasTexture(c); if (color) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8; t.userData.keep = true; return t;   // (keep: drawn again, core/loop.js releaseSources)
 }
 // the front: the cover's own picture, or the cloth with a ruled frame, the title as large as fits above the author
 // (italics) and the year, all centred on the board (the groove of the joint takes the strip on the left)

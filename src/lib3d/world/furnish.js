@@ -44,6 +44,40 @@ function flatBook(src, yaw = 0, s = 1) {
   const inner = new THREE.Group(); inner.add(m); inner.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(m); const c = b.getCenter(new THREE.Vector3());
   m.position.set(-c.x, -b.min.y, -c.z); const g = new THREE.Group(); g.add(inner); inner.rotation.y = yaw; g.userData.h = b.max.y - b.min.y; return g;
 }
+/* a magazine lying on soft things (a pouf, a book on it): W across (x) by D deep (z), T thick, its middle at c, turned by
+   yaw. Each point of a grid over it finds what is under it (rays down onto `under`); the sheet then settles as paper
+   does: it rests on what is highest and spans across between, its weight bending it down over the edges (each point no
+   lower than what is under it, eased toward its neighbours' height and let sink a little, over and over). Its cover (group 0) is userData.cover, its picture
+   set later (world/gardenbook.js); the back (1) and the page edges (2) round it. */
+function magazine(W, D, T, c, yaw, under) {
+  const nx = 30, nz = 24, ray = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), cs = Math.cos(yaw), sn = Math.sin(yaw);
+  const at = (i, j) => { const u = (i / nx - 0.5) * W, v = (j / nz - 0.5) * D; return [c.x + u * cs + v * sn, c.z - u * sn + v * cs, u, v]; };
+  const floor = new Float32Array((nx + 1) * (nz + 1)); let h = new Float32Array(floor.length);
+  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { const [x, z] = at(i, j); ray.set(new THREE.Vector3(x, 2, z), down); const hit = ray.intersectObjects(under, true)[0]; floor[j * (nx + 1) + i] = h[j * (nx + 1) + i] = (hit ? hit.point.y : 0.5) + 0.0015; }
+  // too stiff to go down into the cushion's small folds: it rests on their tops (the highest point within ~6 cm)
+  { const f = floor.slice(), R = 3; for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { let m = -1e9; for (let b = Math.max(0, j - R); b <= Math.min(nz, j + R); b++) for (let a = Math.max(0, i - R); a <= Math.min(nx, i + R); a++) m = Math.max(m, f[b * (nx + 1) + a]); floor[j * (nx + 1) + i] = m; h[j * (nx + 1) + i] = m; } }
+  for (let it = 0; it < 160; it++) {   // (and its weight: it sinks a little each round where nothing holds it up)
+    const n = new Float32Array(h.length);
+    for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { let s = 0, k = 0; for (const [a, b] of [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]) if (a >= 0 && a <= nx && b >= 0 && b <= nz) { s += h[b * (nx + 1) + a]; k++; }
+      const q = j * (nx + 1) + i; n[q] = Math.max(floor[q], 0.5 * h[q] + 0.5 * s / k - 0.0003); }
+    h = n;
+  }
+  const pos = [], uv = [], idx = [], groups = [], g = new THREE.BufferGeometry();
+  const quadGrid = (yOff, flip) => { const o = pos.length / 3; for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) { const [x, z] = at(i, j); pos.push(x - c.x, h[j * (nx + 1) + i] + yOff, z - c.z); uv.push(i / nx, 1 - j / nz); }
+    const s0 = idx.length; for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { const a = o + j * (nx + 1) + i, b = a + 1, d = a + nx + 1, e = d + 1; if (flip) idx.push(a, b, d, b, e, d); else idx.push(a, d, b, b, d, e); } return [s0, idx.length - s0]; };
+  groups.push(quadGrid(T, false), quadGrid(0, true));
+  // the edges: round the rim, from the back's height to the cover's
+  const rim = []; for (let i = 0; i <= nx; i++) rim.push([i, 0]); for (let j = 1; j <= nz; j++) rim.push([nx, j]); for (let i = nx - 1; i >= 0; i--) rim.push([i, nz]); for (let j = nz - 1; j >= 0; j--) rim.push([0, j]);
+  const o = pos.length / 3; rim.forEach(([i, j], k) => { const [x, z] = at(i, j), y = h[j * (nx + 1) + i]; pos.push(x - c.x, y, z - c.z, x - c.x, y + T, z - c.z); uv.push(k / rim.length, 0, k / rim.length, 1); });
+  const s0 = idx.length; for (let k = 0; k < rim.length - 1; k++) { const a = o + 2 * k; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); } groups.push([s0, idx.length - s0]);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+  groups.forEach(([s, n], m) => g.addGroup(s, n, m)); g.computeVertexNormals();
+  const mats = [new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.32, metalness: 0 }), new THREE.MeshStandardMaterial({ color: 0xd9ccb2, roughness: 0.4, metalness: 0 }),
+    new THREE.MeshStandardMaterial({ color: 0xe2d6c0, roughness: 0.85, metalness: 0 })];   // (a glossy cover; its back; the pages' edges, the page's paper colour)
+  const mesh = new THREE.Mesh(g, mats); mesh.castShadow = mesh.receiveShadow = true;
+  const grp = new THREE.Group(); grp.position.set(c.x, 0, c.z); grp.add(mesh); grp.userData.cover = mesh; grp.userData.ar = W / D; grp.userData.h = T;
+  return grp;
+}
 async function buildFurniture(A) {   // async: it yields between its heavy parts so the page stays responsive while it loads
   const F = new THREE.Group(); room.add(F); const B = A.byName;
   // ---- sofa (re-arranged sectional, one mesh per part): local back at z=0, left end at x=0
@@ -147,10 +181,9 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
       tiltX = Math.atan2(((ys[2] + ys[3]) - (ys[0] + ys[1])) / 2, 2 * hd), tiltZ = Math.atan2(((ys[1] + ys[2]) - (ys[0] + ys[3])) / 2, 2 * hw);
     obj.position.set(x, y, z); obj.rotation.set(-tiltX, yaw, tiltZ, 'YXZ'); F.add(obj); return y; };
   const toW = (lx, lz) => new THREE.Vector3(lx, 0, lz).applyAxisAngle(new THREE.Vector3(0, 1, 0), pouf.rotation.y).add(pouf.position);
-  const b1 = flatBook(B.book_book002, Math.PI / 2, 1.5), b2 = flatBook(B.book_book005, Math.PI / 2 + 0.07, 1.42), b3 = flatBook(B.book_book006, Math.PI / 2, 1.55);
-  for (const b of [b1, b2, b3]) paintLightly(b, 0.2);   // (as every book)
+  const b1 = flatBook(B.book_book002, Math.PI / 2, 1.5), b3 = flatBook(B.book_book006, Math.PI / 2, 1.55);
+  for (const b of [b1, b3]) paintLightly(b, 0.2);   // (as every book)
   { const p = toW(-0.17, -0.22); restOn(b1, p.x, p.z, 0.22, 0.13, 0.17); }
-  const y2 = b1.position.y + b1.userData.h; b2.position.set(b1.position.x + 0.006, y2, b1.position.z - 0.004); b2.rotation.copy(b1.rotation); b2.rotation.y += 0.06; F.add(b2); LIGHTS.gardenBook = b2;   // (its cover the 3D garden's: world/gardenbook.js)
   { const p = toW(-0.33, 0.05); restOn(b3, p.x, p.z, 0.36, 0.14, 0.19); }
   // the weight of a book flattens the velvet under it; the fabric rises softly around its edges
   const pressUnder = (book, hw, hd) => {
@@ -161,6 +194,10 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
       const allowed = -0.002 + (out / m) * (out / m) * 0.045; if (v.y > allowed) { v.y = allowed; v.applyMatrix4(back); Pp.setXYZ(i, v.x, v.y, v.z); } }
     Pp.needsUpdate = true; };
   pressUnder(b1, 0.13, 0.17); pressUnder(b3, 0.14, 0.19); pouf.geometry.computeVertexNormals(); pouf.geometry.computeBoundingSphere();
+  // the 3D garden's magazine (G, 19/10/2026: "em cuốn sách này thành tạp chí mỏng to x2"): the book that lay on b1, made a
+  // magazine twice its size and 6 mm thick, lying over b1 and the pouf and bent to them (its cover: world/gardenbook.js)
+  { const gb = B.book_book005.geometry; gb.computeBoundingBox(); const bs = gb.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(1.42 * 2);
+    const c = toW(-0.05, -0.12), mag = magazine(Math.max(bs.y, bs.z), Math.min(bs.y, bs.z), 0.006, c, 0.3, [pouf, b1, b3]); F.add(mag); LIGHTS.gardenBook = mag; }
   // some GLB hardcovers face-out on the shelf
   return F;
 }

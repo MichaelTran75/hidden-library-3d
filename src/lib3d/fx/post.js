@@ -19,7 +19,7 @@ const POST = { light: { scene: new THREE.Scene(), parts: [], mats: new Map(), k:
    edges) and keeps the line for the big forms.  */
 const QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy,0.0,1.0); }';
 function buildPost() {
-  POST.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(4, 4) });
+  POST.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 2, depthTexture: new THREE.DepthTexture(4, 4) });
   const exposure = { value: 0.87 }, quad = (uniforms, fragmentShader) => new FullScreenQuad(new THREE.ShaderMaterial({ uniforms, vertexShader: QUAD_VS, fragmentShader, depthTest: false, depthWrite: false }));
   POST.tone = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });
   POST.toneQuad = quad({ tColor: { value: null }, exposure }, /* glsl */`

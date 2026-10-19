@@ -22,6 +22,11 @@ async function buildGardenBook() {
   const bk = LIGHTS.gardenBook; if (!bk) return;
   const im = await gardenCover(); if (!im) return;
   bk.updateMatrixWorld(true);
+  if (bk.userData.cover) {   // the magazine (world/furnish.js): its cover face takes the picture, cut to its shape
+    const ar = bk.userData.ar, c = document.createElement('canvas'); c.width = ar >= 1 ? 1024 : Math.round(1024 * ar); c.height = ar >= 1 ? Math.round(1024 / ar) : 1024;
+    const g = c.getContext('2d'), s = Math.max(c.width / im.width, c.height / im.height); g.drawImage(im, (c.width - im.width * s) / 2, (c.height - im.height * s) / 2, im.width * s, im.height * s);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; const m = bk.userData.cover.material[0]; m.map = tex; m.needsUpdate = true;
+  } else {
   // the cover: the book's top face (in the book's own frame: it lies on its back cover), the picture cut to its shape
   const inv = bk.matrixWorld.clone().invert(), lb = new THREE.Box3();
   bk.traverse(o => { if (o.isMesh) { o.geometry.computeBoundingBox(); lb.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld.clone().premultiply(inv))); } });
@@ -33,7 +38,9 @@ async function buildGardenBook() {
   cover.rotation.x = -Math.PI / 2; cover.position.set((lb.min.x + lb.max.x) / 2, lb.max.y + 0.0012, (lb.min.z + lb.max.z) / 2);
   // which way is "up" on the picture: its top toward the book's far edge from the room's eye (the camera looks from +z)
   bk.add(cover);
-  bk.traverse(o => { if (!o.isMesh) return; o.layers.set(GBOOK.layer); o.material = o.material.clone(); o.material.fog = false; o.material.onBeforeCompile = crispPatch; o.material.needsUpdate = true; });
+  }
+  const sharpen = m => { m = m.clone(); m.fog = false; m.onBeforeCompile = crispPatch; m.needsUpdate = true; return m; };   // (a magazine's faces are several)
+  bk.traverse(o => { if (!o.isMesh) return; o.layers.set(GBOOK.layer); o.material = Array.isArray(o.material) ? o.material.map(sharpen) : sharpen(o.material); });
   bk.updateMatrixWorld(true);
   const bb = new THREE.Box3().setFromObject(bk, true), bc = bb.getCenter(new THREE.Vector3());
   GBOOK.box = [bc.x, bb.min.y - 0.005, bc.z, (bb.max.x - bb.min.x) / 2 + 0.01, bb.max.y - bb.min.y + 0.01, (bb.max.z - bb.min.z) / 2 + 0.01];

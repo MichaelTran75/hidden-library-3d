@@ -93,6 +93,7 @@ cat_bin = base64.b64encode(open(os.path.join(HERE, 'cat.bin'), 'rb').read()).dec
 hen = base64.b64encode(open(os.path.join(HERE, 'hen.glb'), 'rb').read()).decode()   # the chicken (tools/pets/pack.mjs)
 clock = base64.b64encode(open(os.path.join(HERE, 'clock.glb'), 'rb').read()).decode()   # the medieval clock, its moving parts apart (tools/clock)
 iss = base64.b64encode(open(os.path.join(HERE, 'iss.glb'), 'rb').read()).decode()
+camglb = base64.b64encode(open(os.path.join(HERE, 'camera.glb'), 'rb').read()).decode()   # the vintage camera on the tall shelf (tools/camera)
 gcover = base64.b64encode(open(os.path.join(HERE, 'garden-cover.webp'), 'rb').read()).decode()   # the 3D garden's book's cover (G's screenshot of the garden)   # the ISS over the Geography bay, one mesh and an atlas (tools/iss)
 import json   # the books' covers (tools/covers/make.py): the images themselves in the one-file page, files next to it on Pages
 COVER_DIR = os.path.join(HERE, 'covers'); cover_files = sorted(f for f in os.listdir(COVER_DIR) if f.endswith('.webp')) if os.path.isdir(COVER_DIR) else []
@@ -204,6 +205,13 @@ STYLE = IMPORTMAP + """<script>
   body.dark-mode .ck-head, body.dark-mode .ck-name { background: rgba(22, 18, 14, .9); color: #E2D6C0; }
   body.dark-mode .ck-x { background: rgba(226, 214, 192, .12); }
   body.ck-out #l3-lines, body.ck-out .l3-label, body.ck-out .l3-cap { opacity: 0 !important; pointer-events: none !important; }
+  /* ---- the view up or down: a scroll bar on the right edge (lib3d core/views.js LIFT; G, 19/10/2026) */
+  #l3-lift { position: absolute; right: 6px; top: 14vh; bottom: 14vh; width: 9px; border-radius: 6px; background: rgba(42, 33, 24, .1); pointer-events: auto; cursor: pointer; transition: width .15s ease, background-color .15s ease, opacity .3s ease; }
+  #l3-lift:hover, #l3-lift.is-drag { width: 12px; background: rgba(42, 33, 24, .16); }
+  .l3-lift-thumb { position: absolute; left: 0; right: 0; border-radius: 6px; background: rgba(42, 33, 24, .42); cursor: grab; }
+  #l3-lift.is-drag .l3-lift-thumb { cursor: grabbing; background: rgba(42, 33, 24, .6); }
+  body.dark-mode #l3-lift { background: rgba(226, 214, 192, .12); } body.dark-mode .l3-lift-thumb { background: rgba(226, 214, 192, .45); }
+  body.ck-out #l3-lift { opacity: 0; pointer-events: none; }
   /* ---- labels and leader lines */
   #l3-ui { position: fixed; inset: 0; z-index: 5; pointer-events: none; font-family: var(--font); }
   body.off-mode #l3-ui { display: none; }
@@ -327,6 +335,9 @@ CREDITS = """<!--
   modified: its moving parts cut apart and turned in code, the rest simplified, re-materialled, compressed; clock.glb)
   The space station over the Geography bay: "ISS" by uperesito - https://sketchfab.com/3d-models/iss-813f5b296e584c26bf386ca39de6c3d4
   (CC BY 4.0; modified: made one mesh, its textures packed into one atlas, normals left out, compressed; iss.glb)
+  The camera on the tall shelf: "Vintage Camera ~ Asahi Pentax H2" by Robin Vandenberghe -
+  https://sketchfab.com/3d-models/vintage-camera-asahi-pentax-h2-a2d73560b1a841b59875cf2581ffd8cf (CC BY 4.0; modified:
+  its maps made smaller, its lens glass made plain, compressed; camera.glb)
   The cat and the chicken:
   - "cat" by artofaria - https://sketchfab.com/3d-models/cat-7e8cbcad506041dc9c3a0cb74edb3360 (Sketchfab Free Standard
     licence, https://sketchfab.com/licenses; rigged, re-materialled, posed and animated in code). Under that licence the
@@ -363,6 +374,7 @@ SCRIPTS = (CREDITS + '<script id="sky-weather-js">\n' + WX_JS + '</script>\n'
   + f'<script id="hen-glb" type="application/octet-stream">{hen}</script>\n'
   + f'<script id="clock-glb" type="application/octet-stream">{clock}</script>\n'
   + f'<script id="iss-glb" type="application/octet-stream">{iss}</script>\n'
+  + f'<script id="camera-glb" type="application/octet-stream">{camglb}</script>\n'
   + f'<script id="garden-cover" type="application/octet-stream">{gcover}</script>\n'
   + f'<script id="book-covers" type="application/json">{covers_inline}</script>\n'
   + f'<script id="book-summaries" type="application/json">{sums_json}</script>\n'
@@ -477,6 +489,7 @@ if pages_dir:   # the same page with the models as a separate file
     hen_inline = f'<script id="hen-glb" type="application/octet-stream">{hen}</script>'
     clock_inline = f'<script id="clock-glb" type="application/octet-stream">{clock}</script>'
     iss_inline = f'<script id="iss-glb" type="application/octet-stream">{iss}</script>'
+    cam_inline = f'<script id="camera-glb" type="application/octet-stream">{camglb}</script>'
     gc_inline = f'<script id="garden-cover" type="application/octet-stream">{gcover}</script>'
     assert page.count(cat_inline) == 1 and page.count(hen_inline) == 1
     covers_el = f'<script id="book-covers" type="application/json">{covers_inline}</script>'
@@ -487,6 +500,7 @@ if pages_dir:   # the same page with the models as a separate file
                .replace(hen_inline, '<script id="hen-glb" type="application/octet-stream" data-src="hen.glb"></script>', 1)
                .replace(clock_inline, '<script id="clock-glb" type="application/octet-stream" data-src="clock.glb"></script>', 1)
                .replace(iss_inline, '<script id="iss-glb" type="application/octet-stream" data-src="iss.glb"></script>', 1)
+               .replace(cam_inline, '<script id="camera-glb" type="application/octet-stream" data-src="camera.glb"></script>', 1)
                .replace(gc_inline, '<script id="garden-cover" type="application/octet-stream" data-src="garden-cover.webp"></script>', 1)
                .replace(covers_el, f'<script id="book-covers" type="application/json">{covers_files}</script>', 1)
                .replace(sums_el, '<script id="book-summaries" type="application/json" data-src="summaries.json"></script>', 1)
@@ -499,7 +513,7 @@ if pages_dir:   # the same page with the models as a separate file
         open(os.path.join(pages_dir, 'dev.html'), 'w', encoding='utf-8').write(out.replace("'" + mod_name + "'", "'lib3d/main.js'"))
         print('dev  :', os.path.join(pages_dir, 'dev.html'), '(the modules unjoined)')
     shutil.copyfile(os.path.join(HERE, 'lib.glb'), os.path.join(pages_dir, 'lib.glb'))
-    for f in ('cat.bin', 'hen.glb', 'clock.glb', 'iss.glb', 'garden-cover.webp'): shutil.copyfile(os.path.join(HERE, f), os.path.join(pages_dir, f))
+    for f in ('cat.bin', 'hen.glb', 'clock.glb', 'iss.glb', 'camera.glb', 'garden-cover.webp'): shutil.copyfile(os.path.join(HERE, f), os.path.join(pages_dir, f))
     open(os.path.join(pages_dir, 'summaries.json'), 'w', encoding='utf-8').write(sums_json.replace('<\\/', '</'))
     os.makedirs(os.path.join(pages_dir, 'covers'), exist_ok=True)
     for f in cover_files: shutil.copyfile(os.path.join(COVER_DIR, f), os.path.join(pages_dir, 'covers', f))

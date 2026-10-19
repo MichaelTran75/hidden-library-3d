@@ -268,6 +268,92 @@ Dựa theo cấu tạo sách bìa cứng (bìa 2–3 mm, bìa thừa ra quanh kh
 - `NAP` trong `furnish.js`: mỗi module 0,9–1,07, nhân vào sheen và 30 % vào màu.
 - Ảnh kiểm tra: `sofa.cjs` (thư mục test, chụp sofa trên cửa sổ 2880×1800).
 
+### Bộ nhớ: đo và giảm (19/10/2026)
+
+G: "em đo xem có thể giảm ram xuống đc ko?".
+
+- Cách đo (thư mục test):
+  - `mem.cjs` móc vào các lệnh WebGL để cộng texture, buffer, renderbuffer, kèm tên hàm đã cấp phát;
+  - `cpumem.cjs` cộng các bản sao CPU;
+  - phys footprint (`footprint <pid>`, đúng chỉ số Activity Monitor hiển thị) của tiến trình trang và tiến trình GPU, sau khi ép GC.
+- Trước khi giảm, ở 1512×945, DPR 2, ban ngày:
+  - tiến trình GPU 1550 MB;
+  - tiến trình trang 848 MB;
+  - heap JS 91 MB;
+  - GL đếm được: texture 194 MB, renderbuffer 116 MB (MSAA), buffer 27 MB;
+  - bản sao CPU: ảnh 65 MB, hình học 27 MB.
+- Đã làm:
+  - `releaseSources` (`core/loop.js`), chạy sau `l3-precompiled`:
+    - đưa mọi texture tĩnh lên GPU (`initTexture`) rồi bỏ bản CPU: đóng bitmap, thu canvas về 1 px, bỏ mảng điểm ảnh;
+    - ảnh vẽ lại (sách bay ra, trang sách, tên trên gáy) mang `userData.keep` (`heroCanvasTex`, `words.js`);
+    - giải phóng khoảng 65–72 MB.
+  - PMREM của môi trường phản chiếu (`lights.js`): `pm.dispose()`.
+  - MSAA 4 → 2 cho hình chính (`POST.rt`) và các lớp sắc nét (`pets.js`, `clock.js`, `deck.js`). Ảnh so 4/2 gần như y hệt.
+- Sau (đã có thêm máy ảnh và tạp chí):
+  - tiến trình GPU 1414 MB (−136);
+  - tiến trình trang 839 MB (máy ảnh mới thêm khoảng +30);
+  - heap JS 74 MB.
+- Độ nét theo loại (G 19/10: "giảm độ nét của cây cối xuống 1, và giảm tất cả xuống 1,5 riêng chữ thì vẫn để 2"):
+  - Canvas giữ DPR 2 cho chữ (tên trên gáy, trang sách khi đọc; `SHARP.book.dpr` 2).
+  - Các lớp sắc nét (mèo, gà, 747, ISS, đồng hồ trên kệ, tạp chí, máy hát) vẽ ở 1,5 (`crispPass` k = 1,5 / pr; `deck.js`):
+    - tra độ sâu qua `uFull`/`uOff` nhân k;
+    - viền chọn giữ bề rộng trên màn hình nhờ `uRk`.
+  - Cây cối: texture lá, bụi, rừng xa vẽ đủ cỡ rồi thu một nửa (`halfCanvas`). Bản thân cây nằm trong hình màu nước, vốn chỉ ~0,8 px mỗi px CSS.
+  - Kết quả đo ở tầng GL (ổn định giữa các lần chạy):
+    - texture 194 → 178 MB;
+    - renderbuffer 116 → 56 MB;
+    - tổng GL khoảng −77 MB so với ban đầu.
+  - Phys footprint của tiến trình GPU dao động ±70 MB giữa các lần chạy, nên không dùng được để đo các thay đổi nhỏ.
+- Đợt 3 (G 19/10: "tiếp tục giảm độ nét của toàn bộ cây" cùng danh sách còn lại):
+  - Texture cây còn 1/4: ô lá 384×256, bụi 256, rừng xa 512×64; ảnh nhỏ (256) còn 1/2. Nhìn gần như không khác, vì lớp màu nước làm mềm sẵn.
+  - Bóng nắng 2048 → 1536 (`lights.js`).
+  - `sweepCrisp` (`pets.js`): target của lớp sắc nét nào khuất khung hình 5 s thì giải phóng, hiện lại thì cấp lại. Áp dụng cho:
+    - mọi `crispPass`;
+    - `bigPass` của đồng hồ (`crispSeen`);
+    - máy hát (`DECKR`).
+  - `releaseGeometry` (`loop.js`, ngay sau `releaseSources`):
+    - vẽ một lượt cả lớp phòng không cắt khung vào target 1 px để mọi hình học đã lên GPU;
+    - rồi làm rỗng mảng normal, uv, color trên CPU;
+    - giải phóng khoảng 4,7 MB; heap JS 75 → 51 MB.
+  - Tầng GL sau cả ba đợt: texture 165 MB, renderbuffer 51 MB.
+- Còn có thể làm:
+  - DPR tối đa 2 → 1,5: ở DPR 1 tiến trình GPU còn 1351 MB, nhưng chữ và lớp sắc nét bớt nét;
+  - tắt hẳn MSAA: −150 MB, nhưng cạnh bị răng cưa;
+  - giải phóng target của lớp sắc nét khi vật ra khỏi khung hình;
+  - bóng nắng 2048 → 1536.
+
+### Máy ảnh cổ trên kệ cao (`lib3d/world/camera.js`, 19/10/2026)
+
+- Asahi Pentax H2 (CC BY 4.0), đặt ở ô của đồng hồ để bàn, màu nước 10 %. Cách dựng: `tools/camera/README.md`.
+- `camera.glb` nhúng như `iss.glb`: base64 trong trang một file, `data-src` trên Pages.
+- Rê chuột thì hiện viền; bấm thì xem cấu tạo, giống đồng hồ (G 19/10: "cho chuột hover vào máy ảnh to show white border line; click vào thì show 3D structures"):
+  - Máy ảnh vẽ trên lớp 8 bằng `crispPass`, `paint` 0,1 (giữ 10 % màu nước), kèm phép thử độ sâu `vcPatch` khi ở trên kệ. Vì lớp này không nằm trong bóng của phòng, dưới máy có một mảng bóng mềm.
+  - Bấm vào: máy bay ra trước camera, to ×3, phòng tối đi, ngửa 0,32 rad để thấy nóc máy (`vcPlace`). Khi đó vẽ bằng `VCAM.PI`, 1,25 px mỗi px CSS.
+  - Tách thành 8 nhóm (`VC_PARTS`): ống kính ra trước, thị kính ra sau, núm tua phim, cần lên phim, núm tốc độ và nút chụp lên trên, bao da xuống dưới, thân máy đứng yên. Mỗi chi tiết dời trong khung của cha nó (`pieces[].d`).
+  - Tên bộ phận theo thông số Pentax H2 (1959): một núm tốc độ 1 s – 1/500 s, cần lên phim gạt nhanh có bộ đếm, nút chụp trên nóc, không có hẹn giờ, ngàm M42, màn trập vải, gương lật, lăng kính.
+  - Nhãn và đường nối dùng lại CSS của đồng hồ (`.ck-out-ui`, `.ck-name`, `.ck-lines`, `body.ck-out`).
+  - Thao tác: kéo để xoay, bấm vào máy để tách hoặc ráp, bấm ra ngoài / Esc / × để cất về kệ. Phần nối vào trang: `picking.js` (`camHit`, `camPointer`), `loop.js` (`stepCamera`), `words.js` (`drawCamera`, `drawCamInspect`).
+
+### Tạp chí khu vườn 3D trên pouf (`furnish.js` `magazine`, 19/10/2026)
+
+- Cuốn sách khu vườn thành tạp chí to gấp đôi, dày 6 mm (G: "em cuốn sách này thành tạp chí mỏng to x2").
+- Lưới 31×25 điểm, mỗi điểm bắn tia xuống pouf và hai cuốn sách. Lấy đỉnh cao nhất trong ~6 cm để giấy không chui vào nếp nhỏ, rồi nới 160 vòng: kéo về trung bình các điểm bên cạnh, cho võng 0,3 mm mỗi vòng, nhưng không thấp hơn mặt bên dưới.
+- Bìa (nhóm 0) nhận ảnh khu vườn cắt theo tỉ lệ (`gardenbook.js`, `userData.cover`). Viền chọn, nút bấm mở 3d-garden và lớp 7 giữ như cũ.
+
+### Thanh cuộn dọc: xem trọn khung cảnh (`core/views.js` LIFT, 19/10/2026)
+
+- G: "add vertical scroll bar để xem được hết khung cảnh". Góc nhìn ở nhà cắt khung như ảnh nền cover, nên trên cửa sổ rộng bị mất phần trên và phần dưới.
+- Cách làm: dịch ống kính theo chiều dọc như máy ảnh kiến trúc, tường vẫn thẳng đứng: `camera.setViewOffset(W, H, -shift·W, LIFT.cur·H, W, H)`.
+  - Phạm vi từ −0,3 (lên: ngọn cây, dầm trần) đến +0,45 (xuống: pouf, tạp chí, thảm) chiều cao cửa sổ; chuyển mượt trong ~0,12 s.
+  - Mỗi lần đổi góc nhìn (`goView`), khung về lại 0.
+- Điều khiển:
+  - thanh cuộn ở mép phải (`#l3-lift` trong `#l3-ui`, `buildLift`/`placeLift` ở `overlay.js`): độ dài thanh trượt bằng phần đang thấy trên tổng phần xem được; kéo được, bấm vào rãnh để nhảy tới;
+  - lăn chuột hoặc trackpad trên phòng;
+  - phím ↑ ↓ PageUp PageDown (`picking.js`).
+  - Ẩn khi đồng hồ hoặc máy ảnh đang bay ra (`body.ck-out`).
+- Nhãn, đường nối, lớp sắc nét và phép bắt chuột đều dùng `camera.projectionMatrix`, nên tự trôi theo. Đồng hồ trời là HTML nên đứng yên.
+- Kiểm tra: `lifttest.cjs` (thư mục test): lăn xuống, lăn lên, kéo, đổi góc thì về 0.
+
 ### Mô hình ISS trên nóc kệ Geography (`lib3d/world/iss.js`, 17/10/2026)
 
 - Mẫu "ISS" của uperesito (CC BY 4.0) đứng trên giá kiểu 747, trên nóc kệ thấp phía sau, ngay trên ô Geography, trước cửa kính (khung kính bên phải, chỗ G khoanh).

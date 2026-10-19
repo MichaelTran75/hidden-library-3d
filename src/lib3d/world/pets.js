@@ -90,9 +90,9 @@ function contactShadow(w, d) {
 function sharpQuad(P) {
   const out = !!P.outline;   // (the 747 on the shelf: its selection outline when the pointer is on it, and its fade in: b747.js)
   P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, uWash: { value: P.wash || 0 }, uToneK: { value: P.toneK }, ...SHARP.u, ...paintUniforms(),
-      ...(out ? { uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, uFade: { value: 1 } } : {}) },
+      ...(out ? { uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, uFade: { value: 1 }, uRk: { value: 1 } } : {}) },
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
-    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK; varying vec2 vUv;${out ? ' uniform float uOut, uOutW, uHalo, uFade;' : ''}
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK; varying vec2 vUv;${out ? ' uniform float uOut, uOutW, uHalo, uFade, uRk;' : ''}
       ${PAINT_GLSL}
       vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
@@ -119,7 +119,7 @@ function sharpQuad(P) {
         if (uOut > 0.001) {   // the outline: where the picture is near (within uOutW pixels) but not here, white; just beyond that a soft dark edge
           float near = 0.0, far = 0.0, here = aAt(uv);
           for (int i = 0; i < 24; i++) { float an = 6.2831853 * (float(i) + 0.5) / 24.0; vec2 d = vec2(cos(an), sin(an)) * uTexel;
-            near = max(near, max(aAt(uv + d * uOutW), aAt(uv + d * uOutW * 0.5))); far = max(far, aAt(uv + d * (uOutW + uHalo))); }
+            near = max(near, max(aAt(uv + d * uOutW * uRk), aAt(uv + d * uOutW * uRk * 0.5))); far = max(far, aAt(uv + d * (uOutW + uHalo) * uRk)); }
           float w = smoothstep(0.2, 0.6, near) * (1.0 - smoothstep(0.3, 0.8, here)) * 0.95 * uOut, h = smoothstep(0.1, 0.6, far) * (1.0 - here) * 0.55 * uOut;
           vec4 ring = vec4(vec3(0.886, 0.839, 0.753) * w, w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
         }
@@ -127,7 +127,7 @@ function sharpQuad(P) {
 }
 const SHARP = { cam: new THREE.Camera(), v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } },
   cat: { rt: null, quad: null, paint: 0, layer: 1, toneK: 1 }, hen: { rt: null, quad: null, paint: 0.15, wash: 1, layer: 1, toneK: 1 },   // (each its own target; the chicken 15 % painted over a watercolour's surface: G, 15/10/2026)
-  book: { rt: null, quad: null, paint: 0, layer: 3, toneK: 0.35 } };   // the book out of the shelf: sharp, its colours nearly as printed (G, 15/10/2026)
+  book: { rt: null, quad: null, paint: 0, layer: 3, toneK: 0.35, dpr: 2 } };   // (a book's words and pages: at the canvas's full 2 px a CSS px)   // the book out of the shelf: sharp, its colours nearly as printed (G, 15/10/2026)
 PETS.sharp = SHARP;   // (for tests)
 function crispPatch(sh) {
   sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
@@ -864,6 +864,7 @@ function drawPets() {
 // one crisp pass: what is shown on layer 1 inside a box (centre, half widths, height), into a target just covering it on
 // screen (the camera's projection narrowed to that rectangle, depth as in the picture), then laid over the picture
 function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
+  CRISP.add(P);
   const W_ = OVER.u.uRes.value.x, H = OVER.u.uRes.value.y, pr = renderer.getPixelRatio();
   let x0 = W_, y0 = H, x1 = 0, y1 = 0, any = false;
   for (let i = 0; i < 8; i++) { const v = SHARP.v.set(bx + (i & 1 ? rx : -rx), by + (i & 2 ? ry : 0), bz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
@@ -872,27 +873,38 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
   const pad = P.pad || 8;
   x0 = Math.max(0, Math.floor(x0) - pad); y0 = Math.max(0, Math.floor(y0) - pad); x1 = Math.min(W_, Math.ceil(x1) + pad); y1 = Math.min(H, Math.ceil(y1) + pad);   // (room for the paint's strokes, and an outline's)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return false;
-  if (!P.rt || P.rt.width < w || P.rt.height < h) {
+  // drawn at 1.5 px a CSS px, laid over the canvas's 2 (P.dpr: a book's words keep the canvas's): G, 19/10/2026, "giảm tất
+  // cả xuống 1,5 riêng chữ thì vẫn để 2"; its depth looked up through the scaled offset (uFull, uOff times k)
+  const k = Math.min(1, (P.dpr || 1.5) / pr), tw = Math.max(2, Math.round(w * k)), th = Math.max(2, Math.round(h * k));
+  if (!P.rt || P.rt.width < tw || P.rt.height < th) {
     if (P.rt) P.rt.dispose();
-    P.rt = new THREE.WebGLRenderTarget(Math.ceil(w * 1.25), Math.ceil(h * 1.25), { samples: 4, type: THREE.HalfFloatType });
+    P.rt = new THREE.WebGLRenderTarget(Math.ceil(tw * 1.25), Math.ceil(th * 1.25), { samples: 2, type: THREE.HalfFloatType });
     P.quad.material.uniforms.t.value = P.rt.texture;
   }
   const cx = (x0 + x1) / W_ - 1, cy = (y0 + y1) / H - 1, sx = W_ / w, sy = H / h, C = SHARP.cam; C.layers.set(P.layer);
   C.projectionMatrix.set(sx, 0, 0, -sx * cx, 0, sy, 0, -sy * cy, 0, 0, 1, 0, 0, 0, 0, 1).multiply(camera.projectionMatrix);
   C.projectionMatrixInverse.copy(C.projectionMatrix).invert(); camera.matrixWorld.decompose(C.position, C.quaternion, C.scale); C.updateMatrixWorld(true);
-  DECKR.u.uFull.value.set(W_, H); DECKR.u.uOff.value.set(x0, y0);
+  DECKR.u.uFull.value.set(W_ * k, H * k); DECKR.u.uOff.value.set(x0 * k, y0 * k);
   const cc = renderer.getClearColor(_c), ca = renderer.getClearAlpha();
   // no backdrop in these passes: until the sky is let in the room's is a plain colour (core/loop.js reveal), which filled
   // the target, so an opaque box showed round the animals as they came in, and the fur's light (fur.js) went wrong
   const bg = scene.background; scene.background = null;
   if (before) before(C);
-  P.rt.viewport.set(0, 0, w, h); P.rt.scissor.set(0, 0, w, h); P.rt.scissorTest = true;
+  P.rt.viewport.set(0, 0, tw, th); P.rt.scissor.set(0, 0, tw, th); P.rt.scissorTest = true;
   renderer.setRenderTarget(P.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, C);
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); scene.background = bg;
-  const Q = P.quad.material.uniforms; Q.uScale.value.set(w / P.rt.width, h / P.rt.height); setPaint(Q, P.rt, W_, H);
+  const Q = P.quad.material.uniforms; Q.uScale.value.set(tw / P.rt.width, th / P.rt.height); setPaint(Q, P.rt, W_, H); if (Q.uRk) Q.uRk.value = k;
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);   // over the picture: no clear
-  renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true;
+  renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true; P.seen = performance.now();
   return true;
+}
+/* the sharp passes' targets (each a few to ~30 MB of the GPU's memory) let go once their thing has been off the screen
+   5 s (G, 19/10/2026: the page's memory); made again the next time it shows. crispSeen: for a pass drawn elsewhere. */
+const CRISP = new Set(); let crispSwept = 0;
+function crispSeen(P) { CRISP.add(P); P.seen = performance.now(); }
+function sweepCrisp(now = performance.now()) {
+  if (now - crispSwept < 2000) return; crispSwept = now;
+  for (const P of CRISP) if (P.rt && now - (P.seen || 0) > 5000) { P.rt.dispose(); P.rt = null; if (P.quad) P.quad.material.uniforms.t.value = null; }
 }
 
 /* ---- the book out of the shelf (hero-books.js), sharp over the picture: one pass for each one showing */
@@ -922,4 +934,4 @@ function setHenAway(away) {
   if (PETS.chicken) { PETS.chicken.visible = PETS.henShadow.visible = PETS.state === 'day' && !away; setShadowsDirty(true); setNeeds(true); }
 }
 
-export { PETS, SHARP, crispPass, crispPatch, drawPets, drawSharpBooks, loadPets, petsForHour, setHenAway, sharpQuad };
+export { crispPass, crispPatch, crispSeen, drawPets, drawSharpBooks, loadPets, PETS, petsForHour, setHenAway, SHARP, sharpQuad, sweepCrisp };

@@ -14,10 +14,11 @@ import { BULB } from '../fx/glow.js';
 import { LIGHTS } from '../world/lights.js';
 import { drawDeck } from './deck.js';
 import { REVEAL, clock } from '../core/loop.js';
-import { drawPets, drawSharpBooks } from '../world/pets.js';
+import { drawPets, drawSharpBooks, sweepCrisp } from '../world/pets.js';
 import { drawRain } from '../fx/rain.js';
 import { drawPlane } from '../world/b747.js';
 import { drawClock, drawInspect } from '../world/clock.js';
+import { drawCamInspect, drawCamera } from '../world/camera.js';
 import { drawIss } from '../world/iss.js';
 import { drawGardenBook } from '../world/gardenbook.js';
 
@@ -61,7 +62,7 @@ function spineWords(bk) {   // the title along the spine, as large as the spine 
     const sx = Math.max(0.8, Math.min(1, room / g.measureText(txt).width)); txt = fit(txt, sx); g.scale(sx, 1);
     band(g.measureText(txt).width, size * 1.3); g.fillText(txt, 0, 0);
   }
-  const t = ctex(c, { srgb: false, rep: false }); t.anisotropy = 8; return (bk.spineTex = t);
+  const t = ctex(c, { srgb: false, rep: false }); t.anisotropy = 8; t.userData.keep = true; return (bk.spineTex = t);
 }
 function shelfSpine(bk) {   // the same title on the book standing in its place (shown once the spine is wide enough to read)
   if (bk.shelfSpine) return bk.shelfSpine;
@@ -83,6 +84,7 @@ function spinePx(bk) {   // how wide the spine shows on screen, in pixels
   return Math.hypot((_sa.x - _sb.x) * innerWidth, (_sa.y - _sb.y) * innerHeight) / 2;
 }
 function drawWords() {   // the sharp layer: titles on the spines, words of the books on the move, and the night sky
+  sweepCrisp();   // (targets of things off the screen a while let go: pets.js)
   let any = false;
   for (const sec of UIS.secs) for (const bk of sec.books) {
     // only in the close-up of its own section (G, 17/10/2026: "các text này ko nên hiện ra khi chưa close up"), and wide enough to read there
@@ -97,12 +99,13 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   // the night sky first: it darkens the dome behind it (fx/sky.js), so the rain, the deck, the animals and the rest stand in front of it
   if (OVER.sky && OVER.sky.visible) { renderer.autoClear = false; renderer.render(OVER.skyScene, camera); renderer.autoClear = true; }
-  drawRain(); drawDeck(); drawPlane(); drawIss(); drawGardenBook(); drawClock(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
+  drawRain(); drawDeck(); drawPlane(); drawIss(); drawGardenBook(); drawClock(); drawCamera(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
   // the shelves' titles and the fireflies, then the book out of the shelf over them (sharp: it is not in the picture, so the
   // room's depth does not hide the titles behind it)
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
   drawSharpBooks();
   drawInspect();   // (the clock out of its shelf: over all of it, the room dimmed)
+  drawCamInspect();   // (the camera out of its shelf: the same)
 }
 
 export { OVER, drawWords, relabelBooks };
