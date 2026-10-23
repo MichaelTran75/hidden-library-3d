@@ -49,9 +49,11 @@ const DENT_FOLDS = DENT_U + `
     float a = atan(uv.y, uv.x), ph = a * 11.0 + 1.3 * sin(a * 3.0 + 1.7) + 2.0 * q, aa = 1.0 - smoothstep(0.6, 1.5, fwidth(ph));
     return -h * ring * aa * min(1.2, uDentB.z / 0.03) * 0.0022 * pow(0.5 + 0.5 * cos(ph), 2.0);
   }`;
-function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, normalMap = null, normalScale = null, ao = false, pleat = 0, crease = 0.4, allFaces = 0, crush = 1, seam = 0, freq = 1, spec = 0.1, sheenAmt = 0.8, dent = false, nap = false, wear = false }) {
+function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, normalMap = null, normalScale = null, ao = false, pleat = 0, crease = 0.4, allFaces = 0, crush = 1, seam = 0, freq = 1, spec = 0.1, sheenAmt = 0.8, dent = false, nap = false, wear = false, aoSharp = false, edge = false }) {
   const m = new THREE.MeshPhysicalMaterial({ color, roughness: rough, metalness: 0, sheen: sheenAmt, sheenColor: new THREE.Color(sheen), sheenRoughness: sheenRough, specularIntensity: spec, side: THREE.DoubleSide, vertexColors: ao });
-  if (nap || wear) m.defines = Object.assign(m.defines || {}, nap || wear ? { VELVET_NAP: '' } : {}, wear ? { VELVET_WEAR: '' } : {});   // (its geometry carries aCB, aCY: setNap)
+  if (nap || wear) m.defines = Object.assign(m.defines || {}, nap || wear ? { VELVET_NAP: '' } : {}, wear ? { VELVET_WEAR: '' } : {});
+  if (aoSharp) m.defines = Object.assign(m.defines || {}, { VELVET_AO_SHARP: '' });
+  if (edge) m.defines = Object.assign(m.defines || {}, { VELVET_EDGE: '' });   // (dark lines along its own folded edges)   // (its vertex colour: red the shade, green the folds' alone)   // (its geometry carries aCB, aCY: setNap)
   if (map) m.map = map; if (normalMap) { m.normalMap = normalMap; if (normalScale) m.normalScale.copy(normalScale); }
   const U = { uPleat: { value: pleat }, uCrease: { value: crease }, uAll: { value: allFaces }, uCrush: { value: crush }, uSeam: { value: seam }, uFreq: { value: freq } };
   m.userData.velvet = U;
@@ -129,6 +131,15 @@ function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, 
       float vCav, vHt;
       float vCrush;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
+        #if defined(VELVET_AO_SHARP) && defined(USE_COLOR)
+        {   // the folds drawn crisp (G, 24/10/2026: "đừng cho các nếp gấp và khe đen mờ"): the shade, smooth across the triangles,
+            // cut at a level into a clean-edged dark (its edge a pixel wide), a little of its depth kept inside and out
+          vec3 vc = max(vColor.rgb, vec3(0.03)); diffuseColor.rgb /= vc;
+          float a = vColor.g, k = vColor.r / max(vColor.g, 0.03), w = max(fwidth(a), 0.004);
+          float edge = smoothstep(0.66 - w, 0.66 + w, a), a2 = mix(min(a, 0.66) * 0.82, 1.0 - (1.0 - a) * 0.45, edge);   // (only the deep part: thin lines)
+          diffuseColor.rgb *= a2 * k;
+        }
+        #endif
         vCrush = smoothstep(0.28, 0.72, vfbm(vObjP * uFreq * 5.0 + 11.0));
         {
           vWorn = 0.0;
@@ -170,6 +181,12 @@ function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, 
           #endif
         #endif`);
   };
+  if (edge) { const ob = m.onBeforeCompile; m.onBeforeCompile = (sh, r) => { ob(sh, r);
+    // its outline (G marked the arm's two upright edges, where it meets what lies behind it), over its lit colour (the sheen is
+    // brightest just there): where its rounded surface turns away from the eye, a crisp dark line
+    sh.fragmentShader = sh.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+      { float tE = abs(dot(normalize(vNormal), normalize(vViewPosition))), wE = fwidth(tE) * 1.2 + 0.006;
+        gl_FragColor.rgb *= 1.0 - 0.85 * (1.0 - smoothstep(0.24 - wE, 0.24 + wE, tE)); }`); }; }
   return m;
 }
 /* a sofa part's box (object space) and the lie of its pile, on every vertex: the velvet's nap (and a seat's wear) read
@@ -198,4 +215,41 @@ function bolsterGeometry(L = 0.62, R = 0.13, seed = 3) {
   return g;
 }
 
-export { SOFT, bolsterGeometry, makeVelvet, setNap };
+/* ---- a fluffy pile over the sofa's velvet (G, 24/10/2026: "add lông xù lên bề mặt sofa"): shells of the part itself (FLUFF.n
+   copies in one instanced draw, each pushed out along the skin's normal a little further, ~6 mm in all), keeping only where a
+   tuft of strands reaches: strands ~2.5 mm apart in the part's own space (its 3D cells, so no texture seams), grouped in tufts
+   of ~1 cm, each tuft of its own height, each strand leaning its own way; the roots in the pile's shade. Its colour and its
+   picture are the velvet's own (the same Color: darkened with it). It casts no shadow. Blended over the velvet, not writing depth,
+   its layers drawn inside out (as the cat's fur): cut out pixel by pixel (a dither) it crawled as the view moved (G, 24/10/2026:
+   "glitching ở ... sofa"); where strands get under ~half a pixel it keeps its mean cover. */
+// (not used since G, 24/10/2026: "em bỏ chất liệu lông trên pouf và sofa"; kept for a pile again)
+const FLUFF = { n: 6, len: 0.0042, cell: 0.0025 };   // (6 mm, then 30 % shorter: G, 24/10/2026; 8 layers, then 6: lighter to draw)
+function sofaFluff(part) {
+  const v = part.material, mat = new THREE.MeshLambertMaterial({ color: v.color, map: v.map, transparent: true, depthWrite: false });   // (matte: Lambert, cheaper than the standard shading over six layers)
+  mat.customProgramCacheKey = () => 'sofa-fluff';
+  mat.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vFl; varying vec3 vFb;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float os = length(modelMatrix[0].xyz); vFl = (float(gl_InstanceID) + 1.0) / ${FLUFF.n.toFixed(1)}; vFb = position * os;
+        transformed += normalize(objectNormal) * vFl * ${FLUFF.len.toFixed(4)} / os;`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+        varying float vFl; varying vec3 vFb;
+        float flH(vec3 p) { p = fract(p * vec3(443.897, 441.423, 437.195)); p += dot(p, p.yzx + 19.19); return fract((p.x + p.y) * p.z); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        {
+          vec3 c = vFb / ${FLUFF.cell.toFixed(4)}, id = floor(c), f = fract(c) - 0.5;
+          float tuft = 0.4 + 0.6 * flH(floor(c / 4.0) + 3.1), h = (0.35 + 0.65 * flH(id)) * tuft;
+          vec3 lean = (vec3(flH(id + 5.2), flH(id + 9.4), flH(id + 1.7)) - 0.5) * 0.8 * vFl;
+          float r = 0.62 * (1.0 - vFl / h), d = length(f - (vec3(flH(id + 17.3), flH(id + 41.7), flH(id + 23.9)) - 0.5) * 0.3 - lean);
+          float aw = fwidth(d) + 1e-4, exact = vFl < h ? 1.0 - smoothstep(r - aw, r + aw, d) : 0.0, sh = clamp(vFl / tuft, 0.0, 1.0), avg = clamp(1.1 * (1.0 - sh) * (1.0 - sh), 0.0, 1.0);
+          float px = length(fwidth(c)), cover = mix(exact, avg, smoothstep(0.3, 0.9, px));
+          if (cover < 0.01) discard;
+          diffuseColor.rgb *= mix(0.55, 1.06, vFl); diffuseColor.a = cover;   // the roots in the pile's shade, the tips in the light
+        }`);
+  };
+  const fl = new THREE.InstancedMesh(part.geometry, mat, FLUFF.n); fl.frustumCulled = false; fl.receiveShadow = true; fl.castShadow = false; fl.name = part.name + '_fluff'; fl.renderOrder = 1;
+  for (let k = 0; k < FLUFF.n; k++) fl.setMatrixAt(k, new THREE.Matrix4());
+  part.add(fl); return fl;
+}
+
+export { FLUFF, SOFT, bolsterGeometry, makeVelvet, setNap, sofaFluff };

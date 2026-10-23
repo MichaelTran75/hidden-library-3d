@@ -340,6 +340,447 @@ G: "em đo xem có thể giảm ram xuống đc ko?".
 - Lưới 31×25 điểm, mỗi điểm bắn tia xuống pouf và hai cuốn sách. Lấy đỉnh cao nhất trong ~6 cm để giấy không chui vào nếp nhỏ, rồi nới 160 vòng: kéo về trung bình các điểm bên cạnh, cho võng 0,3 mm mỗi vòng, nhưng không thấp hơn mặt bên dưới.
 - Bìa (nhóm 0) nhận ảnh khu vườn cắt theo tỉ lệ (`gardenbook.js`, `userData.cover`). Viền chọn, nút bấm mở 3d-garden và lớp 7 giữ như cũ.
 
+### Mở trang theo từng phần, thanh tải có % (20/10/2026)
+
+- G: "add % load cho loading bar at foot note ... cho căn phòng lần lượt load ... frame, kệ sách, sofa, rồi sách lần lượt hiện ra (fade in) ... sau đó mới load các đồ trang trí ... Text phải đc ẩn và chỉ đưa vào khi các thứ tự dc load xong".
+- Thanh tải (`#lib3d-loader` ở chân trang):
+  - gồm vạch và số %. Trước khi script chạy, vạch nhích chậm bằng CSS; sau đó `setLoad` (`core/base.js`) đếm theo từng bước dựng (`STEP_PCT` ở `core/build.js`) và theo các byte của `lib.glb` khi tải từ Pages;
+  - các phần hiện ra đưa vạch từ 60 lên 100 %;
+  - tới 100 % thì `html.l3-loaded` làm thanh mờ đi, rồi bỏ `l3-loading`.
+- Trình tự (`core/loop.js` `start`):
+  1. Hình đầu chỉ có khung phòng. Kệ (`PARTS.shelves`, gồm cả các tấm lưng), nội thất (`PARTS.furniture`, máy hát `DECK.hidden`) và sách (`booksMesh`) đã được dịch shader từ trước nhưng bị ẩn.
+  2. Lần lượt hiện kệ (0,45 s), nội thất (0,95 s), sách (1,45 s).
+  3. Sau đó dựng vườn rồi hiện vườn, rồi trời.
+  4. Tiếp theo: các mô hình (747, ISS, đồng hồ, máy ảnh, tạp chí), rồi mèo và gà, rồi đồ trưng bày. Đồ trưng bày dựng ẩn, dịch shader xong mới hiện (`buildDisplays`).
+  5. Cuối cùng mới hiện chữ (`reveal(3)`, `REVEAL.done`). Trước đó chuột không chọn được gì.
+- Cách mờ dần:
+  - với bức tranh (màu nước): `fadePicture` (`fx/post.js`) giữ lại hình đang hiện (2 target luân phiên), rồi `POST.blit` trộn từ hình cũ sang hình mới trong 0,55 s (`stepFade`);
+  - với các lớp sắc nét: `uBorn` trong `sharpQuad`/`crispPass` và máy hát, 0,7 s tính từ lần hiện đầu.
+- Chữ chờ phòng xong: CSS `html.l3-wait` ẩn `#l3-ui`, dòng thời tiết, thanh bên (`.toc`), đồng hồ trời (`.sky`), và đom đóm trang trí của trang. Sau 30 s mà phòng vẫn chưa xong thì `lib3d-slow` cho chữ hiện ra.
+- Cùng đợt, sửa chỗ làm phòng mở chậm: tạp chí từng dò mặt pouf bằng 775 tia (5,9 s). Nay lấy độ cao từ các đỉnh của pouf, nên phòng hiện sau khoảng 1 s.
+- Kiểm tra: `loadseq.cjs` (thư mục test) chụp từng nhịp kèm % và các class.
+
+### Độ phân giải đợt 4 và mờ dần lúc tải xong (20/10/2026)
+
+- G: "giảm độ phân giải của gà, và của mèo, giảm độ phân giải của máy bay, của bàn, của room frame, của giải ngân hà. khi loading complete mọi thứ cần fade in animation, để mượt mà".
+- Giảm độ phân giải:
+  - gà: lớp vẽ 0,4 px mỗi px CSS, ảnh ≤ 128 px;
+  - mèo: lớp vẽ 1 px mỗi px CSS, ảnh ≤ 512 px (`shrinkTexture` ở `core/utils.js`);
+  - 747: lớp vẽ 1 px mỗi px CSS, màu sơn vẽ ở 2048 rồi giữ 1024 (`halfCanvas`);
+  - bàn trà: ảnh còn ½;
+  - khung phòng: gỗ `frame` 128×512.
+- Ngân Hà (`drawMilkyWay` ở `words.js`):
+  - vỏ cầu Ngân Hà (`OVER.mw`) vẽ vào target riêng ở 0,75 px mỗi px CSS (trước là 2 px thiết bị), `uRes` đặt theo cỡ target cho phép thử độ sâu, rồi phủ lên canvas (premultiplied);
+  - sao và trăng vẫn vẽ sắc nét sau đó.
+- Mờ dần khi hiện lần đầu (`bornFade`): trời đêm (`SKYN`, 1,4 s), quầng bóng đèn và đom đóm. `sharpFading` giữ cho vòng vẽ chạy liên tục trong lúc mờ.
+- Chữ lúc tải xong hiện lần lượt: thanh bên 1,2 s, đồng hồ trời trễ 0,25 s, nhãn trên phòng và dòng thời tiết trễ 0,5 s (1,1 s).
+  - Việc dịch shader cho các trạng thái đèn lùi tới 2,2 s sau đó. Trước đây nó chiếm luồng chính nên chữ hiện giật.
+- Hai target của hiệu ứng mờ dần (`fadePicture`) được giải phóng khi màn mở trang kết thúc (`endFades`, thử lại cho tới khi hết lần mờ cuối): texture 162 → 148 MB.
+
+### Độ phân giải đợt 5: lá cây, khung phòng, máy hát, bàn (20/10/2026)
+
+- G: "tiếp tục giảm độ phân giải của cây cối lá; room frame; giảm độ phân giải máy nghe nhạc, và bàn".
+- Cây (`trees.js` `tex`): ảnh ≥ 512 px còn 1/16, ảnh ≥ 256 px còn 1/8.
+  - Lá phong 96×64, cành tần bì 40×32, vệt cọ và vỏ cây 32×32.
+  - Bụi (`bush.js`) 64 px, rừng xa (`outside.js`) 256×32.
+  - So ảnh trước/sau: tán lá không thưa đi, chỉ mềm hơn một chút.
+- Khung phòng: gỗ `frame` vẽ 128×512 rồi giữ 64×256, mỗi điểm là trung bình một ô 2×2 (`boxDown` ở `materials.js`, khoá `down` trong `PICS`). Nếu vẽ thẳng ở 64 px, vân gỗ sẽ lốm đốm.
+- Bàn:
+  - mặt bàn trà còn ¼ (128 px);
+  - chân bàn trà và bàn gốc cây dùng `MAT.tableOak`/`MAT.tableOakDark`. Gỗ của chúng là `TEX.oakT`: gỗ sồi của kệ lấy trung bình 4×4 (64×256). Kệ vẫn giữ `TEX.oak`.
+- Máy hát (`deck.js`):
+  - vẽ ở 0,75 px mỗi px CSS (k = 0,75 / pr); viền chọn giữ bề rộng trên màn hình;
+  - mặt nạ mực 512 → 256 (`shrinkTexture` lúc tải); nhãn đĩa tải cỡ 128 (`w_128,h_128`); đổi bài thì nhãn cũ được giải phóng;
+  - bước nét cọ nhân theo k (`setPaint(..., k)` ở `post.js`), nên nét cọ trên màn hình rộng như khi vẽ đủ cỡ. Trước đó bước nét tính theo điểm ảnh của lớp vẽ: ở 0,75 px, nét cọ rộng gấp 2,7 lần và kéo vùng trong suốt quanh máy hát vào mép xa của đĩa, thành những mảng rách (đợt 4 cũng có nhưng nhỏ hơn);
+  - bỏ `alphaTest 0.5` của đĩa: vành mềm của ảnh WebP (nén nên nhiễu) bị cắt thành lỗ, rồi nét cọ kéo các lỗ rộng ra. Hình tròn của đĩa vốn đã là mép đĩa.
+  - Các lớp sắc nét khác vẫn tính bước nét theo điểm ảnh của lớp, nên ở DPR 2 nét cọ của chúng rộng hơn thiết kế: gà ×5, mèo và 747 ×2, còn lại ×1,33. Chưa thấy rách. Nếu có, truyền k vào `setPaint` như máy hát.
+- Đo ở tầng GL: texture 147,7 → 145,5 MB, renderbuffer 44,2 → 43,9 MB. Các ảnh này vốn đã nhỏ nên lợi ít.
+- Các khoản lớn nhất còn lại:
+  - bóng nắng 1536² (12 MB);
+  - hình chính `POST.rt`: 9,3 MB, cộng 14 MB MSAA;
+  - PMREM của môi trường (8 MB);
+  - hai target giấy của `bakePaper` (2 × 7,2 MB);
+  - một ảnh 2048×1024 (10,7 MB): đợt này ghi nhầm là ảnh trong `lib.glb`, thật ra là atlas gáy sách (xem đợt 6);
+  - sàn 512×2048 (5,3 MB).
+
+### Bộ nhớ đợt 6: các khoản lớn (21/10/2026)
+
+- G: "em giảm tiếp: bóng nắng 12 MB; lớp hình chính 9,3 MB, cộng 14 MB cho khử răng cưa; một ảnh 2048×1024 …; ánh sáng môi trường 8 MB; hai lớp giấy, mỗi lớp 7,2 MB".
+- Bóng nắng (`lights.js`): 1536 → 1024, khung bóng giữ ±8 m, nên mỗi điểm bóng 1,6 cm thay vì 1 cm. Bóng mềm (PCFSoft) dưới lớp màu nước nhìn không khác.
+- Hình chính (`POST.rt`, `post.js`):
+  - bỏ MSAA 2 mẫu, mất các renderbuffer màu (14 MB) và độ sâu (5,2 MB);
+  - bù lại bằng FXAA trong lượt tone (`POST.toneQuad`): cùng thuật toán với `POST.blit`, chạy ở độ phân giải của hình chính; `px` đặt trong `resize` ở `views.js`. Không có nó, mực của lượt màu nước tô theo những bậc thang trên cạnh xiên mảnh (chân bàn trà);
+  - lá cây (alpha-to-coverage) không còn MSAA nên cạnh cứng hơn, nhưng lượt màu nước làm mềm lại; so ảnh không thấy khác.
+- Ảnh 2048×1024 là atlas gáy sách của 4108 cuốn trên kệ (`spineAtlas` ở `books.js`). Nay vẽ ở nửa cỡ, 1024×512 (`o.S` 0,5): cùng nét vẽ, thu bằng `scale` của canvas trong Worker. Chữ trên gáy mềm hơn khi xem gần. Gáy sách thật của trang nằm ở lớp sắc nét riêng nên không đổi.
+- Ánh sáng môi trường (`lights.js`): `fromScene` của three r170 luôn dựng cube 256, kết quả 768×1024 half float. Bầu trời môi trường chỉ là một dải màu, nên giờ vẽ nó vào `WebGLCubeRenderTarget` 64 bằng `CubeCamera` rồi gọi `pm.fromCubemap`; kết quả còn 336×256. Đối chiếu cảnh đêm (ánh nhung, kính) không thấy khác.
+- Giấy (`bakePaper`):
+  - 4 kênh biến đổi chậm (lắc nét x, y; mực; vết loang) vẽ ở nửa cỡ và đọc mịn (`POST.n1`, LinearFilter);
+  - 3 kênh hạt (thớ giấy, hạt màu, mặt giấy) giữ đủ cỡ (`POST.n2`);
+  - đổi chỗ kênh: hạt màu nay là `n2.y`, vết loang là `n1.w` (hai chỗ trong `post.js`).
+- Đo:
+  - tầng GL: texture 145,5 → 118,3 MB, renderbuffer 43,9 → 18,7 MB (−52 MB);
+  - footprint, đo bằng `tools/perf/memab.cjs` (bản đợt 5 và bản này, mỗi bản 2 lần): tiến trình GPU 831 → 743 MB (−88 MB), tiến trình trang 255 → 256 MB.
+- **Bẫy đo:** công cụ đo footprint cũ cộng mọi tiến trình `ms-playwright`, kể cả trình duyệt Playwright của phiên khác đang mở (21/10 có hai cái đã chạy từ hôm trước). Vì vậy các số footprint cũ có thể bị lẫn. `memab.cjs` chỉ đếm trình duyệt nó mở.
+- Khoản lớn nhất còn lại:
+  - hình chính 9,3 MB, `POST.out` 7,2 MB;
+  - giấy 7,2 + 1,8 MB;
+  - sàn 512×2048 (5,3 MB);
+  - ảnh đồng hồ 1024² (5,3 MB);
+  - bóng của đèn cây 1024² (5,3 + 3 MB; trước ghi nhầm là đèn treo, đèn treo không đổ bóng).
+
+### Bóng đèn treo và mặt trăng to hơn (21/10/2026)
+
+- G: "em cho bóng đèn trên research to ra thêm 10% và đưa lên cao thêm 1 chút; em cho moon ngoài cửa sổ to thêm 10%; và viền của moon mờ và glowing 1 chút".
+- Bóng đèn: `BS` 1,2 → 1,32 (`furniture.js` `pendantLamp`), quầng sáng `BULB.size` 0,42 → 0,462 (`glow.js`). Tâm bóng 3,27 → 3,33 m (`furnish.js`). Sau đó G: "cho bóng đèn to ra thêm 10% và cao lên thêm 20%", chọn dây ngắn đi 20%: `BS` 1,452, `BULB.size` 0,508, dây (R.H − 3,33) × 0,8, tâm bóng ~3,9 m. Ở góc nhìn đầu 1512×945, bóng sát mép trên, nằm dưới đồng hồ trời. Vị trí ngang giữ nguyên, nên đồng hồ trời vẫn thẳng trục.
+- Mặt trăng (`sky.js`): bán kính `MOON_R` 0,8° → 0,88°. `placeMoon` dời độ cao theo phần lớn thêm, để mép dưới vẫn qua thanh ngang (hoặc mép trên vẫn dưới nó). Viền ảnh mờ dần từ r 0,9 tới 1,0, thêm một quầng sáng ôm sát mép (`exp(-|r − 0,96| · 9)`). Vòng đen lấm tấm ở mép trăng cũ cũng hết.
+
+### Bộ nhớ đợt 7 (21/10/2026)
+
+- G hỏi trang nặng chỗ nào, rồi: "em giảm đi".
+- Bóng của đèn cây (`floorLamp` trong `furniture.js`): 1024 → 512.
+- Cube phản chiếu của kính (`glass.js`): 256 → 128. Đó là ảnh phòng soi mờ trên kính.
+- Ảnh đồng hồ (`clock.js`): 1024 → 512 (`shrinkTexture`). Khi bấm xem cấu tạo (×3), số La Mã vẫn đọc được, chi tiết mềm hơn một chút.
+- Atlas đồ trang trí trên kệ (`decor/atlas.js`): vẽ 1024 rồi giữ 512 (`halfCanvas`).
+- Đo: tầng GL texture 118,3 → 103,3 MB, renderbuffer 18,7 → 15,6 MB. Footprint (`memab.cjs`, 2 lần mỗi bản): tiến trình GPU 776 → 708 MB.
+- Chưa làm: DPR của khung vẽ (2 → 1,5 thì lợi lớn nhất nhưng chữ bớt nét). `clock.glb` 0,81 MB chủ yếu là hình học (ảnh trong đó chỉ 72 KB), nên thu ảnh không làm file nhẹ đi.
+
+### Mèo: dựng lại xương, khớp, trọng số; đuôi tự nhiên; thêm hành vi (22/10/2026)
+
+- G: "bổ sung xương, khớp và trọng số weight vào trong mèo, để cho mèo, đuôi mèo không bị méo, chân mèo không bị méo … add behavior vào đuôi mèo để cho nó tự nhiên khi vận động … bổ sung thêm một chút hành vi".
+- Nguyên nhân méo (đo trên lưới gốc, 794 đỉnh):
+  - mỗi chân chỉ có khoảng 3 vòng đỉnh suốt chiều dài, gối, khuỷu và cổ chân không có đỉnh để gập;
+  - trọng số chân chia theo độ cao lúc đứng, nên khi gập (ngồi, nằm), da không đi theo xương;
+  - đuôi 7 đốt trên khoảng 9 vòng đỉnh.
+- `tools/pets/rig_cat.py` (Blender 5.2, chạy như cũ):
+  - Lưới chia nhỏ: mỗi tam giác thành 4 trên toàn thân, thêm một lần nữa ở chân (dưới z 0,08) và đuôi. Kết quả 7482 đỉnh, 14960 tam giác. Chia phẳng nên giữ nguyên dáng; pháp tuyến gốc được nội suy sang đỉnh mới (`onrm`, `normals_split_custom_set_from_vertices`). Nếu không làm vậy, các mặt cũ phẳng lì hiện thành sọc trên đuôi.
+  - Xương:
+    - đuôi 12 đốt, đặt theo đường tâm ống đuôi đo từ lưới: lấy tâm từng lát cắt, lặp 4 lần, làm mượt;
+    - lưng dưới ngực thành 2 đốt (`spine`, `spine2`);
+    - ngón chân trước thành đốt riêng (`ftoe_L/R`);
+    - khuỷu dời vào giữa ống cẳng tay.
+  - Trọng số: trong mỗi chuỗi xương, mỗi đỉnh chiếu lên chuỗi để có toạ độ dọc chiều dài, mỗi khớp có một dải chuyển mềm (chân 6–9 mm, đuôi 40 % một đốt). Vùng đùi và vai rộng hơn, để khối cơ đùi đi theo đùi khi ngồi. Làm mượt 5 lượt trên mặt lưới, giữ 4 ảnh hưởng.
+  - `cat.bin` mới 208 KB (trước 81 KB), đóng gói và xáo trộn bằng `pack.mjs` như cũ. Thư viện ở `@gltf-transform` 4.2, `meshoptimizer` 0.22.
+- `cat.js`:
+  - `C_TAIL` lấy từ xương (`tail1…tailN`). Các tư thế vẫn viết cho 7 đốt: mỗi thao tác trên đốt k được chia cho các đốt mới nằm trên cùng đoạn 1/7 đuôi; `tailArc` co giãn theo số đốt. Thao tác trên `spine` được chia đôi sang `spine2`. Chân trước có ngón (`catLegs`: `toe` = `ftoe`).
+  - Đuôi (`catTail`):
+    - mỗi khớp là một lò xo có tắt dần, cứng ở gốc, mềm ở chóp;
+    - lực đẩy từ cử động của thân như trước;
+    - thêm "tâm trạng" `C_TMOOD`: một sóng chạy từ gốc tới chóp, biên độ tăng dần về chóp; chóp cong như dấu hỏi; `flat` khi nằm hoặc ngồi thì quét ngang theo trục đứng của phòng;
+    - `catTailFloor` giữ đuôi không xuyên sàn hay đệm.
+  - Tư thế mới: `stretch` (duỗi một chân sau ra sau, sau khi vươn vai) và `loaf` (nằm kiểu ổ bánh mì: chân trước gập dưới ngực, đuôi ôm hông).
+- `pets.js`:
+  - `tailMood`:
+    - nằm thư thả: quét chậm;
+    - nhìn gà: chóp đuôi bồn chồn;
+    - đi: dựng cao, chóp cong, đung đưa theo bước;
+    - rình: thấp và rung;
+    - bực khi bị vuốt lâu: quét rộng và nhanh hơn;
+    - ngủ: thỉnh thoảng động nhẹ;
+    - đổi tâm trạng mượt trong khoảng 0,6 s.
+  - Hành vi mới ban ngày (`dayActs`): ngoài liếm lông, có nằm ổ bánh mì 18–34 s mắt lim dim, và ngẩng đầu đánh hơi. Liếm lông xong thì lắc đầu, hai tai giật. Vươn vai xong thì duỗi một chân sau.
+  - Sửa lỗi cũ: trong chuyến đi buổi sáng, một chú thích `//` giữa dòng đã nuốt mất động tác vươn vai. Nay đã khôi phục.
+  - Chuột chỉ vào bộ phận nào giờ dò bằng các "con nhộng" quanh xương (`pickPart`), không bắn tia lên lưới da 15k tam giác mỗi khung hình nữa. Móc thử `PETS.trip(to)`.
+- Đo (cùng mã, khác `cat.bin`): bộ đệm hình học GL 27 → 34,8 MB, vì lông 20 tầng nhân theo lưới; tiến trình GPU tăng khoảng 40 MB (nhiễu); khung hình không chậm hơn.
+- Mèo của Jade (`miyu-3d`, `src/pets/cat.bin` + `kitty.js`) vẫn là rig cũ.
+
+### Gà bớt răng cưa, bớt 70 % màu nước (22/10/2026)
+
+- G: "em cho gà bớt răng cưa và giảm water color lại 70%".
+- `SHARP.hen` (`pets.js`):
+  - lớp vẽ 0,4 → 0,8 px mỗi px CSS (ở 0,4 cạnh gà lởm chởm từng khối);
+  - `paint` 0,15 → 0,045, `wash` 1 → 0,3.
+- Kết quả: viền gà mịn, thấy rõ mỏ và mào, không còn loang mảng.
+
+### Khung gỗ tối hơn 50 % (22/10/2026)
+
+- G: "em cho wooden frame darker 50%". `MAT.frame` (`materials.js`): màu 0,75 → 0,375 (sRGB). Kệ và bàn giữ nguyên.
+
+### 747 và ISS: bấm thì bay ra xoay, bấm nữa mới mở trang (`lib3d/world/showcase.js`, 22/10/2026)
+
+- G: "khi click vào các model airplane, iss, showing rotate 3d model first, if click then open new tab".
+- Mô-đun mới nằm sau `camera.js` trong chuỗi thứ tự dựng (`flight.js` nay import `showcase.js`).
+- Khi bấm:
+  - mô hình (cả đế) bay ra giữa khung nhìn, to ×3 (ISS ×2,4) trong 0,85 s; phòng tối đi;
+  - mô hình tự xoay như trên bàn xoay, 16 s một vòng; kéo chuột thì xoay theo và nghiêng (±0,5 rad); thả ra thì xoay tiếp từ đó;
+  - bấm vào mô hình (hình chữ nhật của nó trên màn hình) thì mở `PLANE.url` / `ISS.url` trong tab mới; bấm ra ngoài, Esc hoặc × thì cất về kệ.
+  - Dùng chung bảng và CSS của đồng hồ và máy ảnh (`.ck-out-ui`, `body.ck-out`).
+- Khi ở ngoài kệ:
+  - không bị độ sâu của phòng che: `DECKR.u.uDepth` tạm đổi sang một texture 1×1 có độ sâu 1;
+  - vẽ ở 1 px mỗi px CSS (`S.PI`; 1,25 tới 22/10/2026); bóng trên kệ ẩn đi; `drawPlane`/`drawIss` bỏ qua khi `away > 0`.
+- **Bẫy:** đừng thêm đèn vào cảnh lúc mở. Số đèn là một phần khoá của shader, nên mọi vật liệu trong phòng phải dịch lại, phòng đứng hình khoảng một giây. Mô hình lấy sáng từ đèn phòng, độ phơi sáng ×1,2.
+- Móc thử: `PLANE.open()`, `ISS.open()`. Bài kiểm tra: `showtest.cjs` (thư mục thử).
+- Cạnh mô hình có nhãn "Click to see details" / "Bấm để xem chi tiết" (`.sc-tip`, cùng kiểu `.ck-name`), đặt bên phải tâm mô hình, lật sang trái nếu sát mép màn hình (G 22/10/2026).
+
+### Mấy chỉnh nhỏ ngày 22/10/2026
+
+- 747 và ISS bớt độ phân giải (G: "em giảm độ phân giải của máy bay và iss"):
+  - lượt vẽ trên kệ ở 0,75 px mỗi px CSS (747 trước là 1, ISS 1,5); khi bay ra xem (`showcase.js`) 1;
+  - ảnh của ISS thu về 512 (`shrinkTexture`).
+- Kệ sách tối hơn 10 % (G: "em cho kệ sách darker color 10%"): `shelfOak`, `shelfBack` 0,75 → 0,675 (sRGB).
+- Sách trên bàn và trên pouf bớt 60 % màu nước (G, khoanh đỏ trên ảnh): `tb1`, `tb2`, `b1`, `b3` trong `furnish.js` dùng `paintLightly(…, 0,68)`.
+
+### Khung vẽ DPR 1,5, giấy lát gạch, lớp màu nước 0,75 (23/10/2026)
+
+- G hỏi lớp màu nước phủ màn hình giảm được không, DPR 2 là gì, rồi: "em làm hết đi".
+- DPR của khung vẽ tối đa 1,5 (`core/views.js` resize, `core/renderer.js`):
+  - các lớp sắc nét vẫn tính theo `k = dpr / pr`, nên tự theo;
+  - máy hát: `k = min(1, 0,75 / pr)`.
+- Giấy (`fx/post.js`):
+  - trước là hai ảnh cỡ cả màn hình;
+  - nay là hai viên gạch lặp:
+    - `POST.n1`: 512×512 phủ 1024 px CSS, lọc tuyến tính (gợn x, y, mực, vết loang);
+    - `POST.n2`: 256×256, lọc nearest (thớ giấy, hạt màu, mặt giấy).
+  - Nhiễu tuần hoàn `vn(p, P)` và `fb(p, P)` (lacunarity 2) nên mép viên gạch liền nhau.
+  - `POST.paper` = (w/1024, h/1024, w/256, h/256) báo cho shader số lần lặp.
+- Lớp màu nước `POST.out` vẽ ở 0,75 px CSS (nét cọ vốn mềm). Khử răng cưa ở hai bước:
+  - FXAA trong `toneQuad`, có `px` đặt lại khi resize;
+  - FXAA ở bước blit lên canvas.
+- `POST.rt` không còn MSAA.
+- Đo (`memab.cjs`, 2 lần mỗi bản), tiến trình GPU 722 → 656 MB.
+- **Bẫy, lần thứ 3 và 4:** chú thích `//` đặt giữa dòng nuốt mã phía sau.
+  - Ở `views.js`, dòng `setSize` bị nuốt nên các lớp sắc nét vỡ và mờ.
+  - Ở `furnish.js`, phần chỉnh vật liệu mặt bàn trà (màu 1,55/1,2/0,85, độ nhám 0,55, bỏ map kim loại) bị nuốt từ 20/10. Nay đã trả lại.
+  - Chú thích chỉ đặt ở cuối dòng, sau mã.
+
+### Xoá những gì không góc nhìn nào thấy (23/10/2026)
+
+- G: "những chỗ nào mà nó bị khuất em xóa thẳng tay cho anh"; sau đó: "Nếu sách không có tốn RAM thì để lại như cũ đi".
+- Công cụ: `tools/perf/occlusion.cjs`.
+  - Mỗi vật và mỗi bản sao được vẽ bằng một màu mã riêng, từ mọi góc nhìn:
+    - nhà và từng ngăn, Research;
+    - thanh cuộn ở −0,3, 0 và 0,45;
+    - 8 khổ cửa sổ, ban ngày và ban đêm;
+    - tổng 672 góc.
+  - Camera chỉ đổi theo các góc nhìn và thanh cuộn (dịch ống kính), nên chừng đó là đủ. Khung nhà luôn là một phần của khung tranh gốc.
+- **Bẫy của chính công cụ:**
+  - Ghi số bản sao vào kênh alpha thì điểm ảnh alpha 0 bị mất. Lần quét đầu báo sai rằng sách đang thấy là khuất, và một mặt nạ ẩn sách làm hỏng kệ.
+  - Bụi, sprite đom đóm và vật thêm sau vẫn vẽ bằng màu thật, cộng vào màu mã, làm vật khuất trông như thấy được.
+  - Bản hiện tại tắt hết những thứ đó trong lượt vẽ mã, và đếm điểm ảnh lạ (phải bằng 0).
+- Đã xoá (không điểm ảnh nào trong 672 góc):
+  - 16 cây ngoài vườn (`HIDDEN_TREES` trong `outside.js`) và 7 bụi (`HIDDEN_BUSHES`). Cây và bụi không đổ bóng, nên không mất bóng nào trong phòng;
+  - tường phải sau kệ cao (`room.js`). Bật/tắt nó vào sáng 21/6 và 21/12 (giả ngày) cũng như sáng hôm nay không đổi một điểm ảnh nào: nắng không vào từ phía đó;
+  - thân và bóng của đèn bàn (trong chụp), hũ nến cạnh đèn, sứ cách điện ở đuôi bóng đèn treo, nắp gỗ dưới mặt bàn gốc cây;
+  - đồ trang trí ở hai ô phía trước của kệ phải (`decor/build.js`: `c.x > 2 && c.z > -1.4`);
+  - đĩa và viền của 7 đèn âm trần (`fx/night.js`). Đèn rọi vẫn giữ; phần trần đó không góc nào thấy.
+- Giữ lại:
+  - gối ôm thứ hai: ló ra 173 điểm ảnh qua kẽ lá khi nhìn thấp;
+  - lưng tủ thấp ở mặt kính trước: không thấy, nhưng có đổ bóng nắng;
+  - sách trên kệ (khoảng 2.600 cuốn không bao giờ thấy, nhưng gần như không tốn gì) và sách trang trí: theo lời G;
+  - 4 lá cây trong chậu và các lớp lông thảm. Các lớp lông thảm dùng alpha nên công cụ không đếm đúng.
+- Màu nước là hiệu ứng trên ảnh màn hình, nên phần bị khuất vốn không tốn gì cho nó.
+- Đo, bản trước khi xoá so với bản sau:
+  - vật trong cảnh 271 → 243; tam giác trong cảnh 1,90 → 1,71 triệu;
+  - mỗi lần vẽ lại phòng (mọi lượt): lệnh vẽ ~580 → ~550, tam giác 4,59 → 4,20 triệu;
+  - texture 90,1 → 88,8 MB, bộ đệm 34,9 → 34,3 MB;
+  - tiến trình GPU 649 → 636 MB (3 lần mỗi bản; dao động ±15).
+- So ảnh trước/sau ở 4 giờ trong ngày × 5 góc, mỗi bản hai lần chạy: mọi khác biệt chỉ là mèo, gà, cây đung đưa và đom đóm.
+
+### Audio ẩn khi mở trang, sách bớt màu nước, mèo nằm, chuyển ngày/đêm không giật (23/10/2026)
+
+- Thanh "Nghe tiếp" (G: "hide the audio from start", rồi "chỉ hiện khi click vào sách nghe nói"): `barDismissed` bắt đầu là `true`. Mở trang thì thanh không hiện, kể cả khi còn sách nghe dở; bấm nghe một cuốn thì thanh hiện như cũ.
+  - Sửa bằng bản vá `BAR_PATCH` trong `build.py`, không sửa trong HTML.
+  - **Bẫy:** `build.py` lấy HTML từ trang sống `WATCHLIST/WIX/Hidden Library.html`, không phải từ `src/hidden-library.base.html`. File kia chỉ là bản chụp dự phòng, sửa ở đó không có tác dụng. Mọi thay đổi trong mã của trang phải là bản vá trong `build.py`, như các bản vá YouTube và giờ mặt trời.
+  - Muốn thử như một người quay lại trang: đặt `hiddenLibrary.last` và `hiddenLibrary.positions` bằng `addInitScript`. Đặt rồi tải lại thì không được: lúc rời trang, trang tự ghi đè vị trí nghe.
+- Toàn bộ sách bớt 50 % màu nước so với trước (G: "toàn bộ sách less watercolor 50%"):
+  - sách trên kệ `paintLightly(booksMesh, 0,6, 0,975)` (xa / gần), trước là 0,2 / 0,95;
+  - sách trên bàn và trên pouf 0,68 → 0,84; chồng sách và sách giữa đồ trang trí 0,2 → 0,6.
+  - Lần hai, cùng tối đó (G: "cho sách less water color 50%"): kệ 0,8 / 0,9875; bàn và pouf 0,92; đồ trang trí 0,8.
+- Sofa tối hơn 20 % (G: "cho màu sofa dark color thêm 20%"): nhung của đệm, lưng và khung, cùng hai gối ôm, nhân 0,8 trên sRGB:
+  - đệm và lưng 0x40603f → 0x334d32; khung 0x3b5a3c → 0x2f4830; gối ôm 0x37563a → 0x2c452e;
+  - gối vuông (mù tạt, xanh) và pouf giữ nguyên.
+- Lượt ba (G lặp lại yêu cầu, rồi chọn "thêm một lượt nữa", và "gối dark color 50%" cho tất cả gối):
+  - sofa ×0,8 lần nữa: đệm và lưng 0x293e28, khung 0x263a26;
+  - mọi gối ×0,5: gối ôm 0x162217, gối mù tạt 0x4b3820, gối xanh 0x1c2c1d;
+  - sách: kệ 0,9 / 0,99375, đồ trang trí 0,9; sách trên bàn trà và trên pouf 0,96, rồi bớt thêm 80 % (G khoanh hai cuốn) → 0,992.
+- 24/10/2026 (G: "em giảm watercolor đi 30% cho toàn bộ sách"): mọi sách bớt thêm 30 % phần màu nước còn lại: kệ 0,93 / 0,9956, đồ trang trí 0,93, bàn và pouf 0,9944.
+- Mèo nằm nhìn ra kính (dáng `sphinx`, G khoanh chỗ đùi sau):
+  - Lỗi cũ: đùi gập ngang lên tới tầm háng (khoảng 12 cm trên sàn), nên cổ chân sau còn cao hơn háng, bàn chân dựng đứng chìa ra sườn như ngón tay cái, dưới bụng nhàu lại.
+  - Nay: đùi −30°, dạng 10°, cẳng 30°, bàn chân −70°. Cổ chân và đệm chân sát sàn dưới khối đùi, bàn chân hướng ra trước. Dáng `loaf` dùng cùng chân sau.
+  - Tìm bằng `tools/pets/legsearch.cjs`: thử lưới góc, chấm điểm theo vị trí khớp. Xem bằng `tools/pets/catview.cjs`: da trần, tô theo pháp tuyến, chụp nhiều phía.
+  - Móc thử `PETS.tryPose(tên, ops)`. Lúc tính dáng, móc tạm đưa mèo về gốc toạ độ, vì `catPose` xoay theo trục thế giới.
+- Chuyển ngày/đêm bằng nút (G: "fix the lag transition from night to daytime"). Trước đây, mở trang ban đêm rồi bấm sang ngày thì đứng hình khoảng 5 s ở trình duyệt mới, vì lúc đó mới dựng 45 shader. Ba nguyên nhân:
+  1. Các mô hình vẽ sắc nét (747, đồng hồ, ISS, sách vườn, máy ảnh, mèo, gà) chỉ dịch shader cho trạng thái đèn lúc chúng tải xong. Nay `precompileLightStates` (`core/loop.js`) dịch chúng cho cả 4 trạng thái đèn, rồi vẽ thử mỗi cái một lần vào một target 4×4: ANGLE trên Metal chỉ làm xong shader ở lần vẽ đầu.
+  2. **Bẫy của three.js:** bản đồ bóng được vẽ trước khi lượt `render()` đếm đèn của nó, nên shader bóng (`depth`) mang số đèn của lượt vẽ cảnh ngay trước đó. Lượt đó thường là một lớp sắc nét, và vì mèo bật mọi đèn lên lớp của nó (`pets.js`), camera lớp mèo thấy tới 6 đèn hướng. Mỗi lần đèn đổi lại sinh một bộ shader bóng mới.
+     - Nay `roomLightsFirst()` chạy ngay trước mỗi lần vẽ bóng: một lượt `render()` không vẽ gì (camera lớp 30; đèn của phòng được bật thêm lớp 30), để số đèn luôn là của phòng.
+     - Lượt dịch trước cũng vẽ bóng thử ở mỗi trạng thái, không cắt theo khung (ban đêm mặt trời nằm dưới đất).
+  3. `renderer.debug.checkShaderErrors` tắt (`core/renderer.js`): đọc log shader ở lần dùng đầu bắt trình duyệt chờ dịch xong ngay lúc đó. Cần soi lỗi shader thì thêm `?shaders` vào địa chỉ.
+  - Thêm: ảnh phản chiếu trên kính (`fx/glass.js`) vẽ mỗi khung một mặt trong 6 mặt, thay vì cả 6 mặt trong một khung.
+- Đo (1512×945, DPR 2, mỗi chiều 2 lần), trước → sau:
+  - shader dựng lúc bấm: 45 → 0;
+  - khung chậm nhất: 5,2 s (lần đầu) hoặc 0,1–0,3 s (khi đã có đệm shader) → 34 ms;
+  - không còn khung nào quá 50 ms, không còn long task.
+  - Mở trang ban ngày rồi chuyển sang đêm: cũng 34 ms.
+  - Giá phải trả lúc tải: một long task 54 ms trong lúc dịch trước (phòng đang đứng yên).
+
+### Bóng đèn treo: thấy dây tóc, sáng hơn khi rê chuột (23/10/2026)
+
+- G: "cho dây tóc still visible 90%; khi hover vào bóng đèn thì sáng hơn 50%".
+- Quầng anh thấy là sprite `glow` của đèn treo (`furniture.js` pendantLamp): cộng sáng, kéo về phía mắt 7 cm. Tâm trắng của nó che mất chỗ dây tóc.
+- Dây tóc mô hình (bán kính 0,28 mm) nhỏ hơn một điểm ảnh ở khoảng cách này. Làm dày nó hay bỏ màu nước của nó đều không hiện ra (đã thử, đã trả lại).
+- Nay:
+  - quầng dùng `pendantGlowTex`: chỗ dây tóc nằm (và quanh nó một chút) chỉ còn 10 % quầng;
+  - dây tóc là một sprite riêng `fil` (`filamentTex`: một vạch ngang có hạt, dài 4,6 cm như dây tóc thật), màu 0xffe2b8 × 5, cộng sáng, đè lên quầng. Đó là chỗ sáng nhất của bóng;
+  - `fx/hour.js` đặt độ mờ của nó (0,8 × k) cùng với quầng.
+- Rê chuột lên bóng (`stepBulb` trong `fx/glow.js`, chạy mỗi khung trong `core/loop.js`):
+  - quầng, dây tóc và thuỷ tinh sáng ×1,5, vào và ra êm (~0,25 s);
+  - ánh đèn hắt lên phòng giữ nguyên;
+  - vùng bắt chuột là cỡ bóng thuỷ tinh trên màn hình, rộng hơn một chút;
+  - móc thử: `__lib3d.BHOV`.
+- **Bẫy:** lớp quầng thứ hai `BULB` (`fx/glow.js`, vẽ trên lớp sắc nét) chưa bao giờ bật. `words.js` gọi `bornFade('bulb', BULB.on.value > 0)`, nên giá trị 0 lúc đầu giữ nó mãi ở 0. Em để nguyên lớp đó, không bật.
+
+### Lông mèo xù, dài hơn (`world/fur.js`, 24/10/2026)
+
+- G: "em cho lông mèo là lông xù có độ dài".
+- Độ dài và số lớp:
+  - lông 8 mm → 2 cm (`uFurLen`); số lớp vỏ 20 → 28, để sợi dài không đứt quãng;
+  - đầu 0,55 → 0,6, đuôi 1,3 → 1,5, bàn chân 0,5 → 0,45 (tỉ lệ so với thân);
+  - đầu sợi rủ xuống nhiều hơn (0,15 → 0,32).
+- Xù:
+  - mỗi sợi xoăn khi mọc lên, ngả mạnh hơn theo hướng riêng;
+  - lông mọc thành chùm khoảng 6 mm (70 chùm trên ảnh texture của bộ lông), mỗi chùm một chiều cao, đầu các sợi trong chùm chụm vào nhau;
+  - cả độ phủ trung bình (khi sợi nhỏ hơn một điểm ảnh) cũng theo chiều cao của chùm, nên nhìn từ xa viền vẫn lởm chởm.
+- Giá: hình học lông tăng thêm 8 lớp, khoảng +3,6 MB; vẽ thêm 40 % tam giác cho lông.
+- Rồi gấp đôi (G: "em mèo lông xù dài thêm x2"): 4 cm, 40 lớp, chùm to hơn (50 chùm trên texture thay vì 70).
+
+### Lông xù trên sofa, thảm, sách (24/10/2026)
+
+- **Đã bỏ (cùng ngày):** G: "em bỏ chất liệu lông trên pouf và sofa". `sofaFluff` không còn được gọi; hàm vẫn giữ trong `velvet.js`. Không còn lông, sofa và pouf trông sáng hơn hẳn, vì lớp lông có chân sợi tối đã kéo màu xuống.
+- Pouf sẫm lại 30 % và khe nếp gấp tối hơn 45 % (G: "em cho pouf sẫm lại 30%, các khe nếp gấp 45% darker"):
+  - nhung 0x456944 → 0x304a30;
+  - trong `poufGeometry` (`world/pouf.js`), độ che khe (vertex color, theo độ lõm) nhân thêm 1 − 0,45 × min(1, (1 − o) / 0,25): khe sâu tối hẳn 45 %, khe nông ít hơn.
+
+- Sofa (G: "add lông xù lên bề mặt sofa"): `sofaFluff` (`world/velvet.js`) cho mỗi phần của sofa (đệm, lưng, tay, khung).
+  - 8 lớp vỏ của chính phần đó, vẽ một lần (instanced). Lớp thứ k đẩy ra theo pháp tuyến (k/8) × 6 mm.
+  - Sợi lông cách nhau ~2,5 mm, tính trong ô 3D của chính phần đó (không lệ thuộc đường nối UV), gom thành chùm ~1 cm, mỗi chùm một chiều cao, mỗi sợi ngả một kiểu.
+  - Màu và ảnh lấy từ chính lớp nhung, nên đổi màu sofa thì lông đổi theo. Lớp lông không đổ bóng.
+  - Sợi nhỏ hơn nửa điểm ảnh thì dùng độ phủ trung bình, chấm dither ổn định, để không nhấp nháy.
+- Thảm (G: "thảm trên sàn less water color 90% và dark color thêm 10%"): `paintLightly(LIGHTS.rug, 0,9)`; len 0xf3e9d6 → 0xdbd2c1. Rồi bỏ hẳn màu nước (`paintLightly(LIGHTS.rug, 1)`; G: "remove water color cho cái thảm dưới đất").
+- Sách bớt thêm 50 % màu nước: kệ 0,965 / 0,9978, đồ trang trí 0,965, bàn và pouf 0,9972.
+- Sách trên kệ bớt thêm 90 % (G: "giảm water color cho toàn bộ sách trên kệ 90%"): kệ 0,9965 / 0,99978, sách trang trí trên kệ 0,9965.
+- Đo khi chuyển ngày/đêm: khung trung bình 15–17 ms, chậm nhất 33 ms, không dựng shader mới (như trước).
+- Lượt sau (G: "lông trên sofa ngắn đi 30%, a thấy frame ảnh có vấn đề glitching ở tủ sách và sofa, ... sách nằm trên bàn và trên sofa less water color 50%"):
+  - Lông sofa 6 → 4,2 mm, 8 → 6 lớp, vật liệu Lambert.
+  - Lông sofa nay hoà trong suốt (không ghi độ sâu, các lớp vẽ từ trong ra, như lông mèo), thay cho cắt theo chấm dither: chấm bám theo màn hình nên "bò" khi hình dịch.
+  - `POST.rt` có lại MSAA 2 mẫu (`fx/post.js`). Sách gần như hết màu nước nên cạnh gáy sách lộ răng cưa và chớp khi hình dịch.
+  - Đo phần còn nháy (dịch hình đúng 1 px rồi bù lại, đếm điểm ảnh còn khác hơn 24): tủ phải 1,20 → 0,32 %, kệ sau 1,04 → 0,56 %, sofa 2,48 → 1,60 %.
+  - Giá: khoảng 19 MB bộ nhớ GPU, và thời gian mỗi lần vẽ lại phòng (150 khung, ban ngày): chưa có lông sofa, không MSAA 16–17 ms; lông 8 lớp, không MSAA 19–23 ms; bây giờ 25–28 ms.
+  - **Cần để ý:** `adaptQuality` (`core/loop.js`) tự hạ độ phân giải nếu trung vị một đoạn chuyển động quá 28 ms, hai đoạn liền, và nhớ lựa chọn đó một tuần. Bây giờ ta đang sát ngưỡng đó.
+  - Sách trên bàn và trên pouf 0,9986.
+- Pouf cùng màu và chất liệu với sofa (G: "em cho cái này cùng màu và chất liệu với sofa"): nhung 0x30553c → 0x293e28, ánh 0xdfe6c4; thêm `sofaFluff(pouf)` và màu nước như sofa (`paintLightly(pouf, 0,3)`; trước đó pouf giữ đủ màu nước). Lông dùng chung hình học với pouf, nên vẫn theo chỗ lõm dưới sách.
+
+### Cuộn lên xuống không làm rìa sách chớp; pouf sáng hơn (24/10/2026)
+
+- G: "a thấy các rìa cuốn sách nó flicking khi a rolling up and down".
+  - Cuộn là dịch ống kính (`setViewOffset`), tức là trượt nguyên hình. Mỗi bước trượt một phần lẻ của điểm ảnh, nên cạnh mảnh của gáy sách lúc trúng điểm ảnh, lúc không, và chớp.
+  - Nay `applyView` (`core/views.js`) làm tròn độ dịch (lên xuống, và sang ngang ở các góc ngăn kệ) theo số nguyên điểm ảnh của hình phòng (`RT_SCALE`). Hình trượt nguyên vẹn, mỗi bước tối đa khoảng 1,25 px CSS.
+  - Đo: cuộn từng bước 0,37 px, bù đúng độ dịch (nội suy), đếm điểm ảnh còn khác hơn 16. Tủ phải 1,92 → 0,44 %, kệ sau 1,34 → 0,08 %. Không tốn thêm gì.
+- Pouf sáng hơn sofa 30 % (G: "màu Pouf bớt xẫm đi 30%"): 0x293e28 → 0x355134 (×1,3 trên sRGB). Rồi thêm 30 % nữa, 0x456944, và bỏ hẳn màu nước (`paintLightly(pouf, 1)`).
+- Nền sân bớt 50 % màu nước (G: "nền ngoài sân less water color 50%"): `paintLightly(ground, 0,5)` và `paintLightly(patio, 0,5)` (`world/outside.js`). Trước đó nền sân giữ đủ màu nước.
+- Các vật G khoanh trên bàn bớt 90 % màu nước còn lại: chậu cây 0,5 → 0,95 (cây và gốc cây giữ 0,5), đèn bàn 0,75 → 0,975, hai cuốn sách trên bàn 0,9986 → 0,99986.
+- Sofa bớt 90 % màu nước còn lại (G: "em cho sofa less water color 90%"): sofa, gối ôm và gối vuông 0,3 → 0,93, rồi bỏ hẳn (1; G: "remove water color cho sofa và các gối").
+- Phần không màu nước (mặt nạ `drawLight` đầy: sofa, gối, pouf, thảm) lấy thẳng từ hình 3D (`POST.tone`, 0,8 px CSS) trong `POST.blit`, không qua `POST.out` (0,75). Ánh giấy, độ ấm và lớp mờ giữ nguyên; viền mềm (`smoothstep(0,985, 0,999)`). Đo năng lượng cạnh trên sofa và gối: chỉ tăng 1–2 %, như đã tính trước, vì giới hạn thật là hình 3D vẽ ở 0,8 px CSS (G hỏi: "vậy cái gì làm cho sofa bị mờ"). Lông xù của sofa là con của từng phần nên theo cùng mức. Pouf giữ 0,3, rồi cũng 0,93 như sofa (G: "em cho Pouf less water color 90%").
+- Hai cuốn sách trên pouf (G khoanh, "remove water color"):
+  - bỏ hẳn màu nước (`paintLightly(b, 1)`);
+  - vẽ thêm một bản sắc nét như tạp chí: `PBOOK` (`world/gardenbook.js`) là bản sao mỗi mesh của sách, đặt trên lớp 9, vật liệu vá như các lớp sắc nét, vẽ trước tạp chí để tạp chí nằm đè lên;
+  - sách thật vẫn ở trong phòng (để đổ bóng và có độ sâu);
+  - lý do: dù hết màu nước, sách vẫn mờ vì hình phòng vẽ nhỏ hơn màn hình rồi phóng lên;
+  - `precompileLightStates` dịch trước cả các bản sao này.
+
+### Bóng tiếp xúc: đồ đạc đứng trên sàn (`groundAO` trong `world/furnish.js`, 24/10/2026)
+
+- G: "sao a có cảm giác tất cả đồ đạc ko nằm trên mặt sàn gỗ nhỉ; a có cảm giác giống như nó bay bổng".
+- Nguyên nhân:
+  - nét mực màu nước dọc chân đồ đạc mất theo khi bỏ màu nước;
+  - ánh chiều thấp và đèn bàn không đổ bóng ngay dưới chân đồ.
+- `groundAO(F, vật, y, k, sp)`:
+  - lấy các đỉnh của vật nằm trong 2,5 cm sát điểm thấp nhất, gom theo ô 4 cm. Mỗi cụm là một "bàn chân": chân bàn, đế sofa, chân đèn, đáy pouf;
+  - dưới mỗi bàn chân đặt một mảng tối cùng hình (hộp bo tròn), lan ra vài cm;
+  - dưới cả vật thêm một mảng mờ (độ tối 0,22);
+  - các mảng nằm sát mặt sàn, hoặc sát mặt thảm cho pouf (y 0,019), vẽ cùng phòng nên được tô màu cùng sàn.
+- Áp cho: bàn trà, bàn gốc cây, sofa, đèn cây, pouf. Pouf rộng gấp đôi và đậm hơn, vì thân nó phình ra che chỗ tiếp xúc. Máy hát đã có bóng riêng từ trước (`ui/deck.js`).
+- Sàn gỗ tối hơn 30 % trên màn hình (G: "em cho sàn màu sẫm hơn 30%"): `MAT.floor.color` 0,52 trên sRGB (`world/materials.js`). Đặt 0,7 thì màn hình chỉ tối đi 15 %, vì độ sáng của giấy màu nước kéo màu tối lên. Đo vùng sàn: 168 → 120 (−29 %).
+- Sàn bỏ hẳn màu nước (G: "em cho sàn nhà no water color"): `paintLightly(floor, 1)` (`world/room.js`). Mặt nạ đầy nên sàn cũng lấy thẳng từ hình 3D ở bước dán lên màn hình.
+
+### Thảm và sách trên bàn sắc nét (`world/gardenbook.js`, 24/10/2026)
+
+- G: "em cho thảm dươi sàn 100% visible, sách cũng visible" (chọn: sắc nét như sách trên pouf; sách trên bàn và trên pouf).
+- `sharpTwins(S, objs, fix)` dựng bản sao của từng mesh trên lớp riêng của S:
+  - pouf 9, bàn trà 10, thảm 11 (kèm bóng của pouf nằm trên thảm, `LIGHTS.poufAO`);
+  - vật liệu giữ phần vá shader riêng của nó rồi thêm phép thử độ sâu của lớp sắc nét (`sharpTwinMat`);
+  - mỗi bản có khoá shader riêng. **Bẫy:** hàm bọc có cùng mã nguồn cho mọi bản, nên three.js dùng chung một chương trình nếu khoá không phân biệt.
+- Các lượt đồ đứng yên (`P.still`) chỉ vẽ lại khi phòng vẽ lại (`ROOMF`, `core/loop.js`), hoặc khi vị trí trên màn hình đổi. Giữa các lần đó dùng lại ảnh cũ.
+- Thảm vẽ trước máy hát và mèo (`drawFloorSharp`, `ui/words.js`), ở 1 px mỗi px CSS. Nó chỉ hiện khi phòng đã đứng yên 0,2 s; lúc phòng chuyển động thì thấy thảm vẽ thường.
+- Thảm sắc nét để lộ vân xéo mịn của 14 lớp sợi len (trước đây độ mờ giấu đi). Giảm mức chi tiết chùm sợi không làm hết vân đó.
+- Đo vẽ lại 150 khung, xen kẽ với bản trước đó: như nhau (34–38 ms lúc đo). Máy lúc đó chậm hơn các lần đo trước, cùng bản cũ trước đây đo 25–28 ms.
+
+### Trăng to hơn, sao băng bay sau trăng; bóng đèn treo to hơn (24/10/2026)
+
+- G: "mặt trăng ngoài cửa sổ x1.5 bigger, các sao băng hay sao chổi chỉ bay sau lưng mặt trăng; bóng đèn trên research bigger 1.5x và khi hover over thì glowing bigger 2x bigger area".
+- Trăng: `MOON_R` 0,88 → 1,32 độ (`fx/sky.js`). `placeMoon` vẫn giữ mép trăng cách khung kính như cũ.
+- Sao băng và sao chổi bị trăng che, kể cả phần tối của trăng lưỡi liềm:
+  - `moonMask` tính tâm và bán kính đĩa trăng trên màn hình mỗi khung, theo camera của bầu trời (`OVER.cam`; dùng camera của phòng thì lệch hẳn);
+  - `MOON_HIDE` trong shader của sao băng và sao chổi bỏ phần nằm trong đĩa;
+  - sao băng vẽ trước trăng (`renderOrder` 4 → 2);
+  - móc thử: `METEOR.hide`.
+- Bóng đèn treo: `BS` 1,452 → 2,178 (`world/furniture.js`), cả bóng và đui.
+  - **Bẫy:** quầng và dây tóc được kéo về phía mắt 7 cm cho nằm trước mặt kính. Bóng to hơn thì 7 cm lọt vào trong bóng, mặt kính che quầng, lòng bóng tối đi. Nay khoảng kéo tăng theo cỡ bóng (`× BS / 1,452`).
+  - Vùng khoét quanh dây tóc hẹp lại (chỉ sát sợi, còn 30 % quầng ở đó).
+  - Rê chuột: quầng sáng ×1,5 như trước, và lan rộng gấp đôi diện tích (cỡ sprite × √2, `stepBulb`).
+
+### Pouf hết răng cưa; bóng theo hướng sáng cửa sổ (24/10/2026)
+
+- G: "em remove răng cưa trên pouf; tạo shadow cho pouf đúng theo hướng sáng từ cửa sổ và rõ hơn, bao gồm máy nghe đĩa mèo, và sofa".
+- Răng cưa trên pouf là những đường chấm tối dọc nếp gấp, do khe được tô tối theo từng đỉnh (sau khi làm tối 45 %).
+  - Nay độ tối của khe được làm mịn hai lượt với các đỉnh xung quanh, rồi đậm lại (mũ 1,25) (`world/pouf.js`).
+  - Pouf vẽ chung lớp sắc nét với thảm (`RUGS`). Lớp này dùng độ sâu riêng (`own`), không thử theo độ sâu của phòng vốn thô hơn, nên mép pouf trên thảm không còn bậc thang.
+  - **Bẫy, lần thứ 5:** chú thích `//` chèn giữa dòng nuốt mất `const ck`, trang lỗi `ck is not defined`.
+- Khe nếp gấp sắc nét, vẫn tối (G: "đừng cho các nếp gấp và khe đen mờ", chọn "khe sắc nét, vẫn tối"):
+  - màu theo đỉnh của pouf tách làm hai: xanh lá là độ tối của khe, đỏ/lam là độ tối của khe nhân bóng sát sàn;
+  - `makeVelvet({ aoSharp: true })` (`VELVET_AO_SHARP`, `world/velvet.js`) cắt độ tối mịn đó ở mức 0,66 thành mảng tối viền sắc (viền rộng một điểm ảnh nhờ `fwidth`), giữ một ít độ sâu ở trong và ngoài;
+  - nhờ màu đã làm mịn trước nên đường cắt là đường cong trơn, không răng cưa, không chấm.
+- Bóng:
+  - Bản đồ bóng của mặt trời 1024 → 2048.
+  - Máy hát có một khối tàng hình để đổ bóng nắng (`DECK.caster`, `ui/deck.js`).
+  - Mèo đổ bóng nắng khi đứng yên (lớp của mèo bật cho camera bóng). Lúc mèo đi thì tắt, nên mỗi chuyến chỉ vẽ lại bóng hai lần.
+  - Nắng chỉ rọi phần sàn sát kính; giữa phòng được chiếu bởi ánh trời qua kính (đèn diện rộng, không đổ bóng). Nên `windowShadow` (`world/furnish.js`) đặt sau sofa, pouf và máy hát một vệt bóng mềm theo hướng rời kính (`WIN_DIR` = (1, 0, 0,35): từ kính trái và kính sau):
+    - rộng bằng chân đồ, đậm ở chân, nhạt và loe dần trên ~½ chiều cao + 15 cm;
+    - mờ dần theo trời tối (`fx/hour.js`);
+    - bóng của pouf nằm trên thảm, nên được vẽ cùng lớp sắc nét của thảm.
+  - Bóng tiếp xúc của mèo dịch theo cùng hướng và to hơn 12 %.
+- Đường góc (G: "em cho các khe góc có line rõ nét hơn"): `cornerShade` (`world/room.js`) chạy dọc chỗ sàn gặp:
+  - thanh chân vách kính trái (mặt trong xL + 4 cm, vì thanh sâu 20 cm);
+  - chân tủ cao bên phải;
+  - mặt tủ thấp trước và sau.
+  Mỗi chỗ có một dải trên sàn và một dải lên mặt tủ: một đường tối sắc sát góc, rồi nhạt dần. Không màu nước (`paintLightly(…, 1)`).
+  - Lượt sau (G: "em cho rõ nét hơn nữa và áp dụng thêm cho thư viện"):
+    - dải dựng bằng đỉnh trực tiếp (`cornerStrip(A, B, d, n, w, L)`). **Lỗi cũ:** dải đứng bị lật, nên đường tối nằm cao 5 cm thay vì sát sàn;
+    - đường tối đậm hơn (0,92) và dày hơn: khoảng 5 mm ở sàn;
+    - thêm đường đứng ở hai đầu tủ thấp (trước và sau), khoảng 1 cm: mép ngoài thanh đứng sát kính trái, và chỗ tủ gặp tủ cao bên phải (cả mặt tủ thấp lẫn mặt tủ cao) (`caseCorners`).
+- Chân sofa (G khoanh mép dưới sofa và chaise: "rõ nét đen cho các chỗ này"):
+  - đế lõm 0x1d2419 → 0x0b0d09;
+  - một đường tối sắc trên sàn quanh chân mỗi khối (`cornerStrip`, xuất từ `room.js`), lùi vào 3 cm để nằm dưới mép chứ không lộ ra cạnh.
+- Nét mực cho phần ít hoặc không màu nước (G khoanh tay sofa, chỗ sofa gặp tủ, chân chaise: "tiếp tục cho các khu vực này"):
+  - `POST.quad` (`fx/post.js`): ở chỗ mặt nạ `lite > 0,05`, một Sobel trên độ sâu tại đúng điểm ảnh (không lắc theo giấy, chỉ theo độ sâu, không theo màu) vẽ đường tối sắc (màu × 0,32/0,27/0,22) nơi độ sâu nhảy bậc;
+  - lượng mực truyền qua kênh alpha của `POST.out`; `POST.blit` vẽ lại đường đó lên phần lấy thẳng từ hình 3D (sofa, pouf, thảm, sàn);
+  - nhờ đó sofa, pouf, bàn, tủ có lại nét viền mà màu nước từng vẽ.
+- Viền đen chỉ ở chỗ G chỉ (G khoanh tay sofa bên phải và chân chaise, rồi: "em redo lại và chỉ add thêm viền đen đúng vào vị trí a chỉ định"):
+  - Lượt trước, nét mực theo độ sâu áp cho mọi đồ không màu nước, nên viền hiện khắp nơi. Đã bỏ.
+  - Nay `POST.quad` chỉ vẽ nét mực trong các hộp đánh dấu (`inkBox(i, min, max)`, tối đa 4; vị trí lấy từ `uInvVP` và độ sâu):
+    - hộp 0: tay sofa bên phải (`sofa_back_side`), nới 1,2 cm;
+    - hộp 1: phần dưới mặt trước chaise.
+  - Trong hộp: Sobel độ sâu tại đúng điểm ảnh vẽ đường tối sắc nơi độ sâu nhảy bậc. Lượng mực truyền qua alpha của `POST.out` cho phần lấy thẳng từ hình 3D.
+  - Đã thử và bỏ: đường dải đặt lơ lửng trước tay sofa (nằm giữa mặt), và viền theo pháp tuyến hay theo hướng nhìn trong shader nhung (tay sofa bo tròn đều, không có cạnh gập; ánh nhung che mất viền).
+  - Khe giữa tay sofa và tủ cao: một dải tối trên mặt tủ phía sau tay sofa.
+  - Viền mờ nhẹ cho hết răng cưa (G: "em cho mờ nhẹ viền răng cưa này"): độ đậm theo độ sâu tăng dần mềm hơn (`smoothstep(0,03, 0,12)` × 0,9); `POST.blit` lấy trung bình 5 điểm của lượng mực.
+- Bỏ gối ôm tròn ở đầu phải sofa và gối xanh của module sofa (`sofa_pillow`) cạnh tay phải (G: "em remove gối ôm, gối xanh, chỉ để lại gối vàng trong hình"). Gối mù tạt phía sau giờ lộ ra. Gối ôm bên trái vẫn giữ.
+- Máy nghe nhạc đậm bóng hơn (G: "em render shadow thêm cho máy nghe nhạc"):
+  - bóng tiếp xúc 0,74 × 0,62 → 0,84 × 0,7 m, độ tối 0,8 / 0,5 → 0,92 / 0,62;
+  - bóng cửa sổ độ tối 0,62, dài 0,38 m.
+- Dịch trước, để lúc bấm chuyển ngày/đêm không phải dựng shader nào:
+  - shader bóng của mèo: lúc dịch trước bật tạm bóng của mèo;
+  - Ngân Hà (`milkyWayParts`, `ui/words.js`): lớp này chỉ vẽ lần đầu khi trời tối. Mở trang ban ngày rồi chuyển sang đêm thì khựng 359 ms; nay không khựng.
+  - Đo: không còn shader mới khi chuyển; khung chậm nhất 74 ms (ngày → đêm), 35 ms (đêm → ngày).
+
 ### Thanh cuộn dọc: xem trọn khung cảnh (`core/views.js` LIFT, 19/10/2026)
 
 - G: "add vertical scroll bar để xem được hết khung cảnh". Góc nhìn ở nhà cắt khung như ảnh nền cover, nên trên cửa sổ rộng bị mất phần trên và phần dưới.

@@ -110,7 +110,8 @@ IMPORTMAP = ('<script type="importmap">{"imports":{"three":"' + THREE_CDN + 'bui
 STYLE = IMPORTMAP + """<script>
   // wide screens with WebGL 2 get the 3D library; phones keep the page as it was (and never download three.js)
   if (window.innerWidth > 768 && window.WebGL2RenderingContext) {
-    document.documentElement.classList.add('lib3d-capable', 'l3-wait');   // (l3-wait: the words over the room come in once it is all there: loop.js reveal)
+    document.documentElement.classList.add('lib3d-capable', 'l3-wait', 'l3-loading');   // (l3-wait: the words come in once the room is all there; l3-loading: the loader's bar: loop.js start)
+    setTimeout(function () { var h = document.documentElement; if (h.classList.contains('l3-wait')) h.classList.add('lib3d-slow'); }, 30000);   // (a room that never comes: the words shown anyway)
     // fetch three.js (and the room's models) now, while the rest of the page loads
     ['build/three.module.min.js', 'examples/jsm/loaders/GLTFLoader.js', 'examples/jsm/libs/meshopt_decoder.module.js',
      'examples/jsm/lights/RectAreaLightUniformsLib.js', 'examples/jsm/lights/RectAreaLightTexturesLib.js',
@@ -183,10 +184,17 @@ STYLE = IMPORTMAP + """<script>
   @keyframes l3player-in { from { opacity: 0; transform: translateY(18px) scale(.94); } to { opacity: 1; transform: none; } }
   @keyframes l3player-out { to { opacity: 0; transform: translateY(12px) scale(.96); } }
   @media (max-width: 768px) { #lib3d, #l3-ui, #lib3d-loader { display: none !important; } }
-  #lib3d-loader { position: fixed; left: 50%; bottom: 30px; width: 160px; height: 3px; margin-left: -80px; border-radius: 2px; background: rgba(60, 45, 25, .15); overflow: hidden; z-index: 6; display: none; }
-  #lib3d-loader i { position: absolute; top: 0; bottom: 0; width: 38%; background: #8a6a40; border-radius: 2px; animation: l3load 1.3s ease-in-out infinite; }
-  @keyframes l3load { from { left: -40%; } to { left: 100%; } }
-  html.lib3d-capable:not(.lib3d-failed) body:not(.lib3d-on) #lib3d-loader { display: block; }
+  /* the loader at the foot of the page: a bar and its per cent (core/base.js setLoad; G, 20/10/2026: "add % load cho loading bar at foot note") */
+  #lib3d-loader { position: fixed; left: 50%; bottom: 24px; width: 180px; margin-left: -90px; z-index: 6; display: none; text-align: center; pointer-events: none; transition: opacity .7s ease; }
+  #lib3d-loader .l3-bar { height: 3px; border-radius: 2px; background: rgba(60, 45, 25, .15); overflow: hidden; }
+  #lib3d-loader .l3-pct { display: block; margin-top: 7px; font: 600 11px/1 var(--font); letter-spacing: .1em; font-variant-numeric: tabular-nums; color: rgba(42, 33, 24, .72); }
+  body.dark-mode #lib3d-loader .l3-bar { background: rgba(226, 214, 192, .16); } body.dark-mode #lib3d-loader .l3-pct { color: rgba(226, 214, 192, .78); }
+  #lib3d-loader .l3-bar i { display: block; height: 100%; width: 3%; background: #8a6a40; border-radius: 2px; animation: l3load 6s ease-out both; }   /* (before the page's script counts: a slow start) */
+  body.dark-mode #lib3d-loader .l3-bar i { background: #E2D6C0; }
+  #lib3d-loader.is-live .l3-bar i { animation: none; }
+  @keyframes l3load { from { width: 1%; } to { width: 12%; } }
+  html.lib3d-capable.l3-loading:not(.lib3d-failed) #lib3d-loader { display: block; }
+  html.l3-loaded #lib3d-loader { opacity: 0; }
 
   /* ---- the medieval clock out of its shelf (clock.js): its panel and the names of its parts */
   .ck-out-ui { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s ease; }
@@ -244,8 +252,12 @@ STYLE = IMPORTMAP + """<script>
   .l3-defs { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
   .l3-cap:hover, .l3-cap:focus-visible { color: var(--accent); outline: none; text-shadow: var(--cap-glow); }
   .l3-cap.is-off { opacity: 0; pointer-events: none; }
-  #l3-ui, .page .wx { transition: opacity .6s ease; }   /* the words over the room and the weather line come in last (loop.js reveal) */
-  html.l3-wait:not(.lib3d-failed) #l3-ui, html.l3-wait:not(.lib3d-failed) .page .wx { opacity: 0 !important; }
+  #l3-ui, .page .wx { transition: opacity 1.1s ease .5s; }   /* (after the sidebar and the clock) */   /* the words over the room and the weather line come in last (loop.js reveal) */
+  html.l3-wait:not(.lib3d-failed):not(.lib3d-slow) #l3-ui, html.l3-wait:not(.lib3d-failed):not(.lib3d-slow) .page .wx { opacity: 0 !important; }
+  /* every word waits for the room (G, 20/10/2026: "Text phải đc ẩn và chỉ đưa vào khi các thứ tự dc load xong"): the sidebar and the sky clock too */
+  html.lib3d-capable:not(.lib3d-failed) .toc { transition: opacity 1.2s ease; } html.lib3d-capable:not(.lib3d-failed) .page .sky { transition: opacity 1.2s ease .25s; }   /* (in turn, slowly: G, 20/10/2026: "khi loading complete mọi thứ cần fade in animation, để mượt mà") */
+  html.l3-wait:not(.lib3d-failed):not(.lib3d-slow) .toc, html.l3-wait:not(.lib3d-failed):not(.lib3d-slow) .page .sky { opacity: 0 !important; pointer-events: none !important; }
+  html.l3-wait:not(.lib3d-failed) .fireflies { opacity: 0 !important; }   /* (the page's own night fireflies over the room as it comes in by parts: kept for after) */
   body.dark-mode .l3-cap { color: #E2D6C0; }
   /* a book under the pointer, named beside it */
   .l3-tip { position: absolute; left: 0; top: 0; max-width: 300px; padding: 7px 11px 8px; border-radius: 10px; pointer-events: none; opacity: 0; transition: opacity .15s ease;
@@ -384,7 +396,7 @@ assert page.count('</head>') == 1 and page.rstrip().endswith('</html>') and page
 assert 'id="lib3d' not in page, 'page already contains the 3D layer'
 page = page.replace('</head>', STYLE + '</head>', 1)
 assert page.count('<body class="no-anim">') == 1
-page = page.replace('<body class="no-anim">', '<body class="no-anim">\n<div id="lib3d-loader" aria-hidden="true"><i></i></div>', 1)
+page = page.replace('<body class="no-anim">', '<body class="no-anim">\n<div id="lib3d-loader" aria-hidden="true"><div class="l3-bar"><i></i></div><span class="l3-pct">0%</span></div>', 1)
 # YouTube records start by themselves when the deck moves on to them. If the browser holds the sound back (Safari, or
 # an embed without autoplay rights) the record starts muted and its sound comes on at the visitor's next tap or key; if
 # YouTube refuses to play it at all, the deck moves on to the next record instead of standing still.
@@ -467,6 +479,11 @@ SUN_PATCHES = [
 for a, b in SUN_PATCHES:
     assert page.count(a) == 1, 'sky clock code not found: ' + a[:60]
     page = page.replace(a, b, 1)
+# The now-playing bar shows only once a book is clicked to be heard, not as the page opens with the last one half-heard
+# ("Continue listening"; G, 23/10/2026: "em hide this audio play; chỉ hiện khi click vào sách nghe nói")
+BAR_PATCH = ("  let barHolder = null, barDismissed = false;", "  let barHolder = null, barDismissed = true;")
+assert page.count(BAR_PATCH[0]) == 1, 'now-playing bar code not found'
+page = page.replace(*BAR_PATCH, 1)
 page = page.replace('</body>', SCRIPTS + '</body>', 1)
 open(out_path, 'w', encoding='utf-8').write(page)
 if pages_dir:   # the same page with the models as a separate file

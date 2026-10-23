@@ -11,7 +11,7 @@ import { canvas, ctex, fbm, rng } from '../core/utils.js';
    hidden lower layers; alpha-to-coverage on the MSAA target softens tuft edges. Fibres lower in the pile get less
    light (self-shadow ramp), the pile lay drifts across the rug (shading patches), and the pile is crushed and
    shadowed under the pouf.                                                                                     */
-const RUG = { W: 2.35, D: 2.2, pile: 0.012, back: 0.004, layers: 14, tile: 0.12, corner: 0.03, wool: new THREE.Color(0xf3e9d6) };
+const RUG = { W: 2.35, D: 2.2, pile: 0.012, back: 0.004, layers: 14, tile: 0.12, corner: 0.03, wool: new THREE.Color(0xdbd2c1) };   // (0xf3e9d6, 10 % darker: G, 24/10/2026)
 function tuftTexture(size = 512, seed = 41) {
   const r = rng(seed), n = Math.round(RUG.tile / 0.0042), cell = size / n, tufts = [];
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++)

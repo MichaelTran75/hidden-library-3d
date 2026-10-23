@@ -8,12 +8,13 @@ import { buildSections } from './sections.js';
 import { startReading, stopReading, syncActive } from './flight.js';
 import { DECK, buildRecordPlayer, togglePlayer } from './deck.js';
 import { UIEL, buildOverlay, closeCard, openSection, refreshCard, setHover, setMapBook, setPeek, showBooks, showResearch, showTip } from './overlay.js';
-import { ready, setNeeds } from '../core/loop.js';
+import { REVEAL, ready, setNeeds } from '../core/loop.js';
 import { isMapItem, opensFlat } from './book-data.js';
 import { readClick, readHint, readHit } from './leaves.js';
 import { PLANE } from '../world/b747.js';
 import { CLOCK, clockHit, closeClock, inspectPointer, openClock } from '../world/clock.js';
 import { VCAM, camHit, camPointer, closeCamera, openCamera } from '../world/camera.js';
+import { closeShow, openShow, showOn, showPointer } from '../world/showcase.js';
 import { ISS, issHit } from '../world/iss.js';
 import { GBOOK, gardenHit } from '../world/gardenbook.js';
 
@@ -78,8 +79,8 @@ function setSpine(bk) {   // a book of the open section under the pointer: it le
 function bindPicking() {
   let down = null;
   CANVAS.addEventListener('pointermove', e => {
-    if (!ready || offMode()) return;
-    if (inspectPointer('move', e) || camPointer('move', e)) { const dv = CLOCK.view.drag || VCAM.view.drag; CANVAS.style.cursor = dv && dv.moved ? 'grabbing' : 'grab'; return; }   // (the clock or the camera out of its shelf: the room is not picked)
+    if (!ready || offMode() || !REVEAL.done) return;   // (nothing picked until all of it is in: core/loop.js start)
+    if (inspectPointer('move', e) || camPointer('move', e) || showPointer('move', e)) { const dv = CLOCK.view.drag || VCAM.view.drag || (showOn() && e.buttons ? { moved: true } : null); CANVAS.style.cursor = dv && dv.moved ? 'grabbing' : 'grab'; return; }   // (the clock or the camera out of its shelf: the room is not picked)
     const p = pickAt(e), bk = p && p.book && p.book.sec === UIS.open ? p.book : null;
     setSpine(bk); showTip(p && p.book ? p.book : null, e.clientX, e.clientY, !!(p && p.map), p && p.read ? readHint(p.book, p.read) : null); setHover(!p || p.book || p.deck || p.plane || p.clock || p.vcam || p.iss || p.garden || UIS.open === p.sec ? null : p.sec);
     CANVAS.style.cursor = p && (p.book || p.deck || p.plane || p.clock || p.vcam || p.iss || p.garden || UIS.open !== p.sec) ? 'pointer' : '';
@@ -90,10 +91,10 @@ function bindPicking() {
     }
   });
   CANVAS.addEventListener('pointerleave', () => { setHover(null); setSpine(null); showTip(null); if (DECK.hover || PLANE.hover || CLOCK.hover || VCAM.hover || ISS.hover || GBOOK.hover) { DECK.hover = PLANE.hover = CLOCK.hover = VCAM.hover = ISS.hover = GBOOK.hover = false; CANVAS.title = ''; setNeeds(true); } });
-  CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; showTip(null); inspectPointer('down', e); camPointer('down', e); });
+  CANVAS.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; showTip(null); inspectPointer('down', e); camPointer('down', e); showPointer('down', e); });
   CANVAS.addEventListener('pointerup', e => {
-    if (inspectPointer('up', e) || camPointer('up', e)) { down = null; return; }   // (the clock or the camera out: its own clicks and drags)
-    if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || performance.now() - down.t > 600 || offMode()) { down = null; return; }
+    if (inspectPointer('up', e) || camPointer('up', e) || showPointer('up', e)) { down = null; return; }   // (the clock or the camera out: its own clicks and drags)
+    if (!down || !REVEAL.done || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || performance.now() - down.t > 600 || offMode()) { down = null; return; }
     down = null; const p = pickAt(e);
     if (p && p.book && p.book === UIS.active && p.book.out && p.book !== UIS.mapBook) {   // the book being listened to: a click opens it on its summary, then turns its pages; its board closes it (pause puts it back)
       if (!p.book.reading) startReading(p.book); else if (p.read && !readClick(p.book, p.read)) stopReading(p.book);
@@ -104,8 +105,8 @@ function bindPicking() {
     }
     else if (p && p.book) activateItem(p.book.it);
     else if (p && p.deck) togglePlayer();   // the record player on the floor: the page's player comes out (or goes away)
-    else if (p && p.plane) window.open(PLANE.url, '_blank', 'noopener');   // the 747: its page, in a new tab
-    else if (p && p.iss) window.open(ISS.url, '_blank', 'noopener');
+    else if (p && p.plane) { PLANE.hover = false; CANVAS.title = ''; openShow('plane'); }   // the 747: out of its shelf, turning; a click on it then opens its page (showcase.js)
+    else if (p && p.iss) { ISS.hover = false; CANVAS.title = ''; openShow('iss'); }   // the ISS: the same
     else if (p && p.garden) window.open(GBOOK.url, '_blank', 'noopener');   // the garden's book: the 3D garden, in a new tab   // the ISS: the station's own page, in a new tab
     else if (p && p.clock) { CLOCK.hover = false; CANVAS.title = ''; openClock(); }   // the clock: out of its shelf, three times as large, apart
     else if (p && p.vcam) { VCAM.hover = false; CANVAS.title = ''; openCamera(); }   // the camera: the same, its parts named
@@ -114,9 +115,9 @@ function bindPicking() {
   });
   addEventListener('keydown', e => { if (e.key !== 'Escape' || document.querySelector('dialog[open]')) return; if (UIS.mode !== 'home') closeCard(); else togglePlayer(false); });
   // the view up or down (core/views.js LIFT): the wheel or a trackpad over the room, the arrow keys and page keys
-  CANVAS.addEventListener('wheel', e => { if (!ready || offMode() || e.ctrlKey || CLOCK.view.on || VCAM.view.on) return; e.preventDefault();
+  CANVAS.addEventListener('wheel', e => { if (!ready || offMode() || e.ctrlKey || CLOCK.view.on || VCAM.view.on || showOn()) return; e.preventDefault();
     setLift(LIFT.to + e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1) / innerHeight * 0.8); }, { passive: false });
-  addEventListener('keydown', e => { if (!ready || offMode() || CLOCK.view.on || VCAM.view.on || (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]'))) return;
+  addEventListener('keydown', e => { if (!ready || offMode() || CLOCK.view.on || VCAM.view.on || showOn() || (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]'))) return;
     const step = { ArrowDown: 0.08, ArrowUp: -0.08, PageDown: 0.3, PageUp: -0.3 }[e.key]; if (step === undefined) return; e.preventDefault(); setLift(LIFT.to + step); });
   // a title in the sidebar under the pointer: its section is shown chosen in the room, as when its label there is
   // hovered; a group's title (Books, Research) lights all of its sections (G, 15/10/2026)
@@ -136,6 +137,7 @@ function bindPicking() {
     if (!ready) return;
     if (CLOCK.view.on && e.target.closest('.toc')) closeClock();   // (the sidebar steers the room again: the clock back on its shelf)
     if (VCAM.view.on && e.target.closest('.toc')) closeCamera();
+    if (showOn() && e.target.closest('.toc')) closeShow();
     const lk = e.target.closest('.toc .toc-link[href]'), atlas = lk && !lk.dataset.nav && !offMode() ? atlasOf(lk) : null;
     if (atlas) { e.preventDefault(); openSection(atlas.sec); setMapBook(atlas); return; }   // (an atlas's page: through its map)
     const nav = e.target.closest('.toc-link[data-nav]');

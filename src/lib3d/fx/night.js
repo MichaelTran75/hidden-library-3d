@@ -3,7 +3,6 @@ import * as THREE from 'three';
 import { R } from '../core/base.js';
 import { scene } from '../core/renderer.js';
 import { MAT } from '../world/materials.js';
-import { room } from '../world/room.js';
 import { LIGHTS } from '../world/lights.js';
 import { POST } from './post.js';
 
@@ -12,7 +11,7 @@ import { POST } from './post.js';
    reading lamps plus the ceiling downlights (as in the night painting) carry the room. When it falls and how is the
    hour's business (below).                                                                                      */
 const NIGHT = { u: { value: 0 }, day: null, spots: [] };
-const NC = { hemi: new THREE.Color(0x2b3a5e), hemiG: new THREE.Color(0x2a1e14), win: new THREE.Color(0x56699a), fog: new THREE.Color(0x0e1522), ring: new THREE.Color(0x172129), disc: new THREE.Color(0xfff0d2) };
+const NC = { hemi: new THREE.Color(0x2b3a5e), hemiG: new THREE.Color(0x2a1e14), win: new THREE.Color(0x56699a), fog: new THREE.Color(0x0e1522), ring: new THREE.Color(0x172129) };
 const lerp = (a, b, k) => a + (b - a) * k;
 function buildNightLights() {
   // recessed ceiling downlights, on by night. Kept away from the glass and fairly narrow: without shadows their light would
@@ -24,9 +23,8 @@ function buildNightLights() {
     const sp = new THREE.SpotLight(0xffd6a0, 0, 9, angle, 0.85, 2); sp.position.set(x, R.H - 0.03, z);
     if (wash) sp.target.position.set(R.xS, 2.4, z + 0.2); else sp.target.position.set(x + 0.05, 0, z + 0.25);
     scene.add(sp, sp.target);
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.07, 24), new THREE.MeshBasicMaterial({ color: 0x1a1612, fog: false })); disc.rotation.x = Math.PI / 2; disc.position.set(x, R.H - 0.004, z); room.add(disc);
-    const rim = new THREE.Mesh(new THREE.RingGeometry(0.07, 0.092, 24), new THREE.MeshStandardMaterial({ color: 0x8a7a66, metalness: .6, roughness: .4, fog: false })); rim.rotation.x = Math.PI / 2; rim.position.set(x, R.H - 0.005, z); room.add(rim);
-    NIGHT.spots.push({ sp, disc, k });
+    // (their cups in the ceiling, a dark disc in a brass ring, left out: no view sees that part of the ceiling: G, 23/10/2026)
+    NIGHT.spots.push({ sp, k });
   }
   const L = LIGHTS;
   NIGHT.day = { sun: L.sun.intensity, sunC: L.sun.color.clone(), sunT: L.sun.target.position.clone(), hemi: L.hemi.intensity, hemiC: L.hemi.color.clone(), hemiG: L.hemi.groundColor.clone(), rects: L.rects.map(r => [r.intensity, r.color.clone()]),

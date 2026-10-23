@@ -22,9 +22,9 @@ import * as THREE from 'three';
    held steady and a little nose-down while the trunk rises and falls twice a stride and sways once (Zubair et al.);
    its shoulder blades ride up over each forepaw in stance; its tail, carried up, follows the body as a damped chain. */
 const CATR = { bones: {}, rest: null, body: null, mesh: null, ground: null, gaze: null, poses: {}, legs: null, S: null, scale: 1.5125, tail: null };   // (10 % larger twice: G, 17/10/2026)
-const C_SIDED = /^(scap|arm|fore|paw|thigh|shin|foot|toe|ear)$/;   // (a pose op ['tailArc', from, step, dip] lays the tail on an arc)
+const C_SIDED = /^(scap|arm|fore|paw|ftoe|thigh|shin|foot|toe|ear)$/;   // (a pose op ['tailArc', from, step, dip] lays the tail on an arc)
 const C_AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
-const C_TAIL = ['tail1', 'tail2', 'tail3', 'tail4', 'tail5', 'tail6', 'tail7'];
+const C_TAIL = [];   // its tail's bones, root to tip (rigCat: twelve since 22/10/2026; the poses below were written for seven)
 const _c1 = new THREE.Vector3(), _c2 = new THREE.Vector3(), _c3 = new THREE.Vector3(), _c4 = new THREE.Vector3(), _c5 = new THREE.Vector3();
 const _cq1 = new THREE.Quaternion(), _cq2 = new THREE.Quaternion(), _cq3 = new THREE.Quaternion(), _cq4 = new THREE.Quaternion();
 const cwp = (o, v = new THREE.Vector3()) => v.setFromMatrixPosition(o.matrixWorld);
@@ -44,14 +44,22 @@ function catRest() {   // every bone as modelled, the body at the origin
 }
 function catPose(spec) {   // a pose worked out on the cat at the origin: its bones' turns and where its body sits
   const B = CATR.bones; catRest();
+  const NT = C_TAIL.length, k7 = 7 / NT;   // (the poses' tail turns were written for seven bones: shared out along the same stretch)
   for (const [n, ax, deg, dip = 0] of spec.ops) {
     if (n === 'tailArc') {   // the tail laid along an arc: from straight back turned by ax degrees, each bone deg more; its root
-      // dipping down to the ground (dip, less each bone, flat from the fourth)
-      C_TAIL.forEach((t, i) => { const a = (ax + deg * i) * Math.PI / 180; catAim(B[t], _c5.set(Math.sin(a), -dip * Math.max(0, 1 - i / 3), -Math.cos(a))); }); continue;
+      // dipping down to the ground (dip, less each bone, flat from three sevenths of the way)
+      C_TAIL.forEach((t, i) => { const a = (ax + deg * k7 * i) * Math.PI / 180; catAim(B[t], _c5.set(Math.sin(a), -dip * Math.max(0, 1 - i * k7 / 3), -Math.cos(a))); }); continue;
     }
-    for (const s of C_SIDED.test(n) ? ['_L', '_R'] : ['']) {
-    const b = B[n + s]; if (!b) continue;
-    catTurn(b, _cq4.setFromAxisAngle(C_AX[ax], (s === '_R' && ax !== 'x' ? -deg : deg) * Math.PI / 180));
+    const tm = NT !== 7 && /^tail([1-7])$/.exec(n);
+    if (tm) {   // a turn of the seven-bone tail's bone k: each of the bones along its seventh of the tail takes its share
+      const a0 = (tm[1] - 1) / 7, a1 = tm[1] / 7;
+      for (let j = 0; j < NT; j++) { const o = Math.max(0, Math.min(a1, (j + 1) / NT) - Math.max(a0, j / NT)) * 7; if (o > 1e-6) catTurn(B[C_TAIL[j]], _cq4.setFromAxisAngle(C_AX[ax], deg * o * Math.PI / 180)); }
+      continue;
+    }
+    for (const [nn, share] of n === 'spine' && B.spine2 ? [['spine', 0.5], ['spine2', 0.5]] : [[n, 1]])   // (the back below the chest is two bones: a bend of it shared)
+    for (const s of C_SIDED.test(nn) ? ['_L', '_R'] : ['']) {
+    const b = B[nn + s]; if (!b) continue;
+    catTurn(b, _cq4.setFromAxisAngle(C_AX[ax], (s === '_R' && ax !== 'x' ? -deg : deg) * share * Math.PI / 180));
   } }
   const body = CATR.body, m = CATR.mesh; body.updateMatrixWorld(true);
   let low = Infinity; for (const i of CATR.ground) low = Math.min(low, m.getVertexPosition(i, _c1).applyMatrix4(m.matrixWorld).y);   // (the tail may lie on the floor)
@@ -62,8 +70,12 @@ function catPose(spec) {   // a pose worked out on the cat at the origin: its bo
    z: + lifts its left side). Read top to bottom: each turn is made on the pose as the turns above it left it. */
 const CAT_POSES = {
   stand: { ops: [] },   // as modelled: standing square, tail up in a hook (a friendly carriage), head level
-  // lying like a sphinx, alert: belly down, forearms flat ahead, hind legs folded at its sides, head up, tail along the floor
-  sphinx: { ops: [['arm', 'x', 10], ['fore', 'x', -75], ['paw', 'x', 5], ['thigh', 'x', -60], ['thigh', 'z', 14], ['shin', 'x', 120], ['foot', 'x', -70],
+  // lying like a sphinx, alert: belly down, forearms flat ahead, hind legs folded at its sides, head up, tail along the floor.
+  // Its hips stand ~12 cm up and its thigh is 7 cm, so the hind leg goes down to the floor: the knee forward and out, the
+  // hock and the pad on the floor under the haunch, the foot pointing forward (G, 23/10/2026, a photo of the haunch: the
+  // knee folded up to the hip's height left the hock above it and the foot stuck out of its side, its belly creased;
+  // searched over thigh, shin and foot for the hock and pad on the floor, tools/pets/legsearch.cjs, seen with tools/pets/catview.cjs)
+  sphinx: { ops: [['arm', 'x', 10], ['fore', 'x', -75], ['paw', 'x', 5], ['thigh', 'x', -30], ['thigh', 'z', 10], ['shin', 'x', 30], ['foot', 'x', -70],
     ['neck', 'x', -8], ['tail1', 'x', -42], ['tail2', 'x', -30], ['tail3', 'y', -18], ['tail4', 'y', -22], ['tail5', 'y', -26], ['tail6', 'y', -26], ['tail7', 'y', -20]] },
   // asleep, curled up on its side (as cats sleep when they curl up): the legs folded, then rolled onto its right side,
   // the back bent round toward the belly so the head comes down by the hind paws, chin tucked, the tail wrapped
@@ -91,6 +103,11 @@ const CAT_POSES = {
   air: { ops: [['arm', 'x', -55], ['fore', 'x', -25], ['thigh', 'x', 45], ['shin', 'x', 25], ['foot', 'x', 20], ['tail1', 'x', -40], ['tail2', 'x', -15], ['tail3', 'x', -10]] },
   // the stretch on waking ("bow"): forelegs reaching flat ahead, chest low, haunches up, tail raised
   bow: { ops: [['hips', 'x', 22], ['thigh', 'x', -22], ['arm', 'x', -62], ['fore', 'x', -18], ['paw', 'x', 25], ['neck', 'x', -30], ['head', 'x', -6]] },
+  // after the bow, a hind leg stretched out behind it, its toes spread back, the other three legs as they stand
+  stretch: { ops: [['hips', 'x', -4], ['thigh_L', 'x', 52], ['shin_L', 'x', -38], ['foot_L', 'x', -24], ['toe_L', 'x', 18], ['neck', 'x', -6], ['tail1', 'x', -12]] },
+  // a loaf: lying with its forepaws tucked under its chest and its hind legs under it, back level, head up, the tail along its side
+  loaf: { ops: [['arm', 'x', 45], ['fore', 'x', 105], ['paw', 'x', 50], ['thigh', 'x', -30], ['thigh', 'z', 10], ['shin', 'x', 30], ['foot', 'x', -70],   // (the hind legs as the sphinx's)
+    ['neck', 'x', -2], ['head', 'x', 6], ['tailArc', 62, 24, 1.1]] },
 };
 // grooming, from sitting: a forepaw licked, then drawn over the face
 CAT_POSES.lick = { ops: [...CAT_POSES.sit.ops, ['arm_L', 'x', -62], ['fore_L', 'x', -75], ['paw_L', 'x', -20], ['neck', 'x', 18], ['head', 'x', 18], ['head', 'y', 12]] };
@@ -132,6 +149,7 @@ function rigCat(node) {
   const inner = new THREE.Group(); inner.add(node); inner.rotation.y = -Math.PI / 2; inner.scale.setScalar(CATR.scale);   // the model faces +x: turned to +z
   const body = new THREE.Group(); body.add(inner); CATR.body = body;
   node.traverse(o => { if (o.isBone) CATR.bones[o.name] = o; if (o.isSkinnedMesh) CATR.mesh = o; });
+  C_TAIL.length = 0; C_TAIL.push(...Object.keys(CATR.bones).filter(n => /^tail\d+$/.test(n)).sort((a, b) => a.slice(4) - b.slice(4)));
   { const m = CATR.mesh, J = m.geometry.attributes.skinIndex, W = m.geometry.attributes.skinWeight, tail = m.skeleton.bones.map(b => /^tail/.test(b.name));
     CATR.ground = []; for (let i = 0; i < J.count; i++) { let w = 0; for (let c = 0; c < 4; c++) if (tail[J.getComponent(i, c)]) w += W.getComponent(i, c); if (w < 0.5) CATR.ground.push(i); } }   // what it stands on: all but its tail
   CATR.rest = new Map(Object.values(CATR.bones).map(b => [b, { p: b.position.clone(), q: b.quaternion.clone(), s: b.scale.clone() }]));
@@ -145,7 +163,7 @@ function rigCat(node) {
 function catLegs() {
   const B = CATR.bones, k = CATR.scale; CATR.legs = {}; catRest();
   for (const [f, s, hind] of [['lh', 'L', 1], ['rh', 'R', 1], ['lf', 'L', 0], ['rf', 'R', 0]]) {
-    const up = B[(hind ? 'thigh_' : 'arm_') + s], mid = B[(hind ? 'shin_' : 'fore_') + s], end = B[(hind ? 'foot_' : 'paw_') + s], toe = hind ? B['toe_' + s] : null;
+    const up = B[(hind ? 'thigh_' : 'arm_') + s], mid = B[(hind ? 'shin_' : 'fore_') + s], end = B[(hind ? 'foot_' : 'paw_') + s], toe = B[(hind ? 'toe_' : 'ftoe_') + s] || null;   // (the forepaw's toes their own bone since 22/10/2026)
     const A = cwp(up), K = cwp(mid), J = cwp(end), tipOf = b => cwp(b).add(new THREE.Vector3(0, 1, 0).applyQuaternion(b.getWorldQuaternion(new THREE.Quaternion())).multiplyScalar(b.userData.len * k));
     const tip = tipOf(toe || end), ball = toe ? cwp(toe) : J.clone().lerp(tip, 0.6);   // the pad it stands on
     const contact = new THREE.Vector3(ball.x, 0, ball.z);
@@ -235,20 +253,46 @@ function catLook(dir, k, lim = 1.2) {
   const part = _cL1.identity().slerp(_cq4, 0.45 * k), rest = _cL2.identity().slerp(_cq4, 0.55 * k);
   catTurn(CATR.bones.neck, part); catTurn(head, rest);
 }
-/* ---- the tail: each joint's bend away from its pose, a damped spring pushed by the body's own moves (it swings out
-   on a turn, drops as the cat speeds up, lifts as it lands), stiffer at the root than at the tip */
-function catTail(dt, acc, yawAcc, sway) {
-  const T = CATR.tail, B = CATR.bones; if (!T) return;
-  const side = catAxis('y', _cS), pitch = catAxis('x', _cU);
-  for (let i = 1; i < 7; i++) {
-    const st = T[i], kk = 120 - 14 * i, c = 2 * Math.sqrt(kk) * 0.55;   // natural frequency falling toward the tip, under-damped
-    const fx = -yawAcc * 0.004 * i + sway * (i > 2 ? 1 : 0.3), fy = -(acc.z * 0.03 + acc.y * 0.02);   // a turn swings it out behind, a start or a landing drops it
+/* ---- the tail (G, 22/10/2026: "add behavior vào đuôi mèo để cho nó tự nhiên khi vận động"). Each joint's bend away
+   from its pose is a damped spring (stiffer at the root than at the tip, a little under-damped), pushed by:
+   - the body's own moves: it swings out behind on a turn, drops as the cat speeds up, lifts as it lands;
+   - its mood (C_TMOOD, set each frame by pets.js): a bend that travels from the root to the tip, wider toward the tip
+     (the way a cat's tail sweeps: the base leads, the tip follows a beat later), slow and small at ease, quick when it
+     is intent or cross; the tip's hook (held up and curled over, a friendly greeting carriage); flat: lying, it sweeps
+     along the floor, turned about the world's up, not the body's;
+   - the flicks and the stride's swing pets.js adds (sway).
+   Nothing of it goes into what the cat lies or stands on: a joint the floor would take in turns its bone up to rest on it
+   (floor: the surface's height; the tube's radius kept above it). */
+const C_TMOOD = { wave: 0, f: 0.3, curl: 0, flat: false, floor: -Infinity };
+const CTAIL = { t: 0 };
+const _ct1 = new THREE.Vector3(), _ct2 = new THREE.Vector3(), _ctq = new THREE.Quaternion();
+function catTail(dt, acc, yawAcc, sway, mood = C_TMOOD) {
+  const T = CATR.tail, B = CATR.bones, N = C_TAIL.length; if (!T || N < 2) return;
+  CTAIL.t += dt; const m = mood, k6 = 6 / (N - 1);   // (its pushes were set for six springing joints: each of these takes its share)
+  const side = m.flat ? C_AX.y : catAxis('y', _cS), pitch = catAxis('x', _cU);
+  for (let i = 1; i < N; i++) {
+    const u = i / (N - 1), st = T[i], kk = 120 - 84 * u, c = 2 * Math.sqrt(kk) * 0.55;   // natural frequency falling toward the tip, under-damped
+    const wave = m.wave * Math.pow(0.3 + 0.7 * u, 1.4) * Math.sin(2 * Math.PI * m.f * CTAIL.t - 2.4 * u);   // the travelling sweep
+    const hook = m.curl * 0.55 * THREE.MathUtils.smoothstep(u, 0.5, 1);   // the tip curled over
+    const fx = k6 * (-yawAcc * 0.004 * 6 * u + sway * (u > 0.34 ? 1 : 0.3) + wave), fy = k6 * (-(acc.z * 0.03 + acc.y * 0.02) + hook);   // a turn swings it out behind, a start or a landing drops it
     for (let n = 0; n < 2; n++) { const h = dt / 2;
       st.w.x += (-kk * st.e.x - c * st.w.x + fx * kk) * h; st.w.y += (-kk * st.e.y - c * st.w.y + fy * kk) * h;
       st.e.x += st.w.x * h; st.e.y += st.w.y * h; }
-    st.e.clampScalar(-0.5, 0.5);
+    st.e.clampScalar(-0.5 * k6, 0.5 * k6);
     catTurn(B[C_TAIL[i]], _cq4.setFromAxisAngle(side, st.e.x)); catTurn(B[C_TAIL[i]], _cq4.setFromAxisAngle(pitch, st.e.y));
+  }
+  if (m.floor > -Infinity) catTailFloor(m.floor);
+}
+function catTailFloor(floor) {   // root to tip: a joint below the floor (its radius kept) turns its bone up to lie on it
+  const B = CATR.bones, N = C_TAIL.length, k = CATR.scale;
+  for (let i = 0; i < N; i++) {
+    const b = B[C_TAIL[i]], next = B[C_TAIL[i + 1]]; b.updateWorldMatrix(true, false);
+    const J = cwp(b, _ct1), C = next ? (next.updateWorldMatrix(true, false), cwp(next, _ct2)) : _ct2.set(0, 1, 0).applyQuaternion(b.getWorldQuaternion(_ctq)).multiplyScalar(b.userData.len * k).add(J);
+    const r = (0.011 - 0.005 * (i + 1) / N) * k, v = C.sub(J), L = v.length(), want = floor + r - J.y;
+    if (L < 1e-6 || v.y >= want || J.y < floor + r * 0.5) continue;   // (above it already; or the joint itself is down there: left)
+    const e = Math.asin(THREE.MathUtils.clamp(want / L, -1, 1)), hl = Math.hypot(v.x, v.z) || 1e-6, to = _c5.set(v.x / hl * Math.cos(e), Math.sin(e), v.z / hl * Math.cos(e));
+    catTurn(b, _ctq.setFromUnitVectors(v.normalize(), to));
   }
 }
 
-export { CATR, CAT_POSES, CGAIT, catAim, catAxis, catGait, catKeep, catLook, catReach, catSnap, catStride, catTail, catToward, catTurn, rigCat };
+export { CATR, CAT_POSES, CGAIT, C_TMOOD, catAim, catAxis, catGait, catKeep, catLook, catPose, catReach, catSnap, catStride, catTail, catToward, catTurn, rigCat };

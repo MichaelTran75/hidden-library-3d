@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { R, tick } from '../core/base.js';
-import { canvas, ctex } from '../core/utils.js';
+import { canvas, ctex, shrinkTexture } from '../core/utils.js';
 import { renderer, scene } from '../core/renderer.js';
 import { room } from './room.js';
 import { POST } from '../fx/post.js';
@@ -24,9 +24,9 @@ import { setNeeds } from '../core/loop.js';
      12° to look down at the room's eye, turned 18° toward it. The rod meets the back of the US laboratory, under the
      truss's middle.
    - Drawn sharp over the painted room as the 747 is (pets.js crispPass, on a layer of its own), outlined under the
-     pointer; a click opens ISS.url in a new tab. The pointer finds it in a grid of the cells it fills (issVoxels). */
+     pointer; a click brings it out to turn (showcase.js), and a click on it then opens ISS.url in a new tab. The pointer finds it in a grid of the cells it fills (issVoxels). */
 const ISS = { ok: false, layer: 6, url: 'https://michaeltran75.github.io/iss-station/', hover: false, out: 0, fade: 0, holder: null, mesh: null, box: null, vox: null, hitBoxes: null,
-  P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 6, toneK: 1, outline: true, pad: 12 } };
+  P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 6, toneK: 1, outline: true, pad: 12, dpr: 0.75 } };   // (0.75 px a CSS px: G, 22/10/2026)
 const IS = {
   span: 0.88 * 0.9 * 0.9,                    // across its arrays (m): 71 cm
   tilt: 30 * Math.PI / 180,                  // its arrays from level: near level, raised 30° at the back toward the room's eye (G, 18/10/2026)
@@ -95,7 +95,7 @@ async function buildIss() {
   const g = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(buf, '');
   let mesh = null; g.scene.traverse(o => { if (o.isMesh) mesh = o; }); if (!mesh) return;
   const mat = mesh.material; mat.side = THREE.DoubleSide; mat.fog = false; mat.flatShading = true;
-  if (mat.map) mat.map.anisotropy = 8;
+  if (mat.map) { shrinkTexture(mat.map, 512); mat.map.anisotropy = 8; }   // (its atlas 1024 x 512 kept at 512 x 256: G, 22/10/2026)
   mat.onBeforeCompile = issPatch; mat.customProgramCacheKey = () => 'iss-crisp';
   mesh.layers.set(ISS.layer); mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false;
   // the model in its file's frame, the rod's meeting point at the origin; tipped up to face the room (its +y), the
@@ -133,7 +133,7 @@ async function buildIss() {
     const c2 = canvas(128, 128), gc = c2.getContext('2d'), gr = gc.createRadialGradient(64, 64, 4, 64, 64, 62);
     gr.addColorStop(0, 'rgba(18,11,5,.6)'); gr.addColorStop(0.6, 'rgba(18,11,5,.25)'); gr.addColorStop(1, 'rgba(18,11,5,0)'); gc.fillStyle = gr; gc.fillRect(0, 0, 128, 128);
     const m = new THREE.Mesh(new THREE.PlaneGeometry(0.23 * IS.stand, 0.135 * IS.stand), new THREE.MeshBasicMaterial({ map: ctex(c2, { rep: false }), transparent: true, depthWrite: false, fog: false }));
-    m.rotation.set(-Math.PI / 2, 0, IS.yaw); m.position.set(holder.position.x, R.caseTop + 0.001, holder.position.z); m.renderOrder = 1; room.add(m);
+    m.rotation.set(-Math.PI / 2, 0, IS.yaw); m.position.set(holder.position.x, R.caseTop + 0.001, holder.position.z); m.renderOrder = 1; room.add(m); ISS.shadows = [m];
   }
   // what the pointer finds: the stand's boxes (in the holder's frame), the station's cells
   base.updateMatrixWorld(true); rod.updateMatrixWorld(true);
@@ -159,7 +159,7 @@ function stepIss(dt) {   // the outline in and out (0.14 s), the model faded in 
   return ISS.out + ISS.fade !== was;
 }
 function drawIss() {   // over the picture, with the 747 (in front of the sky beyond the glass)
-  if (!ISS.ok) return;
+  if (!ISS.ok || ISS.away > 0.001) return;   // (out of its shelf: showcase.js draws it)
   const U = ISS.P.quad.material.uniforms, pr = renderer.getPixelRatio(), PU = POST.mat.uniforms;
   U.uOut.value = ISS.out; U.uOutW.value = 2 * pr; U.uHalo.value = 1.6 * pr; U.uFade.value = ISS.fade;
   SHARP.u.uExp.value = PU.exposure.value; SHARP.u.uLift.value = PU.lift.value; SHARP.u.uVeil.value = PU.veil.value;

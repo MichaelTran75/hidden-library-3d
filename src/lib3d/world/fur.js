@@ -19,10 +19,13 @@ import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
    layer from the inside out, so each lies over the one beneath; blended, the crisp pass's target keeps premultiplied
    colour, which its composite expects. The fur is shorter on the head, ears and paws and longer on the tail. The layers
    are copies of the skin in one mesh, bound to the cat's skeleton, so they move with it.                          */
-const FUR = { shells: 20, density: 440, layer: 2, size: 512, bake: null, rt: null, rt2: null, cam: new THREE.Camera(), dil: null,
-  u: { uFurLen: { value: 0.008 }, uComb: { value: new THREE.Vector3(0, 0, -1) }, uFurMask: { value: null } } };
+// (long and fluffy since G, 24/10/2026: "lông mèo là lông xù có độ dài": 8 mm -> 2 cm, 20 -> 28 layers so the longer strands
+// stay whole, each strand curling and leaning its own way, the tips drooping more; then twice as long, 4 cm, 40 layers, its
+// tufts larger (50 across): G, 24/10/2026, "em mèo lông xù dài thêm x2")
+const FUR = { shells: 40, density: 440, layer: 2, size: 512, bake: null, rt: null, rt2: null, cam: new THREE.Camera(), dil: null,
+  u: { uFurLen: { value: 0.04 }, uComb: { value: new THREE.Vector3(0, 0, -1) }, uFurMask: { value: null } } };
 // how long the fur is on each part, as a share of the body's
-const FUR_PART = [[/^head$/, 0.55], [/^ear/, 0.3], [/^(paw|toe|foot)/, 0.5], [/^fore/, 0.8], [/^tail/, 1.3]];
+const FUR_PART = [[/^head$/, 0.6], [/^ear/, 0.3], [/^(paw|toe|ftoe|foot)/, 0.45], [/^fore/, 0.8], [/^tail/, 1.5]];
 function furCoat(skin, patch) {
   const src = skin.geometry, N = FUR.shells, n = src.attributes.position.count, g = new THREE.BufferGeometry();
   for (const [k, a] of Object.entries(src.attributes)) {   // each attribute copied N times (as stored: quantized, interleaved or not)
@@ -71,7 +74,7 @@ function furCoat(skin, patch) {
         vShell = aShell; vFur = aFur;
         vec3 nv = normalize(transformedNormal), cb = mat3(viewMatrix) * uComb, dn = mat3(viewMatrix) * vec3(0.0, -1.0, 0.0);
         cb -= nv * dot(cb, nv);
-        mvPosition.xyz += (nv * aShell + cb * 0.6 * aShell * aShell + dn * 0.15 * aShell * aShell) * uFurLen * aFur;
+        mvPosition.xyz += (nv * aShell + cb * 0.6 * aShell * aShell + dn * 0.32 * aShell * aShell) * uFurLen * aFur;
         gl_Position = projectionMatrix * mvPosition;`);
     sh.fragmentShader = `uniform sampler2D uFurMask; varying float vShell, vFur;
       float furHash(vec2 p) { p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }\n` + sh.fragmentShader
@@ -80,10 +83,16 @@ function furCoat(skin, patch) {
           // the strand this fragment would belong to: its cell, height, place in the cell; thinner toward the tip
           vec2 gc = vMapUv * ${FUR.density.toFixed(1)}, id = floor(gc), f = fract(gc) - 0.5;
           vec2 lean = vec2(furHash(id + 5.17), furHash(id + 9.41)) - 0.5;   // each strand leans its own way as it rises (no rows)
-          float hgt = 0.3 + 0.7 * furHash(id), d = length(f - (vec2(furHash(id + 17.31), furHash(id + 41.73)) - 0.5) * 0.36 - lean * 0.7 * vShell);
+          // fluffy: the strands grow in tufts (~6 mm, 70 across the coat's texture), each tuft of its own height, its strands' tips
+          // drawn together, so the outline is ragged; each strand curls as it rises
+          vec2 cg = vMapUv * 50.0, cid = floor(cg); float hc = 0.45 + 0.55 * furHash(cid + 1.37);
+          vec2 toC = ((cid + 0.5) / 50.0 - (id + 0.5) / ${FUR.density.toFixed(1)}) * ${FUR.density.toFixed(1)}; toC *= min(1.0, 0.35 / max(length(toC), 1e-3));
+          float hgt = (0.3 + 0.7 * furHash(id)) * hc, ph = 6.2832 * furHash(id + 3.71);
+          vec2 curl = vec2(cos(ph + vShell * 7.0), sin(ph + vShell * 7.0)) * 0.22 * vShell;
+          float d = length(f - (vec2(furHash(id + 17.31), furHash(id + 41.73)) - 0.5) * 0.36 - lean * 1.1 * vShell - curl - toC * vShell * vShell);
           float r = 0.6 * (1.0 - vShell / hgt), aw = fwidth(d) + 1e-4;
           float exact = vShell < hgt ? 1.0 - smoothstep(r - aw, r + aw, d) : 0.0;
-          float avg = clamp(1.15 * (1.0 - vShell) * (1.0 - vShell), 0.0, 1.0) * clamp((1.0 - vShell) / 0.7, 0.0, 1.0);   // the same, on average
+          float sh = clamp(vShell / hc, 0.0, 1.0), avg = clamp(1.15 * (1.0 - sh) * (1.0 - sh), 0.0, 1.0) * clamp((1.0 - sh) / 0.7, 0.0, 1.0);   // the same, on average (by its tuft)
           float px = length(fwidth(gc)), cover = mix(exact, avg, smoothstep(0.3, 1.1, px));
           vec2 e0 = (vMapUv - vec2(0.4019, 0.2964)) / vec2(0.0125, 0.0185), e1 = (vMapUv - vec2(0.4985, 0.2969)) / vec2(0.0125, 0.0185);   // the eyes (as in pets.js)
           cover *= smoothstep(0.35, 0.7, texture2D(uFurMask, vMapUv).g) * step(0.05, vFur) * smoothstep(0.9, 1.25, min(dot(e0, e0), dot(e1, e1)));   // none on the eyes or the nose

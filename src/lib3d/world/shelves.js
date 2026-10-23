@@ -1,7 +1,7 @@
 import './books.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { R } from '../core/base.js';
+import { PARTS, R } from '../core/base.js';
 import { boardGeo, place, rand } from '../core/utils.js';
 import { MAT } from './materials.js';
 import { room } from './room.js';
@@ -16,7 +16,7 @@ function buildShelves() {
   // ---- tall bookshelf on the right wall: columns along z, rows along y
   const z0 = R.zB + 0.02, z1 = R.zF - 0.02, colW = 0.64, rowH = 0.37, dep = R.xW - R.xS, th = 0.028;
   const ncol = Math.round((z1 - z0) / colW), cw = (z1 - z0) / ncol; const nrow = Math.floor((R.H - 0.12) / rowH), rh = (R.H - 0.12) / nrow;
-  const backPanel = new THREE.Mesh(boardGeo(0.02, R.H, z1 - z0, 1), MAT.shelfBack); backPanel.position.set(R.xW - 0.01, R.H / 2, (z0 + z1) / 2); backPanel.receiveShadow = true; room.add(backPanel); paintLightly(backPanel, 0.1);   // (G, 18/10/2026: "kệ sách và toàn bộ sách 10% less water color")
+  const backPanel = new THREE.Mesh(boardGeo(0.02, R.H, z1 - z0, 1), MAT.shelfBack); backPanel.position.set(R.xW - 0.01, R.H / 2, (z0 + z1) / 2); backPanel.receiveShadow = true; room.add(backPanel); PARTS.shelves.push(backPanel); paintLightly(backPanel, 0.1);   // (G, 18/10/2026: "kệ sách và toàn bộ sách 10% less water color")
   for (let i = 0; i <= ncol; i++) parts.push(place(boardGeo(dep, R.H, th, 1, RND), R.xS + dep / 2, R.H / 2, z0 + i * cw));
   parts.push(place(boardGeo(dep + 0.01, 0.1, z1 - z0, 1, RND), R.xS + dep / 2, 0.05, (z0 + z1) / 2)); // plinth
   for (let j = 1; j <= nrow; j++) {
@@ -71,7 +71,7 @@ function buildShelves() {
   });
   MAT.shelfOak.vertexColors = true;
   const shelves = new THREE.Mesh(mergeGeometries(parts), MAT.shelfOak); paintLightly(shelves, 0.1, 0.85);   // (10 % less watercolour, near 75 %, then each 10 % less again: G, 18/10/2026: "kệ sách và toàn bộ sách 10% less water color")
-  shelves.castShadow = shelves.receiveShadow = true; room.add(shelves);
+  shelves.castShadow = shelves.receiveShadow = true; room.add(shelves); PARTS.shelves.push(shelves);   // (shown in turn: core/loop.js start)
 }
 
 const RND = 0.004, CAVE = 0.5;   // the boards' edges rounded off 4 mm; the light left at the back of a cell (G, 18/10/2026: the shelves made realistic)

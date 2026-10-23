@@ -2,13 +2,14 @@ import './leaves.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { canvas, ctex } from '../core/utils.js';
 import { camera, renderer } from '../core/renderer.js';
-import { POST } from '../fx/post.js';
+import { POST, QUAD_VS } from '../fx/post.js';
 import { V3 } from '../core/views.js';
 import { NIGHT } from '../fx/night.js';
 import { UIS } from './library.js';
 import { printTitle } from './book-data.js';
 import { inkFor, relabelHero } from './hero-books.js';
-import { loadMoon, moonAge, stepMeteors } from '../fx/sky.js';
+import { SKYN, loadMoon, moonAge, stepMeteors } from '../fx/sky.js';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { FLY } from '../fx/fireflies.js';
 import { BULB } from '../fx/glow.js';
 import { LIGHTS } from '../world/lights.js';
@@ -19,8 +20,9 @@ import { drawRain } from '../fx/rain.js';
 import { drawPlane } from '../world/b747.js';
 import { drawClock, drawInspect } from '../world/clock.js';
 import { drawCamInspect, drawCamera } from '../world/camera.js';
+import { drawShows } from '../world/showcase.js';
 import { drawIss } from '../world/iss.js';
-import { drawGardenBook } from '../world/gardenbook.js';
+import { drawFloorSharp, drawGardenBook } from '../world/gardenbook.js';
 
 /* ---- the titles on the shelves' spines: drawn after the watercolour pass so they stay sharp, and hidden wherever the
    room stands in front of the book (each pixel is tested against the room's depth); shown only once its section is
@@ -83,7 +85,32 @@ function spinePx(bk) {   // how wide the spine shows on screen, in pixels
   if (Math.abs(_sa.z) > 1 || Math.abs(_sb.z) > 1) return 0;
   return Math.hypot((_sa.x - _sb.x) * innerWidth, (_sa.y - _sb.y) * innerHeight) / 2;
 }
+/* things of the sharp layer faded in the first time they show (G, 20/10/2026: "khi loading complete mọi thứ cần fade in animation"):
+   the night sky, the bulb's glow, the fireflies; a factor 0..1 from when each first showed (seen: it shows now) */
+const BORN = {};
+function bornFade(k, seen, dur = 1.1) { if (!seen) return BORN[k] ? 1 : 0; if (!BORN[k]) BORN[k] = performance.now(); const f = Math.min(1, (performance.now() - BORN[k]) / (dur * 1000)); if (f < 1) BORN.moving = true; return f * f * (3 - 2 * f); }
+/* the Milky Way at 0.75 px a CSS px (G, 20/10/2026: "giảm độ phân giải của giải ngân hà"): its shell drawn into a target of its own,
+   cleared clear, then laid on the canvas as it would have been drawn there (premultiplied: ONE, ONE − alpha); its depth
+   test reads the room's depth through that target's size (uRes). The stars and the moon stay sharp, drawn after it. */
+const MWR = { rt: null, quad: null, cc: new THREE.Color() };
+function mwTarget(w, h) {   // its target and the quad that lays it over (made the first time either is wanted)
+  if (!MWR.rt) { MWR.rt = new THREE.WebGLRenderTarget(w, h, { depthBuffer: false });
+    MWR.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: MWR.rt.texture } }, vertexShader: QUAD_VS, fragmentShader: 'uniform sampler2D t; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv); }',
+      transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false })); }
+}
+// what the Milky Way draws with, for its shaders to be made before the first night (core/loop.js precompileLightStates): [object, target]
+function milkyWayParts() { if (!OVER.mw) return []; mwTarget(4, 4); return [[OVER.mw, MWR.rt], [MWR.quad._mesh, null]]; }
+function drawMilkyWay() {
+  const mw = OVER.mw; if (!mw) return;
+  const R = OVER.u.uRes.value, W = R.x, H = R.y, k = Math.min(1, 0.75 / renderer.getPixelRatio()), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
+  mwTarget(w, h);
+  if (MWR.rt.width !== w || MWR.rt.height !== h) MWR.rt.setSize(w, h);
+  const cc = renderer.getClearColor(MWR.cc), ca = renderer.getClearAlpha(); R.set(w, h);
+  renderer.setRenderTarget(MWR.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(mw, camera);
+  renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); R.set(W, H); MWR.quad.render(renderer);
+}
 function drawWords() {   // the sharp layer: titles on the spines, words of the books on the move, and the night sky
+  BORN.moving = false;
   sweepCrisp();   // (targets of things off the screen a while let go: pets.js)
   let any = false;
   for (const sec of UIS.secs) for (const bk of sec.books) {
@@ -91,21 +118,28 @@ function drawWords() {   // the sharp layer: titles on the spines, words of the 
     const on = !bk.away && (UIS.open === sec || UIS.mode === sec.group) && spinePx(bk) >= 14; if (on) { shelfSpine(bk).visible = true; any = true; } else if (bk.shelfSpine) bk.shelfSpine.visible = false;
   }
   if (OVER.sky) { const night = NIGHT.u.value > 0.005 && REVEAL.stage >= 2; OVER.sky.visible = night; if (night) { OVER.u.uTime.value = clock.getElapsedTime(); OVER.moonAge.value = moonAge(); loadMoon(); stepMeteors(clock.getElapsedTime(), camera); } }
-  if (FLY.pts) { FLY.on = FLY.u.value > 0.01; FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
+  if (FLY.pts) { FLY.on = FLY.u.value > 0.01; if (FLY.on) { FLY.u0 = FLY.u.value; FLY.u.value *= bornFade('fly', true); } FLY.pts.visible = FLY.on; if (FLY.on) { any = true; FLY.t.value = clock.getElapsedTime(); } }
   if (BULB.mesh) {   // the bulb over the sofa glowing, while it is on (its glow's strength as the hour set it: fx/hour.js)
-    const P = LIGHTS.pendant; BULB.on.value = P ? P.userData.glow.material.opacity / 0.45 : 0; BULB.mesh.visible = BULB.on.value > 0.01;
+    const P = LIGHTS.pendant; BULB.on.value = (P ? P.userData.glow.material.opacity / 0.45 : 0) * bornFade('bulb', BULB.on.value > 0); BULB.mesh.visible = BULB.on.value > 0.01;
     if (BULB.mesh.visible) { any = true; BULB.t.value = clock.getElapsedTime(); }
   }
   OVER.u.uDepth.value = POST.rt.depthTexture; renderer.getDrawingBufferSize(OVER.u.uRes.value); if (OVER.u.uPR) OVER.u.uPR.value = renderer.getPixelRatio();
   // the night sky first: it darkens the dome behind it (fx/sky.js), so the rain, the deck, the animals and the rest stand in front of it
-  if (OVER.sky && OVER.sky.visible) { renderer.autoClear = false; renderer.render(OVER.skyScene, camera); renderer.autoClear = true; }
-  drawRain(); drawDeck(); drawPlane(); drawIss(); drawGardenBook(); drawClock(); drawCamera(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
+  if (OVER.sky && OVER.sky.visible) {   // (faded in the first time it shows; its Milky Way at a lower resolution)
+    const n = SKYN.value; SKYN.value = n * bornFade('sky', n > 0.01, 1.4);
+    renderer.autoClear = false; drawMilkyWay(); if (OVER.mw) OVER.mw.visible = false; renderer.render(OVER.skyScene, camera); if (OVER.mw) OVER.mw.visible = true; renderer.autoClear = true;
+    SKYN.value = n;
+  }
+  drawRain(); drawFloorSharp(); drawDeck(); drawPlane(); drawIss(); drawGardenBook(); drawClock(); drawCamera(); drawPets();   // (the rain first: the deck, the 747 on its shelf and the animals stand in front of it)
   // the shelves' titles and the fireflies, then the book out of the shelf over them (sharp: it is not in the picture, so the
   // room's depth does not hide the titles behind it)
   if (any) { renderer.autoClear = false; renderer.render(OVER.scene, camera); renderer.autoClear = true; }
+  if (FLY.u0 !== undefined) { FLY.u.value = FLY.u0; FLY.u0 = undefined; }   // (its own level back: fx/hour.js sets it)
   drawSharpBooks();
   drawInspect();   // (the clock out of its shelf: over all of it, the room dimmed)
   drawCamInspect();   // (the camera out of its shelf: the same)
+  drawShows();   // (the 747 or the ISS out, turning: the same)
 }
 
-export { OVER, drawWords, relabelBooks };
+const sharpFading = () => !!BORN.moving;   // (a first fade-in under way: core/loop.js draws every frame)
+export { OVER, drawWords, relabelBooks, sharpFading, milkyWayParts };

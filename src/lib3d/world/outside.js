@@ -8,6 +8,7 @@ import { WIND } from './wind.js';
 import { buildBushes } from './bush.js';
 import { NIGHT } from '../fx/night.js';
 import { SKYU } from '../fx/hour.js';
+import { paintLightly } from '../fx/post.js';
 
 /* ---------------------------------------------------------------- outside */
 const outside = new THREE.Group(); scene.add(outside);
@@ -17,11 +18,11 @@ function buildOutside(assets) {
   const gc = canvas(512, 512), gg = gc.getContext('2d'); const id = gg.createImageData(512, 512);
   for (let y = 0; y < 512; y++) for (let x = 0; x < 512; x++) { const n = fbm(x / 512 * 16, y / 512 * 16, 5, 16, 16); const c = hsl(88 + n * 20, .35, .28 + n * .2); const o = (y * 512 + x) * 4; id.data[o] = c.r * 255; id.data[o + 1] = c.g * 255; id.data[o + 2] = c.b * 255; id.data[o + 3] = 255; }
   gg.putImageData(id, 0, 0); const grassT = ctex(gc); grassT.repeat.set(40, 40);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), new THREE.MeshStandardMaterial({ map: grassT, roughness: 1 })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.12; ground.receiveShadow = true; outside.add(ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), new THREE.MeshStandardMaterial({ map: grassT, roughness: 1 })); ground.rotation.x = -Math.PI / 2; ground.position.y = -0.12; ground.receiveShadow = true; outside.add(ground); paintLightly(ground, 0.5);   // (the garden's ground 50 % less watercolour: G, 24/10/2026)
   const pc = canvas(512, 512), pg = pc.getContext('2d'); pg.fillStyle = '#9a968c'; pg.fillRect(0, 0, 512, 512);
   for (let y = 0; y < 8; y++) for (let x = 0; x < 6; x++) { const ox = (y % 2) * 40; pg.fillStyle = hsl(40, .06, .62 + rand() * .12).getStyle(); pg.fillRect(x * 86 + ox + 2 - 43, y * 64 + 2, 82, 60); pg.fillRect(x * 86 + ox + 2 + 473, y * 64 + 2, 82, 60); }
   const patT = ctex(pc); patT.repeat.set(2, 3.5);
-  const patio = new THREE.Mesh(new THREE.PlaneGeometry(4, 11), new THREE.MeshStandardMaterial({ map: patT, roughness: .95 })); patio.rotation.x = -Math.PI / 2; patio.position.set(R.xL - 2.2, -0.1, -3.1); patio.receiveShadow = true; outside.add(patio);
+  const patio = new THREE.Mesh(new THREE.PlaneGeometry(4, 11), new THREE.MeshStandardMaterial({ map: patT, roughness: .95 })); patio.rotation.x = -Math.PI / 2; patio.position.set(R.xL - 2.2, -0.1, -3.1); patio.receiveShadow = true; outside.add(patio); paintLightly(patio, 0.5);
   // sky dome
   const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, fog: false, uniforms: { uNight: NIGHT.u, uTime: WIND.t, ...SKYU },
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
@@ -91,6 +92,10 @@ function buildOutside(assets) {
   // x and z ranges: only the front glass, behind every view, looks at it), or behind the viewer's plane
   const unseen = (x, z, rad) => (x - rad > R.xL && z - rad > R.zB + 0.2) || z - rad > -0.3;
   for (const k of ['A', 'B', 'C']) spots[k] = spots[k].filter(p => !unseen(p.x, p.z, dims[k].rad * T[k].scale * p.s * 1.05));
+  // and those no view showed a pixel of (tools: occlusion.cjs, every view at eight window shapes, by day and by night: G,
+  // 23/10/2026, "những chỗ nào mà nó bị khuất em xóa thẳng tay"); none of the trees casts a shadow, so none is missed in the room
+  const HIDDEN_TREES = [[-48.69,-1.96],[-41.99,-18.6],[-41.32,-7.46],[-38.48,-0.19],[-38.15,-30.73],[-30.86,-18.23],[-29.84,-5.88],[-29.0,-11.59],[-28.95,2.68],[-24.48,-14.43],[-21.67,-4.24],[-17.24,-16.49],[-10.03,3.21],[-9.8,-3.0],[-8.6,0.6],[-5.4,2.6]];
+  for (const k of ['A', 'B', 'C']) spots[k] = spots[k].filter(p => !HIDDEN_TREES.some(([x, z]) => Math.abs(p.x - x) < 0.03 && Math.abs(p.z - z) < 0.03));
   // a few young trees in that garden, far enough and small enough that their crowns stop below the moon (~9° up)
   for (const [k, az, d, top, ry] of [['A', 9, 30, 8.5, 1.1], ['C', 19, 24, 8.8, 4.0], ['B', 24.5, 17, 9.0, 2.3]]) {
     const a = az * Math.PI / 180, h = REF.eye.y + 0.12 + d * Math.tan(top * Math.PI / 180);
@@ -120,7 +125,7 @@ function buildOutside(assets) {
     const theta = az => { const dx = -Math.sin(az), dz = -Math.cos(az), ox = 2, oz = 3, b = ox * dx + oz * dz, t = -b + Math.sqrt(b * b - (ox * ox + oz * oz - 4900));
       return (Math.atan2(ox + t * dx, oz + t * dz) + Math.PI * 2) % (Math.PI * 2); };   // cylinder angle (x = r sin θ, z = r cos θ) seen at azimuth az
     const g0 = theta(5 * Math.PI / 180), g1 = theta(31 * Math.PI / 180), gap = g1 - g0, rest = Math.PI * 2 - gap;
-    const t = ctex(halfCanvas(halfCanvas(c))); t.wrapT = THREE.ClampToEdgeWrapping; t.repeat.set(3 * rest / (Math.PI * 2), 1);   // (the far woods at a quarter: utils.js halfCanvas)
+    const t = ctex(halfCanvas(halfCanvas(halfCanvas(c)))); t.wrapT = THREE.ClampToEdgeWrapping; t.repeat.set(3 * rest / (Math.PI * 2), 1);   // (the far woods at an eighth: utils.js halfCanvas)
     const mat = new THREE.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.3, side: THREE.BackSide, fog: true, color: 0xb8c4a8 });
     const ring = new THREE.Mesh(new THREE.CylinderGeometry(70, 70, 26, 64, 1, true, g1, rest), mat);
     ring.position.set(-2, 11, -3); outside.add(ring); LIGHTS.ring = ring;
@@ -135,7 +140,8 @@ function buildOutside(assets) {
   // front of it at x −2.2, z −6 among them), the rest spread along it
   const bushes = [[-2.5, -8.3, 1.4], [-1.9, 1.3, 1.0], [-5.0, -7.4, 1.3], [-4.6, -0.6, 1.0], [-0.4, -9.9, 1.3], [1.3, -9.8, 1.1], [2.8, -10.1, 1.2], [-1.9, -10.2, 1.3],
     [-0.8, 3.6, 1.1], [1.8, 3.9, 1.0], [-6.6, -3.2, 1.3], [4.2, -12.4, 1.4]].filter(([x, z, sc]) => !unseen(x, z, 1.6 * sc));
-  outside.add(buildBushes(bushes));
+  const HIDDEN_BUSHES = [[-1.9,1.3],[-5.0,-7.4],[-4.6,-0.6],[1.3,-9.8],[2.8,-10.1],[-6.6,-3.2],[4.2,-12.4]];   // (no view shows them, and bushes cast no shadow: as the trees above)
+  outside.add(buildBushes(bushes.filter(([x, z]) => !HIDDEN_BUSHES.some(([a, b]) => Math.abs(x - a) < 0.03 && Math.abs(z - b) < 0.03))));
 }
 function lodLeaves(geo, keep, grow, seed = 5) {
   // drop whole leaf cards (connected by index) and enlarge the survivors around their own centre. A card is kept or

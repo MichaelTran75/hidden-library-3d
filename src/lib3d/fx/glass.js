@@ -22,7 +22,7 @@ import { NIGHT } from './night.js';
      sky through it is clear (G, 16/10/2026).
    The cube map is taken again whenever the light changes (the hour, day to night), at most once a second; the panes
    are hidden while it is taken. They write no depth: where the sky shows through them, the stars still show. */
-const GLASS = { mat: null, cube: null, cam: null, live: false, at: new THREE.Vector3((R.xL + R.xS) / 2, 1.6, (R.zB + R.zF) / 2), last: { n: -1, s: -1, x: 0, t: -1e9 } };
+const GLASS = { mat: null, cube: null, cam: null, live: false, at: new THREE.Vector3((R.xL + R.xS) / 2, 1.6, (R.zB + R.zF) / 2), last: { n: -1, s: -1, x: 0, t: -1e9 }, face: -1 };   // (face: the next of its six views to draw, -1 when none)
 function glassMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: { uEnv: { value: GLASS.cube.texture }, uBoxMin: { value: new THREE.Vector3(R.xL, 0, R.zB) }, uBoxMax: { value: new THREE.Vector3(R.xW, R.H, R.zF) }, uCap: { value: GLASS.at }, uDay: { value: 1 } },
@@ -57,8 +57,8 @@ function glassMaterial() {
 // once the room is built: the cube map and the panes given their glass. The room is first looked at once the garden and
 // the sky are in (GLASS.live, set as the sky is let in: core/loop.js reveal), so that they are seen in it too; until then
 // the panes reflect nothing (an unfilled map reads black), and the first picture waits for no extra six views
-function buildGlass() {
-  GLASS.cube = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+function buildGlass() {   // (its cube 256 -> 128: the room's faint mirror image, 4 MB -> 1 MB; G, 21/10/2026)
+  GLASS.cube = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
   GLASS.cam = new THREE.CubeCamera(0.05, 120, GLASS.cube); GLASS.cam.position.copy(GLASS.at); GLASS.cam.updateMatrixWorld(true);
   GLASS.mat = glassMaterial();
   const pane = room.userData.glass; if (pane) pane.material = GLASS.mat;
@@ -69,10 +69,21 @@ function stepGlass(force) {
   const n = NIGHT.u.value, sun = LIGHTS.sun, si = sun ? sun.intensity : 0, sx = sun ? sun.position.x + sun.position.y * 0.37 + sun.position.z * 0.11 : 0, L = GLASS.last, now = performance.now();
   GLASS.mat.uniforms.uDay.value = 1 - n;
   if (!GLASS.live) return;
+  const pane = room.userData.glass, vis = pane ? pane.visible : false;
+  if (GLASS.face >= 0 && !force) {   // a view of the six, one a frame: each is a room's worth of drawing, and all six at once held
+    // the page ~0.1 s, four times over in the day/night switch's time-lapse (G, 23/10/2026: "fix the lag transition")
+    if (pane) pane.visible = false;
+    const c = GLASS.cam, rt = GLASS.cube, i = GLASS.face, cur = renderer.getRenderTarget(), cf = renderer.getActiveCubeFace(), cm = renderer.getActiveMipmapLevel(), gm = rt.texture.generateMipmaps;
+    rt.texture.generateMipmaps = gm && i === 5;   // (the map's mipmaps once its last view is in)
+    renderer.setRenderTarget(rt, i); renderer.render(scene, c.children[i]); rt.texture.generateMipmaps = gm; renderer.setRenderTarget(cur, cf, cm);
+    if (pane) pane.visible = vis;
+    GLASS.face = i < 5 ? i + 1 : -1; return;
+  }
   if (!force && (now - L.t < 1000 || (Math.abs(n - L.n) < 0.03 && Math.abs(si - L.s) < 0.06 * Math.max(0.3, L.s) && Math.abs(sx - L.x) < 0.3))) return;
   L.n = n; L.s = si; L.x = sx; L.t = now;
-  const pane = room.userData.glass, vis = pane ? pane.visible : false; if (pane) pane.visible = false;
-  GLASS.cam.update(renderer, scene);
+  if (!force) { GLASS.face = 0; return stepGlass(); }   // (begun now, the five others in the next frames)
+  if (pane) pane.visible = false;
+  GLASS.cam.update(renderer, scene); GLASS.face = -1;   // (all at once when asked: the first look, as the sky comes in)
   if (pane) pane.visible = vis;
 }
 

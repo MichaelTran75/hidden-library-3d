@@ -1,6 +1,8 @@
 import './fireflies.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { OVER } from '../ui/words.js';
+import { camera } from '../core/renderer.js';
+import { LIGHTS } from '../world/lights.js';
 
 /* ---- the bulb over the sofa, glowing (G, 18/10/2026: "em cho glowing animation vào bóng này"). Drawn sharp over the
    picture like the fireflies: the room is painted only when something in it changes, and this goes with the sharp
@@ -10,7 +12,7 @@ import { OVER } from '../ui/words.js';
    swells more with the breath; just enough of it (G, 18/10/2026: "glowing ở mức vừa đủ"): the ring round the bulb
    about a quarter brighter than the painting has it, give or take a tenth with the breath, its glass not blown white.
    On only while the bulb is (fx/hour.js: the pendant's glow). */
-const BULB = { mesh: null, on: { value: 0 }, t: { value: 0 }, at: { value: new THREE.Vector3() }, size: { value: 0.42 } };
+const BULB = { mesh: null, on: { value: 0 }, t: { value: 0 }, at: { value: new THREE.Vector3() }, size: { value: 0.508 } };   // (10 % larger with the bulb, twice: G, 21/10/2026)
 function buildBulbGlow(at) {
   BULB.at.value.copy(at);
   const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
@@ -31,4 +33,25 @@ function buildBulbGlow(at) {
   m.frustumCulled = false; m.visible = false; OVER.scene.add(m); BULB.mesh = m;
 }
 
-export { BULB, buildBulbGlow };
+/* ---- under the pointer the bulb over the sofa glows half as bright again (G, 23/10/2026: "khi hover vào bóng đèn thì sáng hơn
+   50%"; then its glow over twice the area: "khi hover over thì glowing bigger 2x bigger area"): its glow, its filament and its
+   glass, eased in and out (~0.25 s); the light it casts on the room stays as it is.
+   The hour sets their strength (fx/hour.js: the pendant's light, 40 at full); this goes over it, every frame */
+const BHOV = { k: 0, px: -1e4, py: -1e4, v: new THREE.Vector3(), on: false };
+function stepBulb(dt) {
+  const P = LIGHTS.pendant; if (!P) return false;
+  if (!BHOV.on) { BHOV.on = true; addEventListener('pointermove', e => { BHOV.px = e.clientX; BHOV.py = e.clientY; }, { passive: true }); document.addEventListener('pointerleave', () => { BHOV.px = BHOV.py = -1e4; }); }
+  const U = P.userData, lit = U.light.intensity / 40; let over = 0;
+  if (lit > 0.01) {
+    U.glow.getWorldPosition(BHOV.v); const d = camera.position.distanceTo(BHOV.v), v = BHOV.v.project(camera), x = (v.x + 1) / 2 * innerWidth, y = (1 - v.y) / 2 * innerHeight;
+    const r = Math.max(12, 0.08 / d * innerHeight / 2 / Math.tan(camera.fov * Math.PI / 360));   // (the glass's size on the screen, a little more)
+    over = v.z < 1 && Math.hypot(BHOV.px - x, BHOV.py - y) < r ? 1 : 0;
+  }
+  const k0 = BHOV.k; BHOV.k += (over - BHOV.k) * Math.min(1, dt / 0.08); if (Math.abs(over - BHOV.k) < 0.005) BHOV.k = over;
+  const m = 1 + 0.5 * BHOV.k; if (!U.glow.userData.s0) U.glow.userData.s0 = U.glow.scale.x;
+  U.glow.scale.setScalar(U.glow.userData.s0 * (1 + (Math.SQRT2 - 1) * BHOV.k));   // (its glow spread over twice the area: G, 24/10/2026)
+  U.glow.material.opacity = 0.45 * lit * m; if (U.fil) U.fil.material.opacity = 0.8 * lit * m; U.coil.material.emissiveIntensity = 9 * lit * m; U.glass.emissiveIntensity = 0.35 * lit * m;
+  return BHOV.k !== k0;   // (moving: the room is drawn again)
+}
+
+export { BHOV, BULB, buildBulbGlow, stepBulb };

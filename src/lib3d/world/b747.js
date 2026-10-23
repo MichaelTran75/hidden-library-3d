@@ -2,7 +2,7 @@ import './pets.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { R, tick } from '../core/base.js';
-import { canvas, ctex } from '../core/utils.js';
+import { canvas, ctex, halfCanvas } from '../core/utils.js';
 import { renderer, scene } from '../core/renderer.js';
 import { room } from './room.js';
 import { B7_CELL, SHELF } from './shelves.js';
@@ -14,8 +14,8 @@ import { setNeeds } from '../core/loop.js';
    A desk model of a Boeing 747-8 Intercontinental, 1:128 (58 cm long; 1:200 made 30 % larger, G 17/10/2026, then 20 % more
    with its stand, G 18/10/2026: "em cho máy bay 20% bigger"), on a walnut stand, in the middle row of the Economy bay, a few of its books left at the left end (G, 17/10/2026: "em thay sách ở ngăn màu xanh bằng model boing 747, learn vỏ máy bay 747
    from glb asset, khi hover vào máy bay thì tạo viền select, khi click vào thì open newtab tới …"). The pointer on it
-   draws a selection outline round it (white, a soft dark edge outside, as the page's own outlines); a click opens
-   PLANE.url in a new tab.
+   draws a selection outline round it (white, a soft dark edge outside, as the page's own outlines); a click brings it
+   out to turn (showcase.js), and a click on it then opens PLANE.url in a new tab.
    - Built in code from measurements of "Boeing 747-8i" by OUTPISTON (CC BY-NC-SA 4.0; 3D Assets/aviation/
      boeing-747-8i.glb). Only numbers were taken from it: its fuselage's sections (superellipse halves fitted at 37
      stations, within 2 % of its size), the wing's, the tailplane's and the fin's planforms, heights and thickness
@@ -28,7 +28,7 @@ import { setNeeds } from '../core/loop.js';
    - Drawn sharp over the painted room like the animals (pets.js crispPass: lit by the room's lights, toned as the
      painting, hidden where the room is nearer), on a layer of its own. The pointer finds it through a coarse copy. */
 const PLANE = { ok: false, layer: 4, url: 'https://www.investingforum.info/copy-of-piano?rc=test-site', hover: false, out: 0, fade: 0, holder: null, hit: null, box: null,
-  P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 4, toneK: 1, outline: true, pad: 12 } };
+  P: { rt: null, quad: null, paint: 0, wash: 0.25, layer: 4, toneK: 1, outline: true, pad: 12, dpr: 0.75 } };   // (dpr: 1 px a CSS px: G, 20/10/2026; 0.75: G, 22/10/2026)
 const B7_SCALE = 1.3 * 1.2 / 200, B7_STAND = 1.2;   // (the model 1:128; its stand grown with it)
 
 // the aircraft in metres (the real one: nose toward +z, y up), as a group of meshes; bare: geometry only (the pointer's copy)
@@ -157,7 +157,7 @@ function shape747(q, bare) {
     }
     g.fillStyle = C.white;   // (and the posts between its panes)
     for (const z of [30.12, 30.78]) { const S = section(z), a = sAt(S, 4.85), b = sAt(S, 4.2), x = U(z); g.fillRect(x - 0.5, Vs(a), 1.4, Vs(b - a)); g.fillRect(x - 0.5, Vs(1 - b), 1.4, Vs(b - a)); }
-    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+    const t = new THREE.CanvasTexture(halfCanvas(cv)); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;   // (painted at 2048, kept at 1024: G, 20/10/2026)
   }
 
   // ---- the wing-body fairing, painted as the belly round it
@@ -309,7 +309,7 @@ async function buildPlane() {
     const tex = ctex(c2, { rep: false });
     for (const [w, d, k] of [[0.2, 0.13, 1], [0.47, 0.26, 0.35]]) {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(w * B7_STAND, d * B7_STAND), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: k, depthWrite: false, fog: false }));
-      m.rotation.set(-Math.PI / 2, 0, yaw - Math.PI / 2); m.position.set(holder.position.x, y0 + 0.001, holder.position.z); m.renderOrder = 1; room.add(m);
+      m.rotation.set(-Math.PI / 2, 0, yaw - Math.PI / 2); m.position.set(holder.position.x, y0 + 0.001, holder.position.z); m.renderOrder = 1; room.add(m); (PLANE.shadows ||= []).push(m);
     }
   }
   // the pointer's copy: coarse, invisible, where the model is
@@ -336,7 +336,7 @@ function stepPlane(dt) {   // the outline in and out (0.14 s), the model faded i
   return PLANE.out + PLANE.fade !== was;
 }
 function drawPlane() {   // over the picture, before the animals (the shelf is behind where they go)
-  if (!PLANE.ok) return;
+  if (!PLANE.ok || PLANE.away > 0.001) return;   // (out of its shelf: showcase.js draws it)
   const U = PLANE.P.quad.material.uniforms, pr = renderer.getPixelRatio(), PU = POST.mat.uniforms;
   U.uOut.value = PLANE.out; U.uOutW.value = 2 * pr; U.uHalo.value = 1.6 * pr; U.uFade.value = PLANE.fade;
   SHARP.u.uExp.value = PU.exposure.value; SHARP.u.uLift.value = PU.lift.value; SHARP.u.uVeil.value = PU.veil.value;

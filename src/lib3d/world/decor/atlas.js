@@ -1,5 +1,5 @@
 import './kit.js';   // build order: the module before this one runs first
-import { canvas, ctex, rng } from '../../core/utils.js';
+import { canvas, ctex, halfCanvas, rng } from '../../core/utils.js';
 
 // the canvas for everything painted: 256 px slots on a 1024 px sheet
 function decorAtlas() {
@@ -89,7 +89,7 @@ function decorAtlas() {
     for (const [x, y, s] of [[0.62, 0.66, 0.07], [0.75, 0.68, 0.06], [0.68, 0.6, 0.055]]) fill('#e08a2e', () => g.arc(W * x, H * y, W * s, 0, 7));
     fill('rgba(255,255,255,.35)', () => g.ellipse(W * 0.35, H * 0.5, W * 0.03, H * 0.08, 0, 0, 7));
   });
-  return { tex: ctex(c, { rep: false }), slots };
+  return { tex: ctex(halfCanvas(c), { rep: false }), slots };   // (painted at 1024, kept at 512: G, 21/10/2026, the page's memory)
 }
 
 export { decorAtlas };

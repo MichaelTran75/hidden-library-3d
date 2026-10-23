@@ -87,16 +87,18 @@ function applyHour(e, az) {
   if (ov > 0.001) scene.fog.color.lerp(_ovf.copy(OVC.fog).multiplyScalar(lerp(1, 0.18, n)), 0.5 * ov);
   scene.fog.density = 0.03 * (1 + 0.45 * WX.k);   // (the rain's haze)
   if (L.ring && D.ring) { tint3(L.ring.material.color, D.ring, TINT.warm.ring, TINT.blue.ring, NC.ring, S); L.ring.material.color.multiplyScalar(lerp(0.55 + 0.45 * Math.min(amb, 1), 1, n)); }
+  // the daylight's shade behind the pieces (world/furnish.js windowShadow), going with the daylight
+  if (L.winShadows) for (const w of L.winShadows) w.material.opacity = Math.max(0, 1 - n * 1.2);
   // the lamps
   const k = S.lamps;
   L.table.userData.light.intensity = lerp(D.table, 7, k); L.table.userData.glow.material.opacity = lerp(D.tableGlow, 0.9, k);
   L.floor.userData.light.intensity = lerp(D.floor, 32, k); L.floor.userData.pt.intensity = lerp(D.floorPt, 5, k); L.floor.userData.glow.material.opacity = lerp(D.floorGlow, 0.95, k);
   MAT.shade.emissiveIntensity = lerp(D.shade, 2.4, k);
   if (L.pendant) {   // the bulb over the sofa: off by day, on with the lamps (its spot shown and hidden with the downlights, so the shaders change once)
-    const P = L.pendant.userData; P.light.intensity = 40 * k; P.light.visible = k > 0.001; P.glow.material.opacity = 0.45 * k;
+    const P = L.pendant.userData; P.light.intensity = 40 * k; P.light.visible = k > 0.001; P.glow.material.opacity = 0.45 * k; if (P.fil) P.fil.material.opacity = 0.8 * k;
     P.coil.material.emissiveIntensity = 9 * k; P.glass.emissiveIntensity = 0.35 * k;
   }
-  for (const sp of NIGHT.spots) { sp.sp.intensity = 55 * sp.k * k; sp.sp.visible = k > 0.001; sp.disc.material.color.setRGB(0.1, 0.086, 0.07).lerp(NC.disc, k); }
+  for (const sp of NIGHT.spots) { sp.sp.intensity = 55 * sp.k * k; sp.sp.visible = k > 0.001; }
   // the eye opens a little as the light goes
   petsForHour(S);
   U.exposure.value = lerp(D.exposure * (1 + 0.25 * (1 - Math.min(amb, 1))), 1.0, n); U.lift.value = lerp(D.lift, 0.96, n); U.veil.value = lerp(D.veil, 0.07, n);

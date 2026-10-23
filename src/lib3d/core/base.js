@@ -29,4 +29,23 @@ const R = {
 };
 const REF = { w: 1562, h: 2000, f: 1520, px: 730, py: 960, eye: new THREE.Vector3(0, 1.75, 0) };
 
-export { CANVAS, R, REF, body, reduceMotion, tick };
+/* the page's opening (G, 20/10/2026: "add % load cho loading bar at foot note ... cho căn phòng lần lượt load ... frame, kệ
+   sách, sofa, rồi sách lần lượt hiện ra (fade in) ... sau đó mới load các đồ trang trí ... Text phải đc ẩn"): the loader's
+   bar at the foot of the page counts up to 100 % (setLoad: each step of the building, then each part as it is shown,
+   core/build.js and core/loop.js); the room's parts kept apart so they can be shown in turn (PARTS: the shelves, the
+   furniture), each faded in (fx/post.js fadePicture). At 100 % the bar fades away and the words come in. */
+const PARTS = { shelves: [], furniture: [] };
+const LOAD = { to: 0, shown: 0, raf: 0, el: null, bar: null, pct: null, done: false };
+function setLoad(p) {
+  LOAD.to = Math.max(LOAD.to, Math.min(100, p));
+  if (!LOAD.el) { LOAD.el = document.getElementById('lib3d-loader'); if (LOAD.el) { LOAD.bar = LOAD.el.querySelector('.l3-bar i'); LOAD.pct = LOAD.el.querySelector('.l3-pct'); LOAD.el.classList.add('is-live'); } }
+  if (!LOAD.raf) LOAD.raf = requestAnimationFrame(loadTick);
+}
+function loadTick() {
+  LOAD.raf = 0; const d = LOAD.to - LOAD.shown; LOAD.shown = d < 0.4 ? LOAD.to : LOAD.shown + d * 0.16;
+  if (LOAD.bar) LOAD.bar.style.width = LOAD.shown.toFixed(1) + '%'; if (LOAD.pct) LOAD.pct.textContent = Math.round(LOAD.shown) + '%';
+  if (LOAD.shown < LOAD.to) { LOAD.raf = requestAnimationFrame(loadTick); return; }
+  if (LOAD.shown >= 100 && !LOAD.done) { LOAD.done = true; const h = document.documentElement; h.classList.add('l3-loaded'); setTimeout(() => h.classList.remove('l3-loading'), 900); }
+}
+
+export { CANVAS, LOAD, PARTS, R, REF, body, reduceMotion, setLoad, tick };

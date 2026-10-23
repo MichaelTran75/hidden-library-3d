@@ -7,10 +7,10 @@ import { MAT } from './materials.js';
 /* ---------------------------------------------------------------- small furniture */
 function stumpTable() {
   const g = new THREE.Group();
-  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.3, 0.05, 48), MAT.oak); top.position.y = 0.505; g.add(top);
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.3, 0.05, 48), MAT.tableOak); top.position.y = 0.505; g.add(top);
   const pts = []; for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push(new THREE.Vector2(0.24 + 0.012 * Math.sin(t * 9) + (t < .1 ? .02 * (1 - t / .1) : 0), t * 0.48)); }
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 40), MAT.oakDark); g.add(body);
-  const cap = new THREE.Mesh(new THREE.CircleGeometry(0.24, 40), MAT.oakDark); cap.rotation.x = -Math.PI / 2; cap.position.y = 0.48; g.add(cap);
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 40), MAT.tableOakDark); g.add(body);
+  // (the cap over the trunk, under the top where no view sees it, left out: G, 23/10/2026)
   g.traverse(m => { if (m.isMesh) { m.castShadow = m.receiveShadow = true; } });
   return g;
 }
@@ -42,15 +42,40 @@ function tableLamp() {
   const g = new THREE.Group();
   const prof = [[.001, 0], [.06, 0], [.075, .02], [.085, .08], [.078, .16], [.05, .22], [.026, .25], [.022, .28]];
   const base = new THREE.Mesh(new THREE.LatheGeometry(prof.map(p => new THREE.Vector2(p[0], p[1])), 32), MAT.ceramic); base.castShadow = true; g.add(base);
-  const stem = new THREE.Mesh(new THREE.CylinderGeometry(.007, .007, .1, 8), MAT.brass); stem.position.y = .32; g.add(stem);
   const shade = new THREE.Mesh(new THREE.CylinderGeometry(.115, .16, .21, 48, 1, true), MAT.shade); shade.position.y = .4; g.add(shade);
   const rim = new THREE.Mesh(new THREE.TorusGeometry(.16, .004, 6, 48), MAT.brass); rim.rotation.x = Math.PI / 2; rim.position.y = .295; g.add(rim);
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(.03, 12, 8), MAT.bulb); bulb.position.y = .37; g.add(bulb);
+  // (its stem and bulb, inside the shade where no view sees them, left out: G, 23/10/2026)
   const light = new THREE.PointLight(0xffc27e, 3.2, 5, 2); light.position.y = .37; g.add(light);
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffc27e, transparent: true, opacity: .55, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(.9); glow.position.y = .4; g.add(glow);
   g.userData.light = light; g.userData.glow = glow; return g;
 }
 let _glow;
+// the bulb over the sofa's glow: as glowTex, with its filament drawn in it (G, 23/10/2026: "cho dây tóc still visible 90%"). The
+// modelled filament is under a pixel at the room's distance, and the glow's white middle washed out where it is: there the
+// glow is a tenth of itself, and a bright coil lies across it (filamentTex, a sprite of its own: the filament's 4.6 cm,
+// ~24 % of the sprite's half-width), so it reads as the lit wire in the glass
+let _pgl;
+function pendantGlowTex() {
+  if (_pgl) return _pgl; const c = canvas(128, 128), g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.25, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  const im = g.getImageData(0, 0, 128, 128), d = im.data;
+  for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+    const u = (x + 0.5 - 64) / 64, v = (y + 0.5 - 64) / 64 + 0.03, i = (y * 128 + x) * 4;
+    const w = Math.max(0, Math.min(1, 1.6 * (1 - Math.abs(v) / 0.04))) * Math.max(0, Math.min(1, (0.14 - Math.abs(u)) / 0.03));   // (where the wire lies, just round it: the bulb larger, a wider cut showed dark)
+    d[i + 3] = Math.round(d[i + 3] * (1 - 0.7 * w));
+  }
+  g.putImageData(im, 0, 0); _pgl = ctex(c, { rep: false }); return _pgl;
+}
+let _fil;
+function filamentTex() {   // the lit coil: a beaded line across, soft at its edges (the same frame as the glow's)
+  if (_fil) return _fil; const c = canvas(128, 128), g = c.getContext('2d'), im = g.createImageData(128, 128), d = im.data;
+  for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) {
+    const u = (x + 0.5 - 64) / 64, v = (y + 0.5 - 64) / 64 + 0.03, i = (y * 128 + x) * 4;
+    const w = Math.max(0, 1 - Math.abs(v) / 0.022) * Math.max(0, Math.min(1, (0.125 - Math.abs(u)) / 0.02)) * (0.75 + 0.25 * Math.cos(u * 150));
+    d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = Math.round(255 * w);
+  }
+  g.putImageData(im, 0, 0); _fil = ctex(c, { rep: false }); return _fil;
+}
 function glowTex() { if (_glow) return _glow; const c = canvas(128, 128), g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.25, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); _glow = ctex(c, { rep: false }); return _glow; }
 function floorLamp(back = 0.32) {   // back: the counterweight arm's length behind the pole (m)
   const g = new THREE.Group();
@@ -68,7 +93,7 @@ function floorLamp(back = 0.32) {   // back: the counterweight arm's length behi
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffc98f, transparent: true, opacity: .6, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(.6); glow.position.y = -.25; sh.add(glow);
   const pt = new THREE.PointLight(0xffc98f, 2.5, 4, 2); pt.position.y = -.3; sh.add(pt);
   const spot = new THREE.SpotLight(0xffc98f, 18, 7, 0.75, 0.65, 2); spot.position.set(0, -.1, 0); sh.add(spot);
-  const tgt = new THREE.Object3D(); tgt.position.set(0, -2, 0); sh.add(tgt); spot.target = tgt; spot.castShadow = true; spot.shadow.mapSize.set(1024, 1024); spot.shadow.bias = -0.0005; spot.shadow.camera.near = 0.1;
+  const tgt = new THREE.Object3D(); tgt.position.set(0, -2, 0); sh.add(tgt); spot.target = tgt; spot.castShadow = true; spot.shadow.mapSize.set(512, 512); spot.shadow.bias = -0.0005; spot.shadow.camera.near = 0.1;   // (its shadow map 1024 -> 512: G, 21/10/2026, the page's memory)
   g.traverse(m => { if (m.isMesh) m.castShadow = true; });
   g.userData.light = spot; g.userData.pt = pt; g.userData.glow = glow; g.userData.inner = inner; return g;
 }
@@ -97,9 +122,9 @@ function pendantLamp(drop) {
   const cloth = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .0035, cord, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0x2b2420, roughness: .85 }));
   cloth.position.y = -.032 - cord / 2; g.add(cloth);
   // the bulb, in its own frame (y up from the tip of the base), turned base up
-  // (the bulb and its socket 20 % larger than the model's: G, 17/10/2026; hung from the same cord grip)
-  const BS = 1.2, tipB = gripY - 0.058 * BS, b = new THREE.Group(); b.rotation.x = Math.PI; b.scale.setScalar(BS); b.position.y = tipB; g.add(b);
-  b.add(lathe([[.0001, 0], [.0022, .0003], [.0086, .0028], [.0086, .0037]], new THREE.MeshStandardMaterial({ color: 0x141414, roughness: .3 }), 24));   // the insulator
+  // (the bulb and its socket 20 % larger than the model's: G, 17/10/2026, then 10 % more, twice: G, 21/10/2026; then 1.5 times: G, 24/10/2026; hung from the same cord grip)
+  const BS = 2.178, tipB = gripY - 0.058 * BS, b = new THREE.Group(); b.rotation.x = Math.PI; b.scale.setScalar(BS); b.position.y = tipB; g.add(b);
+  // (the insulator at the base's tip, inside the socket where no view sees it, left out: G, 23/10/2026)
   b.add(lathe([[.0086, .0037], [.0187, .0095], [.0200, .024], [.0207, .0255], [.0189, .0272], [.0207, .0289], [.0198, .0301], [.0191, .031], [.0184, .0326], [.0176, .0332]],
     new THREE.MeshStandardMaterial({ color: 0xc9c9c4, metalness: 1, roughness: .3 }), 32));   // the screw base
   // its glass: clear, lit by the room, more of it seen toward its edges (as glass is: Fresnel), a little warm from inside
@@ -134,10 +159,14 @@ function pendantLamp(drop) {
   // its light: a spot straight down, from just under the glass (from the filament it would light the glass itself, 5 cm
   // away, white), and a glow round the bulb
   const spotY = tipB - .162 * BS, light = new THREE.SpotLight(0xffc98f, 0, 9, 0.85, 0.8, 2); light.position.y = spotY; light.target.position.y = spotY - 2.5; light.visible = false; g.add(light, light.target);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), color: 0xffc98f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(.26 * BS); glow.position.y = tipB - .105 * BS; glow.renderOrder = 4; g.add(glow);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: pendantGlowTex(), color: 0xffc98f, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending })); glow.scale.setScalar(.26 * BS); glow.position.y = tipB - .105 * BS; glow.renderOrder = 4; g.add(glow);
   const at = new THREE.Vector3(), toCam = new THREE.Vector3();   // (drawn 7 cm toward the eye, in front of the glass that hides what is behind it)
-  glow.onBeforeRender = (r, s, cam) => { g.localToWorld(at.set(0, tipB - .105 * BS, 0)); toCam.setFromMatrixPosition(cam.matrixWorld).sub(at).normalize(); glow.matrixWorld.setPosition(at.addScaledVector(toCam, .07)); };
-  g.userData.light = light; g.userData.glow = glow; g.userData.coil = coil; g.userData.glass = glass;
+  glow.onBeforeRender = (r, s, cam) => { g.localToWorld(at.set(0, tipB - .105 * BS, 0)); toCam.setFromMatrixPosition(cam.matrixWorld).sub(at).normalize(); glow.matrixWorld.setPosition(at.addScaledVector(toCam, .07 * BS / 1.452)); };   // (in front of the glass whatever its size: inside it, the glass hid it)
+  // the lit filament, over the glow and brighter than it (its colour past white: the brightest thing in the bulb), as the glow is placed
+  const fil = new THREE.Sprite(new THREE.SpriteMaterial({ map: filamentTex(), color: new THREE.Color(0xffe2b8).multiplyScalar(5), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  fil.scale.setScalar(.26 * BS); fil.position.y = tipB - .105 * BS; fil.renderOrder = 5; g.add(fil);
+  fil.onBeforeRender = (r, s, cam) => { g.localToWorld(at.set(0, tipB - .105 * BS, 0)); toCam.setFromMatrixPosition(cam.matrixWorld).sub(at).normalize(); fil.matrixWorld.setPosition(at.addScaledVector(toCam, .071 * BS / 1.452)); };
+  g.userData.light = light; g.userData.glow = glow; g.userData.fil = fil; g.userData.coil = coil; g.userData.glass = glass;
   return g;
 }
 

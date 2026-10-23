@@ -10,7 +10,7 @@ import { canvas, halfCanvas, rng } from '../core/utils.js';
 async function makeTrees() {
   const V3 = THREE.Vector3, tv = (x, y, z) => new V3(x, y, z), UP = tv(0, 1, 0), TAU = Math.PI * 2;
   const lerp = (a, b, t) => a + (b - a) * t, clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-  const tex = (c, srgb = true, rep = false) => { const t = new THREE.CanvasTexture(c.width >= 512 ? halfCanvas(halfCanvas(c)) : c.width >= 256 ? halfCanvas(c) : c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };   // (the large ones at a quarter, the small ones at half: utils.js halfCanvas; G, 19/10/2026: "tiếp tục giảm độ nét của toàn bộ cây")
+  const tex = (c, srgb = true, rep = false) => { let h = c; for (let n = c.width >= 512 ? 4 : c.width >= 256 ? 3 : 0; n > 0; n--) h = halfCanvas(h); const t = new THREE.CanvasTexture(h); if (srgb) t.colorSpace = THREE.SRGBColorSpace; if (rep) t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t; };   // (the large ones at a sixteenth, the small ones at an eighth (G, 20/10/2026: "tiếp tục giảm độ phân giải của cây cối lá"; before: "hạ độ phân giải của toàn bộ lá cây thêm nữa"): utils.js halfCanvas; G, 19/10/2026: "tiếp tục giảm độ nét của toàn bộ cây")
 
   /* ---------- geometry */
   const anyPerp = d => new V3().crossVectors(d, Math.abs(d.y) < 0.9 ? UP : tv(1, 0, 0)).normalize();

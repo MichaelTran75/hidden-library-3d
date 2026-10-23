@@ -230,7 +230,7 @@ function buildStars(sky) {
         c *= uNight * cov; a *= uNight * cov; if (max(c.r, max(c.g, c.b)) < 0.002 && a < 0.004) discard;
         gl_FragColor = vec4(c, a); }`,
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false }));   // (normal blending, premultiplied: ONE, ONE − alpha)
-  mw.frustumCulled = false; mw.renderOrder = 0; sky.add(mw);
+  mw.frustumCulled = false; mw.renderOrder = 0; sky.add(mw); OVER.mw = mw;   // (drawn on its own at a lower resolution: ui/words.js drawMilkyWay)
 }
 // the sky turned to this minute: equatorial → the room, by the local sidereal time and the room's compass
 const _E = new THREE.Vector3(), _N = new THREE.Vector3(), _Z = new THREE.Vector3(), _gt = new THREE.Matrix3();
@@ -285,14 +285,15 @@ const SKY_COVER = `float skyCover() {
   vec2 uv = gl_FragCoord.xy / uRes, tx = 0.66 / vec2(textureSize(uDepth, 0)); float s = 0.0;
   for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) s += step(gl_FragCoord.z, texture2D(uDepth, uv + vec2(float(i), float(j)) * tx).r + 1e-7);
   return s / 9.0; }`;
+const MOON_R = 1.32;   // the moon's radius, degrees (0.88, then 1.5 times as large: G, 24/10/2026)
 function buildNightSky() {
   const eye = REF.eye, far = 240, sky = new THREE.Group(); sky.visible = false; OVER.sky = sky;
   OVER.skyScene = new THREE.Scene(); OVER.skyScene.add(sky);   // (a scene of its own, drawn before the rest of the sharp layer: its dark is laid over the dome, so all else goes in front of it)
   OVER.moonAge = { value: moonAge() };
   buildStars(sky);
-  // the moon: the page's own moon picture for tonight's phase (the one its sky clock shows), 1.6° across (the real one is
-  // 0.5°), with a soft halo
-  const rad = far * Math.tan(0.8 * Math.PI / 180);
+  // the moon: the page's own moon picture for tonight's phase (the one its sky clock shows), 1.76° across (the real one is
+  // 0.5°; 1.6° before G, 21/10/2026: "moon ... to thêm 10%"), with a soft halo
+  const rad = far * Math.tan(MOON_R * Math.PI / 180);
   OVER.moonImg = { value: null };
   const moon = new THREE.Mesh(new THREE.PlaneGeometry(6 * rad, 6 * rad), new THREE.ShaderMaterial({
     uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, uAge: OVER.moonAge, uImg: OVER.moonImg },
@@ -301,8 +302,8 @@ function buildNightSky() {
       void main(){ float cov = skyCover(); if (cov < 0.01) discard;
         vec2 p = (vUv - 0.5) * 6.0; float r = length(p), lit = 0.5 - 0.5 * cos(uAge * 6.2831853);
         vec4 c = vec4(0.0);
-        if (r < 1.02) { vec4 m = texture2D(uImg, p * 0.5 + 0.5); c = vec4(m.rgb * m.a, m.a); }   // straight-alpha picture, made premultiplied
-        float halo = 0.3 * exp(-max(r - 1.0, 0.0) * 1.7) * (0.45 + 0.55 * lit) * smoothstep(3.0, 2.2, r) * (1.0 - c.a);
+        if (r < 1.02) { vec4 m = texture2D(uImg, p * 0.5 + 0.5); c = vec4(m.rgb * m.a, m.a) * smoothstep(1.0, 0.9, r); }   // straight-alpha picture, made premultiplied; its rim feathered
+        float halo = (0.3 * exp(-max(r - 1.0, 0.0) * 1.7) + 0.22 * exp(-abs(r - 0.96) * 9.0)) * (0.45 + 0.55 * lit) * smoothstep(3.0, 2.2, r) * (1.0 - c.a);   // (and a glow hugging the rim)
         c += vec4(vec3(0.82, 0.86, 1.0) * halo, halo);
         if (c.a < 0.004) discard; gl_FragColor = c * uNight * cov; }`,
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false }));
@@ -321,22 +322,33 @@ function buildNightSky() {
    two points both show sky, with none of the page's panels over them, is sent; if none does, it is tried again 1.5 s later, up to five times (a view with little
    sky still gets its share; one with none, none). */
 const METEOR = { list: [], mesh: null, on: false, last: 0 };
+// the shooting stars and the comet pass behind the moon, its dark part too (G, 24/10/2026: "các sao băng hay sao chổi chỉ bay sau
+// lưng mặt trăng"): where the moon's disc lies on the screen (device pixels; set each frame, stepMeteors) they are not drawn
+const MHIDE = { uMoonC: { value: new THREE.Vector2(-1e5, -1e5) }, uMoonRad: { value: 0 } };
+const MOON_HIDE = 'uniform vec2 uMoonC; uniform float uMoonRad; float moonHide() { return smoothstep(uMoonRad * 0.97, uMoonRad * 1.06, distance(gl_FragCoord.xy, uMoonC)); }';
+const _mc = new THREE.Vector3(), _me = new THREE.Vector3();
+function moonMask(camera) {
+  const M = OVER.moon; if (!M || !M.visible) { MHIDE.uMoonRad.value = 0; return; }
+  camera = OVER.cam || camera;   // (the sky's own camera, as the moon is drawn)
+  M.updateMatrixWorld(); _mc.copy(M.position).project(camera); _me.set(1, 0, 0).applyQuaternion(M.quaternion).multiplyScalar(240 * Math.tan(MOON_R * Math.PI / 180)).add(M.position).project(camera);
+  const W = OVER.u.uRes.value.x, H = OVER.u.uRes.value.y; MHIDE.uMoonC.value.set((_mc.x + 1) / 2 * W, (_mc.y + 1) / 2 * H); MHIDE.uMoonRad.value = _mc.z < 1 ? Math.hypot((_me.x - _mc.x) / 2 * W, (_me.y - _mc.y) / 2 * H) : 0;
+}
 const _m0 = new THREE.Vector3(), _m1 = new THREE.Vector3(), _mh = new THREE.Vector3(), _mt = new THREE.Vector3();
 function buildMeteors(sky) {
   const MQ = 3, idx = []; for (let k = 0; k < MQ; k++) idx.push(4 * k, 4 * k + 1, 4 * k + 2, 4 * k + 2, 4 * k + 1, 4 * k + 3);
   const g = new THREE.BufferGeometry(); g.setIndex(idx);
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MQ * 12), 3)); g.setAttribute('aC', new THREE.BufferAttribute(new Float32Array(MQ * 16), 4)); g.setAttribute('aT', new THREE.BufferAttribute(new Float32Array(MQ * 12), 3));
-  METEOR.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN },
+  METEOR.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, ...MHIDE },
     vertexShader: 'attribute vec4 aC; attribute vec3 aT; varying vec4 vC; varying vec3 vT; void main(){ vC = aC; vT = aT; gl_Position = vec4(position, 1.0); }',
-    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec4 vC; varying vec3 vT; ${SKY_COVER}
-      void main(){ float cov = skyCover(); if (cov < 0.01) discard;
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight; varying vec4 vC; varying vec3 vT; ${SKY_COVER} ${MOON_HIDE}
+      void main(){ float cov = skyCover() * moonHide(); if (cov < 0.01) discard;
         float u = clamp(vT.x, 0.0, 1.0), w = vT.y * vT.y;
         float k = pow(u, 2.6) * exp(-w * 5.0) + 1.6 * exp(-pow((1.0 - u) / 0.05, 2.0) - w * 1.5);   // the tail thinning out, the head bright
         float a = vC.a * k * smoothstep(1.04, 0.995, vT.x) * uNight * cov * 0.8; if (a < 0.003) discard;      // (a round tip, not a square end; 20 % fainter: G, 16/10/2026)
         gl_FragColor = vec4(vC.rgb * a, 0.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, premultipliedAlpha: true, depthTest: false, depthWrite: false }));   // (added as it is: ONE, ONE)
-  METEOR.mesh.frustumCulled = false; METEOR.mesh.visible = false; METEOR.mesh.renderOrder = 4; sky.add(METEOR.mesh);   // (in our air: in front of the moon)
-  METEOR.spawn = spawnMeteor; METEOR.probe = PROBE;   // (for tests)
+  METEOR.mesh.frustumCulled = false; METEOR.mesh.visible = false; METEOR.mesh.renderOrder = 2; sky.add(METEOR.mesh);   // (behind the moon, as G would have them, though they burn in our air)
+  METEOR.spawn = spawnMeteor; METEOR.probe = PROBE; METEOR.hide = MHIDE;   // (for tests)
   METEOR.moonPos = () => { const p = OVER.moon.position.clone().project(OVER.cam || window.__lib3d.camera); return [(p.x + 1) * innerWidth / 2, (1 - p.y) * innerHeight / 2]; };   // (for tests)
   buildComet(sky);
 }
@@ -393,7 +405,7 @@ function spawnMeteor(camera) {   // 32 paths tried: the first whose bright middl
     () => { PROBE.left = Math.max(0, PROBE.left - 1); });
 }
 function stepMeteors(t, camera) {
-  stepStars();
+  stepStars(); moonMask(camera);
   const dt = Math.min(0.1, Math.max(0, t - METEOR.last)); METEOR.last = t;
   const night = NIGHT.u.value, M = METEOR.list, mesh = METEOR.mesh; if (!mesh) return;
   if (night > 0.6 && SKYCLEAR.value > 0.5 && Math.random() < dt / 16) PROBE.left = 5;   // one due (tried until it finds sky, five times at most)
@@ -437,10 +449,10 @@ function buildComet(sky) {
   strip(0, NS); strip((NS + 1) * 2, NI); const c0 = (NS + 1) * 2 + (NI + 1) * 2; idx.push(c0, c0 + 1, c0 + 2, c0 + 2, c0 + 1, c0 + 3);
   const g = new THREE.BufferGeometry(); g.setIndex(idx);
   for (const [k, n] of [['position', 3], ['aT', 3], ['aC', 4]]) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(nv * n), n));
-  COMET.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, uTime: OVER.u.uTime },
+  COMET.mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uNight: SKYN, uTime: OVER.u.uTime, ...MHIDE },
     vertexShader: 'attribute vec4 aC; attribute vec3 aT; varying vec4 vC; varying vec3 vT; void main(){ vC = aC; vT = aT; gl_Position = vec4(position, 1.0); }',
-    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uTime; varying vec4 vC; varying vec3 vT; ${SKY_COVER}
-      void main(){ float cov = skyCover(); if (cov < 0.01) discard;
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; uniform float uNight, uTime; varying vec4 vC; varying vec3 vT; ${SKY_COVER} ${MOON_HIDE}
+      void main(){ float cov = skyCover() * moonHide(); if (cov < 0.01) discard;
         float u = clamp(vT.x, 0.0, 1.0), v = vT.y, k; vec3 col = vC.rgb;
         if (vT.z < 0.5) {   // the dust tail: striae fanning out and drifting away from the head, the density breathing as it flows
           float fl = u * 7.0 - uTime * 0.32;
@@ -530,10 +542,11 @@ function loadMoon() {
 function placeMoon() {   // in the left glass, between the posts at z −6.6 and −4.55: over the transom if the frame shows it, else under it
   if (!OVER.moon) return;
   const az = 13.7 * Math.PI / 180, top = REF.h / 2 - Math.min(REF.h, REF.w * innerHeight / innerWidth) / 2;   // painting row at the frame's top
-  const upper = 12.3 * Math.PI / 180, yUp = REF.py - REF.f * Math.tan(upper) / Math.cos(az);   // its lower edge clears the transom's inner top
-  const el = yUp - 21 - 5 >= top ? upper : 7.4 * Math.PI / 180, dir = new V3(-Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
+  const grow = MOON_R - 0.8, rp = REF.f * Math.tan(MOON_R * Math.PI / 180);   // (its edges kept where the 0.8° moon's were: G, 21/10/2026)
+  const upper = (12.3 + grow) * Math.PI / 180, yUp = REF.py - REF.f * Math.tan(upper) / Math.cos(az);   // its lower edge clears the transom's inner top
+  const el = yUp - rp - 5 >= top ? upper : (7.4 - grow) * Math.PI / 180, dir = new V3(-Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el));
   OVER.moon.position.copy(REF.eye).addScaledVector(dir, 240); OVER.moon.lookAt(REF.eye);
   if (window.HL_SUN.place.lat < 0) OVER.moon.rotateZ(Math.PI);   // (seen from south of the equator the moon is turned over, as the clock's is: src/sun)
 }
 
-export { METEOR, SKYCLEAR, SKYSET, STARU, buildNightSky, loadMoon, moonAge, placeMoon, stepMeteors };
+export { METEOR, SKYCLEAR, SKYN, SKYSET, STARU, buildNightSky, loadMoon, moonAge, placeMoon, stepMeteors };

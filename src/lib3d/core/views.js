@@ -32,7 +32,10 @@ function applyView(v) {
   const W = innerWidth, H = innerHeight;
   camera.position.copy(v.pos);
   camera.fov = v.fov; camera.aspect = W / H; camera.up.set(0, 1, 0); camera.lookAt(v.tgt);
-  if (Math.abs(v.shift) > 1e-4 || Math.abs(LIFT.cur) > 1e-4) camera.setViewOffset(W, H, -v.shift * W, LIFT.cur * H, W, H); else camera.clearViewOffset();
+  // the lens shift in whole pixels of the room's picture: a shift is the image slid, and slid by part of a pixel each step
+  // the books' thin edges fell on pixels and off them by turns, flickering as the view rolled up and down (G, 24/10/2026)
+  const px = W * RT_SCALE / Math.max(1, Math.round(W * RT_SCALE)) / RT_SCALE, sx = Math.round(-v.shift * W / px) * px, sy = Math.round(LIFT.cur * H / px) * px;
+  if (Math.abs(sx) > 1e-4 || Math.abs(sy) > 1e-4) camera.setViewOffset(W, H, sx, sy, W, H); else camera.clearViewOffset();
   camera.updateProjectionMatrix(); camera.updateMatrixWorld();
 }
 function goView(v, dur = 1.3) {
@@ -48,10 +51,11 @@ function stepCam(dt) {
 function applyRefCamera() { CAM.cur = homeView(); CAM.k = 1; applyView(CAM.cur); }
 function resize() {
   const w = Math.max(1, innerWidth), h = Math.max(1, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setSize(innerWidth, innerHeight, false);   // device pixels (the sharp layer)
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5)); renderer.setSize(innerWidth, innerHeight, false);   // device pixels (the sharp layer; 1.5 at most: G, 22/10/2026, at 2 the canvas's buffers cost ~90 MB more, for words a little sharper)
   const rw = Math.max(1, Math.round(w * RT_SCALE)), rh = Math.max(1, Math.round(h * RT_SCALE));
-  POST.rt.setSize(rw, rh); POST.tone.setSize(rw, rh);                                                              // the scene, at 80 %
-  POST.out.setSize(w, h); POST.mat.uniforms.res.value.set(w, h); bakePaper(w, h);                                  // the watercolour, at CSS px
+  POST.rt.setSize(rw, rh); POST.tone.setSize(rw, rh); POST.toneQuad.material.uniforms.px.value.set(1 / rw, 1 / rh);                                                              // the scene, at 80 %
+  const ow = Math.max(1, Math.round(w * 0.75)), oh = Math.max(1, Math.round(h * 0.75));   // the watercolour, at 0.75 of CSS px (G, 22/10/2026: its strokes soft already)
+  POST.out.setSize(ow, oh); POST.mat.uniforms.res.value.set(ow, oh); bakePaper(w, h, ow, oh);
   placeMoon();
 }
 

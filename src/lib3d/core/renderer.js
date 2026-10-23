@@ -8,7 +8,7 @@ import { CANVAS } from './base.js';
 const renderer = new THREE.WebGLRenderer({ canvas: CANVAS, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
 // the watercolour picture is made at 1 px per CSS px (it softens everything anyway) and scaled up to the canvas, which
 // holds device pixels: the sharp layer drawn over it (titles on the books, stars, the moon) stays crisp on high-DPI screens
-renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
 // the scene itself renders at 80 % and is upsampled by the paint pass; a GPU that falls behind gets less (adaptQuality)
 let RT_SCALE = 0.8;
 try {   // a step down is remembered for a week (a laptop may only have been slowed for a while, e.g. on battery saving)
@@ -19,6 +19,9 @@ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadow
 renderer.shadowMap.autoUpdate = false;        // the room stands still: shadows are redrawn only when a book moves (shadowsDirty)
 let shadowsDirty = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+// a shader's compile log is read only with ?shaders in the address: reading it on a shader's first use waited for its
+// compile there and then (~0.36 s through the day/night switch: G, 23/10/2026; three.js's advice for pages in use)
+renderer.debug.checkShaderErrors = /[?&]shaders\b/.test(location.search);
 renderer.toneMapping = THREE.NoToneMapping; // done in the final pass
 RectAreaLightUniformsLib.init();
 // The windows' area lights shine on everything as a diffuse glow; their glossy reflections (a second, as costly LTC

@@ -82,22 +82,22 @@ function spinePixels(g, m, W, H) {
   return new Uint8Array(out.buffer);
 }
 function spinesHere(o) {   // (on the page's own thread)
-  const g = canvas(o.W, o.H).getContext('2d', { willReadFrequently: true }), m = canvas(o.W, o.H).getContext('2d', { willReadFrequently: true });
-  drawSpines(g, m, o); return spinePixels(g, m, o.W, o.H);
+  const w = o.W * o.S, h = o.H * o.S, g = canvas(w, h).getContext('2d', { willReadFrequently: true }), m = canvas(w, h).getContext('2d', { willReadFrequently: true });
+  g.scale(o.S, o.S); m.scale(o.S, o.S); drawSpines(g, m, o); return spinePixels(g, m, w, h);
 }
 /* the atlas, drawn in a worker on an OffscreenCanvas while the room is built (on the page's own thread it held the room
    up ~75 ms): a promise of its texture. Where no worker can draw it, it is drawn here. Until it comes the books wear
    plain cloth (plainCloth; core/build.js puts the atlas on them before the room's first picture). */
 function spineAtlas() {
-  const o = { W: 2048, H: 1024, n: SPINES, titled: TITLED, words: SPINE_WORDS, names: SPINE_NAMES };
-  const texture = d => { const t = new THREE.DataTexture(d, o.W, o.H, THREE.RGBAFormat); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 8; t.needsUpdate = true; return t; };
+  const o = { W: 2048, H: 1024, S: 0.5, n: SPINES, titled: TITLED, words: SPINE_WORDS, names: SPINE_NAMES };   // (S: drawn at half size, 1024 x 512: G, 21/10/2026, "một ảnh 2048×1024 ... 10,7 MB")
+  const texture = d => { const t = new THREE.DataTexture(d, o.W * o.S, o.H * o.S, THREE.RGBAFormat); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 8; t.needsUpdate = true; return t; };
   if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return Promise.resolve().then(() => texture(spinesHere(o)));
   return new Promise(done => {
     let url = null, w = null, over = false;
     const end = d => { if (over) return; over = true; if (w) w.terminate(); if (url) URL.revokeObjectURL(url); done(texture(d || spinesHere(o))); };
     try {
       url = URL.createObjectURL(new Blob([[rng, drawSpines, spinePixels,
-        "onmessage = e => { const o = e.data; let d = null; try { const g = new OffscreenCanvas(o.W, o.H).getContext('2d', { willReadFrequently: true }), m = new OffscreenCanvas(o.W, o.H).getContext('2d', { willReadFrequently: true }); drawSpines(g, m, o); d = spinePixels(g, m, o.W, o.H); } catch (err) { d = null; } postMessage(d, d ? [d.buffer] : []); };"].join('\n')], { type: 'text/javascript' }));
+        "onmessage = e => { const o = e.data; let d = null; try { const w = o.W * o.S, h = o.H * o.S, g = new OffscreenCanvas(w, h).getContext('2d', { willReadFrequently: true }), m = new OffscreenCanvas(w, h).getContext('2d', { willReadFrequently: true }); g.scale(o.S, o.S); m.scale(o.S, o.S); drawSpines(g, m, o); d = spinePixels(g, m, w, h); } catch (err) { d = null; } postMessage(d, d ? [d.buffer] : []); };"].join('\n')], { type: 'text/javascript' }));
       w = new Worker(url);
     } catch (e) { end(null); return; }
     w.onmessage = e => end(e.data); w.onerror = e => { e.preventDefault(); end(null); };

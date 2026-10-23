@@ -47,7 +47,7 @@ function bushAtlas() {
     }
   }
   // as data (a canvas keeps no colour where it is clear): the empty texels made a mid green
-  const hc = halfCanvas(halfCanvas(c)), n = hc.width, d = hc.getContext('2d').getImageData(0, 0, n, n).data;   // (at a quarter: utils.js halfCanvas; G, 19/10/2026: "tiếp tục giảm độ nét của toàn bộ cây")
+  const hc = halfCanvas(halfCanvas(halfCanvas(halfCanvas(c)))), n = hc.width, d = hc.getContext('2d').getImageData(0, 0, n, n).data;   // (at a sixteenth: utils.js halfCanvas; G, 20/10/2026, twice; G, 19/10/2026: "tiếp tục giảm độ nét của toàn bộ cây")
   for (let i = 0; i < d.length; i += 4) if (d[i + 3] === 0) { d[i] = 80; d[i + 1] = 112; d[i + 2] = 50; }
   const t = new THREE.DataTexture(d, n, n);   // (rows top first: the canvas's top is v = 0)
   t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.anisotropy = 4; t.needsUpdate = true;

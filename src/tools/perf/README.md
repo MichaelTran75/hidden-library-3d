@@ -12,6 +12,8 @@ Headless Chrome with the Mac's real GPU (ANGLE Metal), through the Playwright fo
 | `node marks.cjs URL` | the start-up phases, on a build instrumented with `performance.mark('l3-…')` (see below) |
 | `node smoke.cjs URL` | desktop shows the room with no errors; a phone never fetches lib3d.js, lib.glb or three.js |
 | `node shelfshots.cjs URL prefix` | four views of the tall shelf's decor, by day (15:00) and by night (20:00) |
+| `node memab.cjs DIR_A DIR_B [runs]` | memory of two builds (`build.py --pages DIR --dev`), each served from its folder by the script: the GL allocations (textures, renderbuffers, buffers, through a hook on the WebGL calls), the JS heap, and the phys footprint of only the browser it opened. Other Playwright browsers that are running (another session's) are left out, so the footprint is not inflated by them |
+| `BASE=URL node occlusion.cjs` | what no view ever shows: each mesh and each instance drawn in its own colour from every view (home, each section, Research; the view raised and lowered) at eight window shapes, by day and by night (672 views, ~25 min); prints the meshes with no pixel and, for instanced meshes, how many instances never showed. Run it on a build served by you (`python3 -m http.server`); `OUT=` names the JSON (counts per `mesh:instance`, and each mesh's size, place and material, to tell them apart) |
 
 The page marks its own start-up (since 17/10/2026, `core/loop.js`): `l3-room` (built), `l3-reveal0` and `l3-first-draw`
 (the room shown), `l3-reveal1` (the garden), `l3-reveal2` (the sky), `l3-reveal3` (the weather and the words) and

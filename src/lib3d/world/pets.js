@@ -4,9 +4,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { CANVAS, reduceMotion } from '../core/base.js';
-import { canvas, ctex } from '../core/utils.js';
+import { canvas, ctex, shrinkTexture } from '../core/utils.js';
 import { camera, renderer, scene, setShadowsDirty } from '../core/renderer.js';
 import { room } from './room.js';
+import { LIGHTS } from './lights.js';
 import { outside } from './outside.js';
 import { PAINT_GLSL, POST, QUAD_VS, paintUniforms, setPaint } from '../fx/post.js';
 import { HOUR } from '../fx/hour.js';
@@ -14,7 +15,7 @@ import { OVER } from '../ui/words.js';
 import { HERO, heroKey } from '../ui/hero-books.js';
 import { DECKR } from '../ui/deck.js';
 import { REVEAL, clock, on, setNeeds } from '../core/loop.js';
-import { CATR, CGAIT, catAxis, catGait, catKeep, catLook, catReach, catSnap, catStride, catTail, catToward, catTurn, rigCat } from './cat.js';
+import { CATR, CGAIT, C_TMOOD, catAxis, catGait, catKeep, catLook, catPose, catReach, catSnap, catStride, catTail, catToward, catTurn, rigCat } from './cat.js';
 import { FUR, furComb, furCoat, furLight } from './fur.js';
 import { SOFT } from './velvet.js';
 
@@ -90,9 +91,9 @@ function contactShadow(w, d) {
 function sharpQuad(P) {
   const out = !!P.outline;   // (the 747 on the shelf: its selection outline when the pointer is on it, and its fade in: b747.js)
   P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, uWash: { value: P.wash || 0 }, uToneK: { value: P.toneK }, ...SHARP.u, ...paintUniforms(),
-      ...(out ? { uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, uFade: { value: 1 }, uRk: { value: 1 } } : {}) },
+      uBorn: { value: 1 }, ...(out ? { uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, uFade: { value: 1 }, uRk: { value: 1 } } : {}) },
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
-    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK; varying vec2 vUv;${out ? ' uniform float uOut, uOutW, uHalo, uFade, uRk;' : ''}
+    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK, uBorn; varying vec2 vUv;${out ? ' uniform float uOut, uOutW, uHalo, uFade, uRk;' : ''}
       ${PAINT_GLSL}
       vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
@@ -102,7 +103,7 @@ function sharpQuad(P) {
         return mix(col, col * vec3(1.02,1.0,0.95), 0.6 * uToneK) * (1.0 - uVeil * uToneK); }
       vec4 shadeAt(vec2 uv){ vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(tone(c.rgb / c.a), c.a); }
       vec4 washAt(vec2 uv, vec4 o){   // the crisp picture with a watercolour's surface, its detail kept
-        vec2 sp = gl_FragCoord.xy / uCanvas, d = uTexel * uStep; vec4 n1 = texture2D(tN1, sp), n2 = texture2D(tN2, sp);
+        vec2 sp = gl_FragCoord.xy / uCanvas, d = uTexel * uStep; vec4 n1 = texture2D(tN1, sp * uPaper.xy), n2 = texture2D(tN2, sp * uPaper.zw);
         vec4 b = vec4(0.0); for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) { vec4 c = shadeAt(uv + vec2(float(i), float(j)) * d * 1.6); b += vec4(c.rgb * c.a, c.a); } b /= 9.0;
         vec3 col = o.rgb; float lum = dot(col, vec3(0.299, 0.587, 0.114)), dog = length(col * o.a - b.rgb) + abs(o.a - b.a) * 0.5;
         col *= 1.0 - 0.2 * smoothstep(0.03, 0.2, dog) * o.a;                 // pigment gathered where one wash meets another
@@ -123,10 +124,10 @@ function sharpQuad(P) {
           float w = smoothstep(0.2, 0.6, near) * (1.0 - smoothstep(0.3, 0.8, here)) * 0.95 * uOut, h = smoothstep(0.1, 0.6, far) * (1.0 - here) * 0.55 * uOut;
           vec4 ring = vec4(vec3(0.886, 0.839, 0.753) * w, w); ring += vec4(vec3(0.08, 0.055, 0.03) * h, h) * (1.0 - ring.a); res += ring * (1.0 - res.a);
         }
-        res *= uFade; if (res.a < 0.002) discard; gl_FragColor = res; }` : `if (o.a < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a); }`}` }));
+        res *= uFade * uBorn; if (res.a < 0.002) discard; gl_FragColor = res; }` : `if (o.a * uBorn < 0.002) discard; gl_FragColor = vec4(o.rgb * o.a, o.a) * uBorn; }`}` }));   // (uBorn: faded in when it first shows: crispPass)
 }
 const SHARP = { cam: new THREE.Camera(), v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } },
-  cat: { rt: null, quad: null, paint: 0, layer: 1, toneK: 1 }, hen: { rt: null, quad: null, paint: 0.15, wash: 1, layer: 1, toneK: 1 },   // (each its own target; the chicken 15 % painted over a watercolour's surface: G, 15/10/2026)
+  cat: { rt: null, quad: null, paint: 0, layer: 1, toneK: 1, dpr: 1 }, hen: { rt: null, quad: null, paint: 0.045, wash: 0.3, layer: 1, toneK: 1, dpr: 0.8 },   // (resolution: the cat 1 px a CSS px, the chicken 0.4: G, 20/10/2026, twice; then 0.8 for its jagged edges, and 70 % less watercolour: G, 22/10/2026)   // (each its own target; the chicken 15 % painted over a watercolour's surface: G, 15/10/2026)
   book: { rt: null, quad: null, paint: 0, layer: 3, toneK: 0.35, dpr: 2 } };   // (a book's words and pages: at the canvas's full 2 px a CSS px)   // the book out of the shelf: sharp, its colours nearly as printed (G, 15/10/2026)
 PETS.sharp = SHARP;   // (for tests)
 function crispPatch(sh) {
@@ -223,11 +224,13 @@ async function loadPets() {
   node.traverse(o => {
     if (!o.isMesh) return;
     o.frustumCulled = false; o.layers.set(L); const src = o.material;
+    for (const k of ['map', 'normalMap', 'aoMap', 'roughnessMap']) shrinkTexture(src[k], 512);   // (its pictures at 512 px at most: G, 20/10/2026)
     const m = petMaterial(src, { normalMap: src.normalMap, normalScale: src.normalScale, aoMap: src.aoMap, aoMapIntensity: 0.75, roughnessMap: src.roughnessMap, roughness: 1,
       sheen: 0.5, sheenRoughness: 0.5, sheenColor: new THREE.Color(0x667080), side: THREE.FrontSide, transparent: false, depthWrite: true });
     m.fog = false; m.onBeforeCompile = catPatch; o.material = m;
   });
   PETS.cat = rigCat(node);
+  if (LIGHTS.sun) LIGHTS.sun.shadow.camera.layers.enable(L);   // (the cat in the sun's shadow map: placed in stepCat, while it stands still)
   PETS.fur = furCoat(CATR.mesh, crispPatch);   // its coat: shells of fur over the skin (fur.js)
   const holder = new THREE.Group(); holder.add(PETS.cat); PETS.holder = holder;
   for (const k of ['day', 'night']) { const s = CAT_SPOT[k]; s.y = surfaceAt(s.x, s.z); }
@@ -237,6 +240,8 @@ async function loadPets() {
   if (hen) {   // the chicken: its mesh baked into its own frame (standing on y = 0, facing +x, 0.42 m tall)
     hen.removeFromParent(); hen.updateMatrixWorld(true);
     let mesh = null; hen.traverse(o => { if (o.isMesh) mesh = o; });
+    // its pictures at 128 px at most (G, 20/10/2026: "hạ độ phân giải của gà xuống mức tối thiểu nhất có thể", then lower again)
+    for (const m of [].concat(mesh ? mesh.material : [])) for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap']) shrinkTexture(m[k], 128);
     const box = new THREE.Box3().setFromObject(hen), k = HEN_AREA.h / (box.max.y - box.min.y);
     const m = new THREE.Matrix4().makeScale(k, k, k).multiply(new THREE.Matrix4().makeTranslation(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2)).multiply(mesh.matrixWorld);
     const g = new THREE.BufferGeometry(); g.setAttribute('position', toFloat(mesh.geometry.attributes.position, m)); g.setAttribute('normal', toFloat(mesh.geometry.attributes.normal, m, true));
@@ -275,11 +280,11 @@ const CAT = { mode: 'still', place: 'day', seq: null, G: null, v: 0, ikW: 0, lid
   tailT: 2, kick: 0, lashP: 0, sigh: 0, sighT: 20, glance: 0, glanceT: 6, actT: 20, huntT: 30, twitchT: 30, prev: null,
   sleep: 'light', sleepT: 45 };   // (asleep: dozing in a ball first, then deeply on its side, sleepT seconds later)
 const sleepPose = () => CAT.sleep === 'deep' ? 'curl' : 'nest';
-PETS.CAT = CAT; PETS.act = k => dayActs(k);   // (for tests: an act can be started by hand)
+PETS.CAT = CAT; PETS.act = k => dayActs(k); PETS.trip = to => startTrip(to); PETS.tryPose = (k, ops) => { const h = PETS.holder, par = h.parent, t = [h.position.clone(), h.quaternion.clone()]; h.removeFromParent(); h.position.set(0, 0, 0); h.quaternion.identity(); h.updateMatrixWorld(true); CATR.poses[k] = catPose({ ops }); h.position.copy(t[0]); h.quaternion.copy(t[1]); if (par) par.add(h); catSnap(CATR.poses[k]); };   // (for tests: an act, or a trip, can be started by hand)
 const rnd = (a, b) => a + (b - a) * Math.random();
 const ease = k => k * k * (3 - 2 * k), angTo = (a, b) => ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
 const W = {};
-function wishes() { Object.assign(W, { pose: 'stand', half: 0.3, ik: false, v: 0, w: 0, dy: 0, pitch: 0, roll: 0, look: null, lookK: 0, lid: null, sway: 0, hindUp: 0, knead: -1, wiggle: 0, ears: 0, walk: 0, lick: 0, wipe: 0, lash: 0, lashF: 1.3 }); }
+function wishes() { Object.assign(W, { pose: 'stand', half: 0.3, ik: false, v: 0, w: 0, dy: 0, pitch: 0, roll: 0, look: null, lookK: 0, lid: null, sway: 0, hindUp: 0, knead: -1, wiggle: 0, ears: 0, walk: 0, lick: 0, wipe: 0, lash: 0, lashF: 1.3, shake: 0, sniff: 0, tail: null }); }
 const _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _w = new THREE.Vector3(), _hp = new THREE.Vector3(), _ax = new THREE.Vector3(), _e3 = new THREE.Euler(), _UP = new THREE.Vector3(0, 1, 0);
 const henHead = v => v.set(HEN.x + Math.cos(HEN.yaw) * 0.12, 0.25, HEN.z - Math.sin(HEN.yaw) * 0.12);
 const henBusy = () => !!(PETS.chicken && PETS.chicken.visible && HEN.act && /peck|scratch/.test(HEN.act.kind));
@@ -405,8 +410,13 @@ const groomSteps = () => [   // sitting up to wash: a forepaw licked, drawn over
   { dur: 2.4, run: (k, dt, st, t) => { Object.assign(W, { pose: 'lick', half: 0.18, lid: 0.35 }); W.lick = Math.sin(Math.PI * 2 * 3 * t); } },
   { dur: 2.2, run: (k, dt, st, t) => { Object.assign(W, { pose: 'wipe', half: 0.16, lid: 0.6 }); W.wipe = Math.sin(Math.PI * 2 * 1.4 * t); } },
   { dur: 1.2, run: (k, dt, st, t) => { Object.assign(W, { pose: 'lick', half: 0.18, lid: 0.35 }); W.lick = Math.sin(Math.PI * 2 * 3 * t); } },
+  { dur: 0.55, run: k => { Object.assign(W, { pose: 'sit', half: 0.22 }); W.shake = Math.sin(Math.PI * k); if (k < 0.1) CAT.ear[0] = CAT.ear[1] = 1; } },   // a shake of the head, its ears flicking (cats shake off after washing)
   stay('sit', 0.9, { half: 0.25 }),
 ];
+// lifting its head to a scent on the air, nose working, ears forward
+const sniffAir = dur => ({ dur, run: (k, dt, st, t) => { const G = CAT.G; W.pose = 'sphinx'; W.half = 0.3;
+  W.look = _w.set(G.x + Math.sin(G.yaw + 0.5) * 0.6, G.y + 0.55, G.z + Math.cos(G.yaw + 0.5) * 0.6); W.lookK = Math.sin(Math.PI * Math.min(1, k * 1.2));
+  W.ears = 1; W.sniff = Math.sin(Math.PI * 2 * 5.5 * t) * Math.sin(Math.PI * k); } });
 function dayActs(kind) {   // what it may do by day: wash, or (the hen pecking near) stalk it until the glass stops it
   const s = CAT_SPOT.day, back = () => { CAT.actT = rnd(30, 70); };
   if (kind === 'hunt' || (!kind && henBusy() && CAT.huntT <= 0 && Math.random() < 0.6)) {
@@ -416,7 +426,12 @@ function dayActs(kind) {   // what it may do by day: wash, or (the hen pecking n
       { dur: 1.7, run: (k, dt, st, t) => { Object.assign(W, { pose: 'stalk', ik: true, dy: -0.038, pitch: 0.06, wiggle: Math.sin(Math.PI * 2 * 3.4 * t) * Math.sin(Math.PI * k), lid: 0 }); W.look = henHead(_w); W.lookK = 1; W.ears = 1; W.lash = 1; } },
       { dur: 1.3, run: k => { Object.assign(W, { pose: 'stalk', ik: true, dy: -0.038 * (1 - ease(k)), pitch: 0.06 * (1 - k) }); W.look = henHead(_w); W.lookK = 1; W.ears = 1; } },
       ...groomSteps().slice(0, 2), stay('sit', 0.6), stay('sphinx', 1.5, { half: 0.35 })], back);
-  } else play([...groomSteps(), stay('sphinx', 1.5, { half: 0.35 })], back);
+    return;
+  }
+  const r = Math.random(), k = kind || (r < 0.5 ? 'groom' : r < 0.8 ? 'loaf' : 'sniff');   // (G, 22/10/2026: "bổ sung thêm một chút hành vi")
+  if (k === 'loaf') play([stay('loaf', rnd(18, 34), { half: 0.6, lid: 0.42 }), stay('sphinx', 1.4, { half: 0.5 })], back);   // tucked up like a loaf, dozing with its eyes half shut
+  else if (k === 'sniff') play([sniffAir(2.6), stay('sphinx', 0.8, { half: 0.35 })], back);
+  else play([...groomSteps(), stay('sphinx', 1.5, { half: 0.35 })], back);
 }
 function nightActs() {   // asleep: now and then it lifts its head, looks about, and settles again
   CAT.actT = rnd(40, 90);
@@ -449,11 +464,11 @@ function startTrip(to) {
   const seat = [Sx[0], sy + 0.04, Sx[1]];
   const steps = to === 'night'
     ? [{ dur: 0.9, run: k => { W.pose = 'sphinx'; W.lid = 0; W.look = _w.set(F[0], 0.3, F[1]); W.lookK = ease(k); } },   // awake: it looks over to the sofa
-       stay('stand', 1.0, { half: 0.24 }), stay('bow', 1.6, { half: 0.3, lid: 0.5 }), stay('stand', 0.7, { half: 0.25 }),
+       stay('stand', 1.0, { half: 0.24 }), stay('bow', 1.6, { half: 0.3, lid: 0.5 }), stay('stretch', 1.3, { half: 0.3, lid: 0.4 }), stay('stand', 0.7, { half: 0.25 }),   // (forelegs out, then a hind leg back)
        walkTo(F[0], F[1]), turnTo(Sx), gauge(seat, 1.1), gather(0.4, 0.034), leap([Sx[0], sy, Sx[1]], 0.42), touch(0.42),
        knead(2.8), circle(1.15, 2.4), lieDown('sphinx', S1, 1.2), lieDown('nest', S1, 1.8)]   // down onto its belly, then curled up in a ball (later onto its side)
     : [{ dur: 1.0, run: k => { W.pose = sleepPose(); W.lid = 1 - ease(k); W.look = _w.set(F[0], 0.2, F[1]); W.lookK = ease(k) * 0.35; } },   // eyes open, head up
-       stay('sphinx', 1.0, { half: 0.28 }), stay('stand', 1.1, { half: 0.26 }),   // over onto its belly, then up stay('bow', 1.5, { half: 0.3, lid: 0.5 }), stay('stand', 0.6, { half: 0.25 }),
+       stay('sphinx', 1.0, { half: 0.28 }), stay('stand', 1.1, { half: 0.26 }), stay('bow', 1.5, { half: 0.3, lid: 0.5 }), stay('stretch', 1.2, { half: 0.3, lid: 0.4 }), stay('stand', 0.6, { half: 0.25 }),   // (over onto its belly, then up, and stretches: a comment had swallowed the bow, 22/10/2026)
        turnTo(F), gauge([F[0], 0, F[1]], 0.6), gather(0.28, 0.02), leap([F[0], 0, F[1]], 0.36), touch(0.42),
        walkTo(S1.x, S1.z), turnTo(S1.yaw), lieDown('sphinx', S1, 1.5)];
   play(steps, () => settle(to, true));
@@ -479,12 +494,12 @@ function startTrip(to) {
    - Asleep it keeps listening: an ear swivels to the pointer and flicks, the tip of its tail flicks; held on it a while
      it opens its eyes a slit, lifts its head to look, blinks slowly and settles again. From deep sleep it first comes
      up into a doze, curled up again.
-   What is under the pointer is found on the cat's own skinned mesh (965 vertices, as posed this frame): the part is the
-   bone its hit corners hang on most. */
+   What is under the pointer is found on the cat's bones as posed this frame: each a capsule as thick as the body is
+   there, the nearest one the pointer's line passes through (pickPart). */
 const TOUCH = { x: 0, y: 0, in: false, moved: 0, speed: 0, ndc: new THREE.Vector2(), ray: new THREE.Raycaster(), p: new THREE.Vector3(), near: 0, on: null, headC: null,
   awake: false, onT: 0, offT: 9, restT: 0, prey: 0, preyN: 0, over: 0, sniff: 0, rub: 0, rubBlink: false, wake: 0, away: 0, cool: 0, twitch: 0, twitchT: 0, earT: 0, swiv: 0, flat: 0, swat: null, active: false };
 PETS.touch = TOUCH; PETS.swat = r => swatAt(r);   // (for tests)
-const T_PART = n => /^(head|neck|ear)/.test(n) ? 'head' : /^tail[12]$/.test(n) ? 'base' : /^tail/.test(n) ? 'tail' : /^(arm|fore|paw|thigh|shin|foot|toe)/.test(n) ? 'leg' : 'back';
+const T_PART = n => /^(head|neck|ear)/.test(n) ? 'head' : /^tail([123])$/.test(n) ? 'base' : /^tail/.test(n) ? 'tail' : /^(arm|fore|paw|ftoe|thigh|shin|foot|toe)/.test(n) ? 'leg' : 'back';   // (the base: the first quarter of its twelve tail bones)
 const T_OVER = { head: 0.025, back: 0.085, leg: 0.12, base: 0.22, tail: 0.15 };   // how fast stroking there adds up (a second of it)
 const _tv = new THREE.Vector3(), _tf = new THREE.Vector3(), _tl = new THREE.Vector3(), _tu = new THREE.Vector3(), _tq = new THREE.Quaternion(), _tpl = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function bindTouch() {
@@ -510,15 +525,21 @@ function senseTouch(dt) {   // where the pointer is: how fast it moves, how near
   const hc = _tv.copy(T.headC).applyMatrix4(B.head.matrixWorld);
   T.ray.ray.closestPointToPoint(hc, T.p);   // what it looks at: the pointer's line where it passes nearest its head
   T.near = 1 - THREE.MathUtils.smoothstep(T.p.distanceTo(hc), 0.1, 0.75);
-  if (T.near > 0.15) {
-    m.computeBoundingSphere();   // (as it is posed now)
-    const hit = T.ray.intersectObject(m, false)[0];
-    if (hit) {
-      const J = m.geometry.attributes.skinIndex, Wt = m.geometry.attributes.skinWeight, f = hit.face; let best = 0, bw = -1;
-      for (const i of [f.a, f.b, f.c]) for (let k = 0; k < 4; k++) { const w = Wt.getComponent(i, k); if (w > bw) { bw = w; best = J.getComponent(i, k); } }
-      T.on = T_PART(m.skeleton.bones[best].name);
-    }
+  if (T.near > 0.15) T.on = pickPart(T.ray.ray);
+}
+// what part of it the pointer's line meets: each bone a capsule round it as thick as the body is there (its mesh has
+// 15k triangles since 22/10/2026, too many to test every frame), the nearest along the line it passes through
+const T_RAD = [[/^head$/, 0.045], [/^ear/, 0.012], [/^neck$/, 0.04], [/^(hips|spine|spine2|chest)$/, 0.055], [/^(arm|thigh)/, 0.03], [/^(fore|shin)/, 0.02], [/^(paw|foot|ftoe|toe)/, 0.016], [/^tail/, 0.011]];
+const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pr = new THREE.Vector3();
+function pickPart(ray) {
+  const k = CATR.scale; let best = null, bt = Infinity;
+  for (const b of CATR.mesh.skeleton.bones) {
+    const r = (T_RAD.find(([re]) => re.test(b.name)) || [0, 0])[1] * k; if (!r) continue;
+    _pa.setFromMatrixPosition(b.matrixWorld); _pb.set(0, 1, 0).applyQuaternion(b.getWorldQuaternion(_tq)).multiplyScalar((b.userData.len || 0.02) * k).add(_pa);
+    if (ray.distanceSqToSegment(_pa, _pb, _pr) > r * r) continue;
+    const t = _pr.sub(ray.origin).dot(ray.direction); if (t > 0 && t < bt) { bt = t; best = b.name; }
   }
+  return best ? T_PART(best) : null;
 }
 function slowBlink() { if (CAT.blinkK > 0) return; CAT.blinkK = 1e-3; CAT.slow = true; CAT.blinkT = rnd(4, 8); }
 const lookP = k => { if (TOUCH.in) { W.look = _w.copy(TOUCH.p); W.lookK = k; } };
@@ -661,6 +682,7 @@ function stepCat(t, dt) {
   moveCat(t, dt, night);
 }
 function moveCat(t, dt, night) {
+  CAT.dtLast = dt;
   const G = CAT.G, P = CATR.poses[W.pose] || CATR.poses.stand, H = PETS.holder;
   catToward(P, dt, W.half); furComb(CATR.body);
   // the holder: where it is and which way it faces; the body over it, pitched and lowered as wished
@@ -713,6 +735,10 @@ function moveCat(t, dt, night) {
     const a = CAT.look.angleTo(want); if (a > 1e-4) CAT.look.lerp(want, Math.min(1, dt * 5 / Math.max(a, 0.25))).normalize();
     catLook(CAT.look, M.lookK, 1.2);
   } else CAT.look = null;
+  if (W.shake || W.sniff) { const B = CATR.bones;   // a quick shake of the head (after washing), the nose working at a scent
+    if (W.shake) { B.head.getWorldQuaternion(_q); _ax.copy(CATR.gaze).applyQuaternion(_q).normalize(); const a = 0.42 * W.shake * Math.sin(Math.PI * 2 * 7.5 * t);
+      catTurn(B.neck, _q.setFromAxisAngle(_ax, 0.35 * a)); catTurn(B.head, _q.setFromAxisAngle(_ax, a)); }
+    if (W.sniff) { catAxis('x', _ax); catTurn(B.head, _q.setFromAxisAngle(_ax, -0.035 * W.sniff)); } }
   touchBody(t, dt);
   idleLife(t, dt, night);
   stepZzz(t, dt, night && !CAT.seq && CAT.sleep === 'deep' && CAT_EYE.u.uBlink.value > 0.9);   // Zzz while it sleeps deeply
@@ -724,8 +750,32 @@ function moveCat(t, dt, night) {
   acc.applyQuaternion(_q.copy(H.quaternion).invert());
   CAT.lashP += dt * Math.PI * 2 * W.lashF;   // (lashing faster as it gets crosser: the phase kept, so the tail never jumps)
   const sway = W.walk * 0.05 * Math.sin(Math.PI * 2 * (G.phase + 0.3)) + (W.lash ? 0.22 * W.lash * Math.sin(CAT.lashP) : 0) + CAT.kick;
-  catTail(dt, acc, yawAcc, sway);
+  catTail(dt, acc, yawAcc, sway, tailMood(G, night));
   placeShadow(G, W.pose);
+}
+// the tail's mood (cat.js C_TMOOD; G, 22/10/2026: its tail natural as it moves). From what is known of how cats carry and
+// move their tails: lying at ease, a slow sweep along the floor, the tip a beat behind the base; watching (the hen, a
+// thing that moves), the tip quick and restless; walking, held up with its tip curled over (the carriage of a friendly
+// cat) and swaying with the stride; stalking, low and quivering; cross, a wider and faster sweep (on top of the lashing
+// the stroking brings: touchWishes); asleep, now and then a slow stir. Lying or sitting it sweeps flat, about the up of
+// the room; it never goes into the floor or the cushion (floor: the surface under it).
+const TAIL_FLAT = /^(sphinx|loaf|nest|curl|sit|lick|wipe)$/;
+function tailMood(G, night) {
+  const M = C_TMOOD, T = TOUCH, sm = CAT.tm || (CAT.tm = { wave: 0, f: 0.2, curl: 0 });
+  let wave = 0.045, f = 0.2, curl = 0;
+  if (night && !CAT.seq) { wave = 0.018; f = 0.07; }
+  else if (W.walk > 0.05) { wave = 0.035; f = G.T ? 1 / G.T : 1.2; curl = 0.7; }
+  else if (W.lash) { wave = 0.05; f = 1.3; }
+  else if (/^(stand|stalk|bow|stretch)/.test(W.pose)) { wave = 0.03; f = 0.32; curl = W.pose === 'stand' ? 0.35 : 0; }
+  else if (/^(sit|lick|wipe)$/.test(W.pose)) { wave = 0.028; f = 0.16; }
+  if (!night && henBusy() && !W.walk) { wave += 0.02; f = Math.max(f, 0.55); }   // (watching the hen: restless)
+  if (T.prey > 0.3) { wave = Math.max(wave, 0.06); f = Math.max(f, 1.6); }
+  if (T.over > 0.2) { wave += 0.1 * T.over; f = Math.max(f, 0.5 + 1.3 * T.over); }
+  if (W.tail) { if (W.tail.wave !== undefined) wave = W.tail.wave; if (W.tail.f !== undefined) f = W.tail.f; if (W.tail.curl !== undefined) curl = W.tail.curl; }   // (a step may ask for its own)
+  const k = Math.min(1, (CAT.dtLast || 0.016) / 0.6);   // (the mood eases over ~0.6 s: a change of pace never jerks it)
+  sm.wave += (wave - sm.wave) * k; sm.f += (f - sm.f) * k; sm.curl += (curl - sm.curl) * k;
+  M.wave = reduceMotion ? 0 : sm.wave; M.f = sm.f; M.curl = sm.curl; M.flat = TAIL_FLAT.test(W.pose); M.floor = G.y - DENT.give;
+  return M;
 }
 // breathing is in moveCat; here the lids, ears, a sigh, the tail's tip, and (by day) where it glances
 function idleLife(t, dt, night) {
@@ -763,9 +813,10 @@ function idleLife(t, dt, night) {
   CAT.kick *= Math.max(0, 1 - dt * 6);
 }
 function placeShadow(G, pose) {   // the contact shadow: its shape (lying, sitting, curled, standing) and where the cat is
-  const sh = PETS.catShadow, S = { sphinx: [1, 1], sit: [0.62, 0.9], lick: [0.62, 0.9], wipe: [0.62, 0.9], curl: [0.75, 1.15], nest: [0.8, 0.9], air: [0.5, 0.5] }[pose] || [0.85, 0.65];
+  const sh = PETS.catShadow, S = { sphinx: [1, 1], loaf: [0.95, 0.85], sit: [0.62, 0.9], lick: [0.62, 0.9], wipe: [0.62, 0.9], curl: [0.75, 1.15], nest: [0.8, 0.9], air: [0.5, 0.5] }[pose] || [0.85, 0.65];
   const y = pose === 'air' ? (G.y > 0.2 ? CAT_WAY.seatY : 0) : G.y + (G.sink || 0) - 0.9 * DENT.body.d;   // on the hollow's floor (only its middle shows: the cushion hides the rest)
-  sh.position.set(G.x, y + 0.004, G.z); sh.rotation.z = G.yaw + Math.PI / 2; sh.scale.set(S[0], S[1], 1);
+  // (a little away from the glass, as the daylight leaves it: world/furnish.js WIN_DIR; G, 24/10/2026)
+  sh.position.set(G.x + 0.045, y + 0.004, G.z + 0.016); sh.rotation.z = G.yaw + Math.PI / 2; sh.scale.set(S[0] * 1.12, S[1] * 1.12, 1);
 }
 /* ---- the chicken: acts (walk, scratch, step back, peer, peck, stand, turn) over a gait that keeps its feet planted */
 const HEN_ACTS = {
@@ -859,6 +910,9 @@ function drawPets() {
   const catDrawn = crispPass(SHARP.cat, [hp.x, hp.y - 0.04, hp.z, 0.5, zzz ? 0.8 : 0.55, 0.5], C => { if (PETS.fur && PETS.fur.visible) furLight(renderer, scene, C); });   // (high enough for the Zzz)
   // on screen and on the move (the hen always is; the cat on its way or busy): the sharp layer at 60 frames a second
   PETS.fast = henDrawn || (catDrawn && (CAT.mode === 'trip' || !!CAT.seq || CAT.ikW > 0.01 || TOUCH.active));
+  // its shadow in the sun (G, 24/10/2026: "tạo shadow ... bao gồm ... mèo"): cast while it keeps still, not while it moves (the room
+  // would be drawn again every frame for it); the shadows drawn again once as it starts and once as it settles
+  { const still = catDrawn && !(CAT.mode === 'trip' || !!CAT.seq || CAT.ikW > 0.01 || TOUCH.active); if (CATR.mesh && still !== PETS.shadowStill) { PETS.shadowStill = still; CATR.mesh.castShadow = still; setShadowsDirty(true); setNeeds(true); } }
   if (hen || henOut) PETS.chicken.visible = true;
 }
 // one crisp pass: what is shown on layer 1 inside a box (centre, half widths, height), into a target just covering it on
@@ -888,12 +942,19 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
   const cc = renderer.getClearColor(_c), ca = renderer.getClearAlpha();
   // no backdrop in these passes: until the sky is let in the room's is a plain colour (core/loop.js reveal), which filled
   // the target, so an opaque box showed round the animals as they came in, and the fur's light (fur.js) went wrong
-  const bg = scene.background; scene.background = null;
-  if (before) before(C);
-  P.rt.viewport.set(0, 0, tw, th); P.rt.scissor.set(0, 0, tw, th); P.rt.scissorTest = true;
-  renderer.setRenderTarget(P.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, C);
-  renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); scene.background = bg;
+  // a pass of things that do not move (P.still: the rug, the books on the table and the pouf) is drawn again only when the room
+  // is (ROOMF), or where it lies on the screen changes; between, its last picture is laid over again
+  const keep = P.still && P.frt === P.rt && P.frame === ROOMF.n && P.fk === tw + ',' + th + ',' + x0 + ',' + y0;
+  if (!keep) {
+    const bg = scene.background; scene.background = null;
+    if (before) before(C);
+    P.rt.viewport.set(0, 0, tw, th); P.rt.scissor.set(0, 0, tw, th); P.rt.scissorTest = true;
+    renderer.setRenderTarget(P.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, C);
+    renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); scene.background = bg;
+    P.frt = P.rt; P.frame = ROOMF.n; P.fk = tw + ',' + th + ',' + x0 + ',' + y0;
+  }
   const Q = P.quad.material.uniforms; Q.uScale.value.set(tw / P.rt.width, th / P.rt.height); setPaint(Q, P.rt, W_, H); if (Q.uRk) Q.uRk.value = k;
+  if (!P.born) P.born = performance.now(); const fb = Math.min(1, (performance.now() - P.born) / 700); Q.uBorn.value = fb * fb * (3 - 2 * fb); if (fb < 1) setNeeds(true);   // (the first time it shows: faded in over 0.7 s)
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true; P.seen = performance.now();
   return true;
@@ -901,6 +962,7 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
 /* the sharp passes' targets (each a few to ~30 MB of the GPU's memory) let go once their thing has been off the screen
    5 s (G, 19/10/2026: the page's memory); made again the next time it shows. crispSeen: for a pass drawn elsewhere. */
 const CRISP = new Set(); let crispSwept = 0;
+const ROOMF = { n: 0, t: 0 };   // (the room's frames drawn, and when the last was: core/loop.js draw)
 function crispSeen(P) { CRISP.add(P); P.seen = performance.now(); }
 function sweepCrisp(now = performance.now()) {
   if (now - crispSwept < 2000) return; crispSwept = now;
@@ -934,4 +996,4 @@ function setHenAway(away) {
   if (PETS.chicken) { PETS.chicken.visible = PETS.henShadow.visible = PETS.state === 'day' && !away; setShadowsDirty(true); setNeeds(true); }
 }
 
-export { crispPass, crispPatch, crispSeen, drawPets, drawSharpBooks, loadPets, PETS, petsForHour, setHenAway, SHARP, sharpQuad, sweepCrisp };
+export { ROOMF, crispPass, crispPatch, crispSeen, drawPets, drawSharpBooks, loadPets, PETS, petsForHour, setHenAway, SHARP, sharpQuad, sweepCrisp };

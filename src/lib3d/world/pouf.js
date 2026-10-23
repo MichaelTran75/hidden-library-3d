@@ -88,11 +88,19 @@ function poufGeometry(W = 1.4, D = 1.22, H = 0.52, seed = 31) {
       const v = ring(j, i), nb = [ring(j - 1, i), ring(j + 1, i), ring(j, i - 1), ring(j, i + 1), ring(j - 2, i), ring(j + 2 < rings ? j + 2 : j + 1, i), ring(j, i - 2), ring(j, i + 2)];
       let ax = 0, ay = 0, az = 0; for (const k of nb) { ax += P.getX(k); ay += P.getY(k); az += P.getZ(k); } ax = ax / nb.length - P.getX(v); ay = ay / nb.length - P.getY(v); az = az / nb.length - P.getZ(v);
       const conc = ax * Nn.getX(v) + ay * Nn.getY(v) + az * Nn.getZ(v);      // > 0: neighbours stand above → valley
-      const o = Math.min(1, Math.max(0.24, 1 - conc * 185)) * (conc < 0 ? Math.min(1.25, 1 - conc * 50) : 1);
+      let o = Math.min(1, Math.max(0.24, 1 - conc * 185)) * (conc < 0 ? Math.min(1.25, 1 - conc * 50) : 1);
+      if (o < 1) o *= 1 - 0.45 * Math.min(1, (1 - o) / 0.25);   // (the folds' valleys 45 % darker, the shallow ones less: G, 24/10/2026)
       col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = o;
     }
-    // soft contact shadow towards the floor
-    for (let v = 0; v < nv; v++) { const y = P.getY(v), k = 0.55 + 0.45 * Math.min(1, y / 0.12); col[v * 3] *= k; col[v * 3 + 1] *= k; col[v * 3 + 2] *= k; }
+    // smoothed over its neighbours, twice (per vertex, a deep fold read as a dotted line along the triangles' edges: G, 24/10/2026,
+    // "remove răng cưa trên pouf"), then deepened a little so the folds keep their dark
+    for (let pass = 0; pass < 2; pass++) { const src = col.slice();
+      for (let j = 2; j < rings - 1; j++) for (let i = 0; i < seg; i++) { const v = ring(j, i); let sum = 0, n = 0;
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const jj = j + dj; if (jj < 1 || jj > rings - 1) continue; sum += src[ring(jj, i + di) * 3] * (di === 0 && dj === 0 ? 2 : 1); n += di === 0 && dj === 0 ? 2 : 1; }
+        const o = Math.pow(sum / n, 1.25); col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = o; } }
+    // soft contact shadow towards the floor (in red and blue only: green keeps the folds' own shade, for the shader to draw
+    // them crisp: velvet.js aoSharp)
+    for (let v = 0; v < nv; v++) { const y = P.getY(v), k = 0.55 + 0.45 * Math.min(1, y / 0.12); col[v * 3] *= k; col[v * 3 + 2] *= k; }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   }
   // bottom seam loop (welt cord) on the ring nearest 7 cm height

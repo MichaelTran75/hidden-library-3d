@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { R, tick } from '../core/base.js';
-import { canvas, ctex } from '../core/utils.js';
+import { canvas, ctex, shrinkTexture } from '../core/utils.js';
 import { camera, renderer, scene } from '../core/renderer.js';
 import { room } from './room.js';
 import { CLOCK_CELL, SHELF } from './shelves.js';
@@ -74,7 +74,7 @@ async function buildClock() {
   const src = root.getObjectByName('static').material;
   // its own finish: the model's picture, wrought iron and old brass with a little sheen, lit by the room
   const mat = new THREE.MeshStandardMaterial({ map: src.map, roughness: 0.58, metalness: 0.35, envMapIntensity: 0.8, side: THREE.DoubleSide, fog: false });
-  if (mat.map) { mat.map.anisotropy = 8; mat.map.colorSpace = THREE.SRGBColorSpace; }
+  if (mat.map) { shrinkTexture(mat.map, 512); mat.map.anisotropy = 8; mat.map.colorSpace = THREE.SRGBColorSpace; }   // (its picture 1024 -> 512: G, 21/10/2026, the page's memory)
   mat.onBeforeCompile = sh => {   // (hidden where the room is nearer, as the animals: on its shelf only)
     sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff; sh.uniforms.uRoomDepth = CKU.uRoomDepth;
     sh.fragmentShader = 'uniform sampler2D uDepth; uniform vec2 uFull, uOff; uniform float uRoomDepth;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n  if (uRoomDepth > 0.5 && gl_FragCoord.z > texture2D(uDepth, (gl_FragCoord.xy + uOff) / uFull).r + 2e-6) discard;');

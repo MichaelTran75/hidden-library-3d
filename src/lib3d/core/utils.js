@@ -22,6 +22,12 @@ function ctex(c, { srgb = true, rep = true } = {}) { const t = new THREE.CanvasT
 const hsl = (h, s, l) => new THREE.Color().setHSL(h / 360, s, l);
 // a picture at half its size, drawn at full size first so its strokes keep their weight: the trees' (G, 19/10/2026: "giảm độ nét của cây cối xuống 1";
 // they are seen in the picture at ~0.8 px a CSS px, so their full-size textures held twice the detail anyone sees)
+// a texture's picture drawn down to at most n px on its longer side (its bitmap let go): G, 20/10/2026, the page's memory
+function shrinkTexture(t, n) {
+  const im = t && t.image; if (!im || !im.width || Math.max(im.width, im.height) <= n) return;
+  const s = n / Math.max(im.width, im.height), c = canvas(Math.max(1, Math.round(im.width * s)), Math.max(1, Math.round(im.height * s))), g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high'; g.drawImage(im, 0, 0, c.width, c.height); if (im.close) im.close(); t.image = c; t.needsUpdate = true;
+}
 function halfCanvas(c) { const h = canvas(Math.max(1, c.width >> 1), Math.max(1, c.height >> 1)), g = h.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(c, 0, 0, h.width, h.height); return h; }
 
 /* Box with world-scaled UVs: v runs along the longest in-plane side, 1 UV = `tile` metres */
@@ -38,4 +44,4 @@ function boardGeo(w, h, d, tile = 1, round = 0) {   // (round: its edges rounded
 }
 function place(geo, x, y, z, ry = 0) { const g = geo.clone(); if (ry) g.rotateY(ry); g.translate(x, y, z); return g; }
 
-export { PERM, boardGeo, canvas, ctex, fade, fbm, halfCanvas, hsl, pick, place, rand, rng, rr, vnoise };
+export { PERM, boardGeo, canvas, ctex, fade, fbm, halfCanvas, hsl, pick, place, rand, rng, rr, shrinkTexture, vnoise };
