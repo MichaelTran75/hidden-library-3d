@@ -169,7 +169,7 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   for (const k of ['map', 'normalMap', 'aoMap']) if (topMat[k] && topMat[k].image) shrinkTexture(topMat[k], Math.max(64, Math.max(topMat[k].image.width, topMat[k].image.height) / 4));   // (the table's pictures at a quarter: G, 20/10/2026, twice; its tint and finish had been lost behind this comment from 20/10 to 23/10)
   for (const n of ['ctable_top', 'ctable_legs']) { const m = new THREE.Mesh(B[n].geometry, n === 'ctable_top' ? topMat : MAT.tableOak); m.scale.copy(tS); m.castShadow = m.receiveShadow = true; tbl.add(m); }
   tbl.position.set(-0.32, 0, -6.3); tbl.rotation.y = 0.05; F.add(tbl);
-  const lamp = tableLamp(); lamp.position.set(-0.6, 0.42, -6.47); F.add(lamp); LIGHTS.table = lamp;
+  const lamp = tableLamp(); lamp.position.set(-0.52, 0.42, -6.4); F.add(lamp); LIGHTS.table = lamp;   // (moved in from the table's edge, 82 % of the way out to 54 %: G, 06/11/2026)
   paintLightly(lamp, 0.975);   // (75 % less watercolour on it too: G, 17/10/2026; then 90 % less of what was left: G, 24/10/2026)
   // (the candle jar by the lamp, hidden behind it from every view, left out: G, 23/10/2026)
   const tb1 = flatBook(B.book_book002, 0.35 + Math.PI / 2, 1.15); tb1.position.set(-0.13, 0.42, -6.22); F.add(tb1);
@@ -192,8 +192,8 @@ async function buildFurniture(A) {   // async: it yields between its heavy parts
   paintLightly(pd, 0.5);   // (75 % less watercolour, then half of what was left: G, 17/10/2026; back to half: G, 18/10/2026)
   // ---- stump side table + plant
   const st = stumpTable(); st.position.set(R.xL + 0.32, 0, -5.85); F.add(st);
-  const pot = new THREE.Mesh(new THREE.LatheGeometry([[.001, 0], [.1, 0], [.14, .05], [.15, .11], [.14, .12]].map(p => new THREE.Vector2(p[0], p[1])), 28), MAT.stone); pot.position.set(R.xL + 0.28, 0.53, -5.98); pot.castShadow = true; F.add(pot);
-  const pl = plant({ leaves: 120, spread: 0.55, height: 0.7, seed: 11, scale: 0.13 }); pl.position.set(R.xL + 0.28, 0.6, -5.98); F.add(pl);
+  const pot = new THREE.Mesh(new THREE.LatheGeometry([[.001, 0], [.1, 0], [.14, .05], [.15, .11], [.14, .12]].map(p => new THREE.Vector2(p[0], p[1])), 28), MAT.stone); pot.position.set(R.xL + 0.32, 0.53, -5.85); pot.castShadow = true; F.add(pot);
+  const pl = plant({ leaves: 120, spread: 0.55, height: 0.7, seed: 11, scale: 0.13 }); pl.position.set(R.xL + 0.32, 0.6, -5.85); F.add(pl);   // (the pot and plant in the middle of the stump: G, 06/11/2026)
   for (const o of [st, pl]) paintLightly(o, 0.5); paintLightly(pot, 0.95);   // (the plant, its pot and its stump: 50 % less watercolour, G, 17/10/2026; the pot 90 % less of what was left: G, 24/10/2026)
   // ---- rug + pouf + books on it
   // (the sofa's colour, sheen and fluffy pile, and its watercolour: G, 24/10/2026, "em cho cái này cùng màu và chất liệu với sofa"; was 0x30553c; then 30 % lighter than the sofa's 0x293e28: "bớt xẫm đi 30%"; 0x355134, then 30 % lighter again; 0x456944, then 30 % darker once its pile was gone)

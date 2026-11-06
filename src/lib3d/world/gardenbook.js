@@ -22,6 +22,7 @@ const TBOOK = { ok: false, layer: 10, twins: [], box: null, P: { rt: null, quad:
 const RUGS = { ok: false, layer: 11, twins: [], box: null, P: { rt: null, quad: null, paint: 0, wash: 0, layer: 11, toneK: 1, pad: 8, still: true, dpr: 1, ao: true } };
 // a material for a sharp twin: the room's own (its own shader changes kept), the crisp layers' depth test added
 const sharpTwinMat = (m, fix, own) => { const o = m.onBeforeCompile, key = m.customProgramCacheKey, c = m.clone(); c.fog = false;
+  c.defines = Object.assign({}, m.defines);   // (a standard material's clone resets its defines: the pouf's twin had lost VELVET_AO_SHARP, its crisp folds and its shade by the floor: G, 06/11/2026)
   c.onBeforeCompile = (sh, r) => { if (o) o.call(c, sh, r); if (fix) fix(sh); if (!own) crispPatch(sh, r); };   // (own: its pass's own depth only)
   const ck = 'crisp|' + (own ? 'own|' : '') + (fix ? fix.toString() : '') + '|' + (o ? o.toString() : '');   // (each twin's own: the wrapper's source is the same for all)
   c.customProgramCacheKey = () => (key ? key.call(m) : '') + ck; c.needsUpdate = true; return c; };

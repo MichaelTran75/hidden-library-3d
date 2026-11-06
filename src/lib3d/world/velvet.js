@@ -179,7 +179,15 @@ function makeVelvet({ color, sheen, sheenRough = 0.6, rough = 0.95, map = null, 
           #ifdef USE_COLOR
             material.sheenColor *= vColor.r;
           #endif
-        #endif`);
+        #endif`)
+      .replace('#include <opaque_fragment>', `
+        #ifdef VELVET_AO_SHARP
+          // (the pouf's base, turned down to the floor in its own shade, keeps little of the pile's grazing glow, which is summed
+          // in here: lit as if open to the room's sky and bounce, it showed as a pale yellow band all round below the seam: G,
+          // 06/11/2026, "phần shadow này a thấy bị lỗi")
+          outgoingLight = mix(outgoingLight, totalDiffuse + totalSpecular + totalEmissiveRadiance, 0.8 * smoothstep(0.15, 0.6, -inverseTransformDirection(normal, viewMatrix).y));
+        #endif
+        #include <opaque_fragment>`);
   };
   if (edge) { const ob = m.onBeforeCompile; m.onBeforeCompile = (sh, r) => { ob(sh, r);
     // its outline (G marked the arm's two upright edges, where it meets what lies behind it), over its lit colour (the sheen is
