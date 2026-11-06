@@ -2,7 +2,7 @@ import './leaves.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { canvas, ctex } from '../core/utils.js';
 import { camera, renderer } from '../core/renderer.js';
-import { POST, QUAD_VS } from '../fx/post.js';
+import { DOF, DOF_GLSL, POST, QUAD_VS } from '../fx/post.js';
 import { V3 } from '../core/views.js';
 import { NIGHT } from '../fx/night.js';
 import { UIS } from './library.js';
@@ -30,10 +30,15 @@ import { drawFloorSharp, drawGardenBook } from '../world/gardenbook.js';
 const OVER = { scene: new THREE.Scene(), u: { uDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uPR: { value: 1 } } };   // (shared by the sharp layer's parts, whenever each is built)
 function crispMaterial(map) {
   return new THREE.ShaderMaterial({
-    uniforms: { map: { value: map }, uDepth: OVER.u.uDepth, uRes: OVER.u.uRes },
+    uniforms: { map: { value: map }, uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uPR: OVER.u.uPR, uFocus: DOF.focus, uNF: DOF.nf },
     vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform sampler2D map, uDepth; uniform vec2 uRes; varying vec2 vUv;
-      void main(){ vec4 c = texture2D(map, vUv); if (c.a < 0.004) discard;
+    fragmentShader: `uniform sampler2D map, uDepth; uniform vec2 uRes, uNF; uniform float uPR; varying vec2 vUv; ${DOF_GLSL}
+      void main(){
+        // out of focus (fx/post.js DOF): read from a smaller picture of the words, one as wide as the lens's circle (its
+        // mipmaps: each level up is twice as soft), and a little lighter the softer
+        float r = dofCoc(uNF.x * uNF.y / (uNF.y - gl_FragCoord.z * (uNF.y - uNF.x))) * uPR;
+        vec4 c = texture2D(map, vUv, log2(max(1.0, 2.0 * r))); c.a *= 1.0 - 0.6 * smoothstep(2.0, 10.0, r);
+        if (c.a < 0.004) discard;
         if (gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 4e-6) discard;
         gl_FragColor = c; }`,
     transparent: true, depthTest: false, depthWrite: false });

@@ -225,7 +225,7 @@ function drawPicture(g, pic, x, y, w, h) {
 /* ---- the pages. A page's picture is drawn as it is read: the gutter (the spine side) toward the middle of the open book,
    its edge shaded; the turned leaf's back is shown mirrored in the shader so it reads the right way round */
 function pagePaper(g, W, H, gutterLeft) {
-  g.fillStyle = '#f4ecd8'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#e2d6c0'; g.fillRect(0, 0, W, H);
   const gx = gutterLeft ? 0 : W, gr = g.createLinearGradient(gx, 0, gutterLeft ? W * 0.12 : W * 0.88, 0);
   gr.addColorStop(0, 'rgba(96, 70, 36, 0.20)'); gr.addColorStop(0.35, 'rgba(96, 70, 36, 0.06)'); gr.addColorStop(1, 'rgba(96, 70, 36, 0)');
   g.fillStyle = gr; g.fillRect(0, 0, W, H);
@@ -339,7 +339,7 @@ function paintEnd(face, R, lang) {
 // the title page, printed on the endpaper inside the front board: a double rule, the book's name, its chapters
 function paintTitlePage(R, lang) {
   const { c, W, H } = R.title_, g = c.getContext('2d'), fs = W * 0.042;
-  g.fillStyle = '#efe5cf'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#e2d6c0'; g.fillRect(0, 0, W, H);
   const gr = g.createLinearGradient(W, 0, W * 0.86, 0); gr.addColorStop(0, 'rgba(96, 70, 36, 0.22)'); gr.addColorStop(1, 'rgba(96, 70, 36, 0)'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
   const m = W * 0.09; g.strokeStyle = 'rgba(138, 59, 42, 0.6)'; g.lineWidth = 3; g.strokeRect(m, m, W - 2 * m - W * 0.03, H - 2 * m); g.lineWidth = 1.2; g.strokeRect(m + 12, m + 12, W - 2 * m - W * 0.03 - 24, H - 2 * m - 24);
   const cx = (W - W * 0.03) / 2; g.textAlign = 'center';
@@ -406,7 +406,7 @@ function buildRead(bk, shape, mesh, base) {
   else if (bk.it.src && !notes.length) over = overviewOf(bk.it, null);   // (something to listen to with nothing to read: its name, author and pages)
   if (!ch.length && !over) return null;
   const pg = shape.page, W = 1024, H = Math.round(W * (pg.y1 - pg.y0) / (pg.z0 - pg.z1));
-  const blank = canvas(8, 8), bg = blank.getContext('2d'); bg.fillStyle = '#f4ecd8'; bg.fillRect(0, 0, 8, 8);
+  const blank = canvas(8, 8), bg = blank.getContext('2d'); bg.fillStyle = '#e2d6c0'; bg.fillRect(0, 0, 8, 8);
   const R = { bk, ch, over, W, H, shape, spread: 0, pending: null, open: false, flapU: bk.flapU, title: printTitle(bk.it), faces: [], leaves: [], pics: new Map(), flows: {}, blank: heroCanvasTex(blank, true) };
   // (a summary: its overview on the first page, then its running pages, as many leaves as the longer language needs)
   if (over) R.S = Math.ceil(Math.max(flowAll(R, 'en').pages.length, flowAll(R, 'vi').pages.length) / 2);

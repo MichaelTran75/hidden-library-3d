@@ -7,7 +7,7 @@ import { canvas, ctex, shrinkTexture } from '../core/utils.js';
 import { camera, renderer } from '../core/renderer.js';
 import { room } from '../world/room.js';
 import { LIGHTS } from '../world/lights.js';
-import { PAINT_GLSL, QUAD_VS, paintUniforms, setPaint } from '../fx/post.js';
+import { DOF, PAINT_GLSL, QUAD_VS, dofPx, paintUniforms, setPaint } from '../fx/post.js';
 import { lerp } from '../fx/night.js';
 import { HOUR, TMPV } from '../fx/hour.js';
 import { OVER } from './words.js';
@@ -38,7 +38,8 @@ function drawDeck() {   // the deck over the finished picture
   let x0 = W, y0 = H, x1 = 0, y1 = 0;
   for (const c of DECKR.corners) { const v = TMPV.copy(c).applyMatrix4(DECK.deck.matrixWorld).project(camera); if (v.z > 1) return;
     const px = (v.x + 1) / 2 * W, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
-  x0 = Math.max(0, Math.floor(x0) - 12); y0 = Math.max(0, Math.floor(y0) - 12); x1 = Math.min(W, Math.ceil(x1) + 12); y1 = Math.min(H, Math.ceil(y1) + 12);   // (room for its outline)
+  const bl = DOF.on.value ? dofPx(-TMPV.setFromMatrixPosition(DECK.deck.matrixWorld).applyMatrix4(camera.matrixWorldInverse).z) : 0, pad = 12 + Math.ceil(bl * pr);   // (out of focus: blurred, fx/post.js DOF)
+  x0 = Math.max(0, Math.floor(x0) - pad); y0 = Math.max(0, Math.floor(y0) - pad); x1 = Math.min(W, Math.ceil(x1) + pad); y1 = Math.min(H, Math.ceil(y1) + pad);   // (room for its outline)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return;
   const k = Math.min(1, 0.75 / pr), tw = Math.max(2, Math.round(w * k)), th = Math.max(2, Math.round(h * k));   // (at 0.75 px a CSS px: G, 20/10/2026, "hạ độ phân giải của máy nghe nhạc", then "giảm độ phân giải máy nghe nhạc")
   if (!DECKR.rt || DECKR.rt.width < tw || DECKR.rt.height < th) {
@@ -57,7 +58,7 @@ function drawDeck() {   // the deck over the finished picture
   renderer.setRenderTarget(DECKR.rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(DECK.scene, C);
   renderer.setRenderTarget(null); renderer.setClearColor(cc, ca);
   { const Q = DECKR.quad.material.uniforms; if (!DECK.born) DECK.born = performance.now(); const fb = Math.min(1, (performance.now() - DECK.born) / 700); Q.uBorn.value = fb * fb * (3 - 2 * fb); if (fb < 1) setNeeds(true); Q.uOut.value = DECK.out; Q.uOutW.value = 2 * pr * k; Q.uHalo.value = 1.6 * pr * k; }   // (its width on screen kept)
-  DECKR.quad.material.uniforms.uScale.value.set(tw / DECKR.rt.width, th / DECKR.rt.height); setPaint(DECKR.quad.material.uniforms, DECKR.rt, W, H, k);   // (its strokes as wide on the screen as at full size: 2.7 times as many of its pixels, they had pulled the clear edge round it into the far side of the record, G 20/10/2026)
+  DECKR.quad.material.uniforms.uScale.value.set(tw / DECKR.rt.width, th / DECKR.rt.height); setPaint(DECKR.quad.material.uniforms, DECKR.rt, W, H, k); DECKR.quad.material.uniforms.uBlur.value = bl * pr * k;   // (its strokes as wide on the screen as at full size: 2.7 times as many of its pixels, they had pulled the clear edge round it into the far side of the record, G 20/10/2026)
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); DECKR.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W / pr, H / pr); renderer.autoClear = true; crispSeen(DECKR);   // (its target let go when it is off the screen: pets.js sweepCrisp)
 }
@@ -110,7 +111,7 @@ function buildRecordPlayer() {
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
       float aAt(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > uScale.x || uv.y > uScale.y) ? 0.0 : texture2D(t, uv).a; }
       vec4 shadeAt(vec2 uv) { vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(toS(c.rgb / c.a), c.a); }
-      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
+      void main(){ vec2 uv = vUv * uScale; vec4 o; if (uBlur > 0.3) o = blurAt(uv); else { o = shadeAt(uv); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); } }   // (busy detail kept crisper; out of focus: fx/post.js DOF)
         vec4 res = vec4(o.rgb * o.a, o.a);
         if (uOut > 0.001) {   // under the pointer, outlined as the 747 and the clock are (pets.js sharpQuad): white just outside it, a soft dark edge beyond
           float near = 0.0, far = 0.0, here = aAt(uv);

@@ -18,17 +18,157 @@ const POST = { light: { scene: new THREE.Scene(), parts: [], mats: new Map(), k:
    leaves and the strokes run into each other (wet-in-wet): a painter washes a mass of leaves as one soft shape ("lost"
    edges) and keeps the line for the big forms.  */
 const QUAD_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy,0.0,1.0); }';
+/* ---- ambient occlusion: the light a nook keeps out (G, 06/11/2026: "do research n study and improve blur, shadow, texture
+   effect"). Most of the room is lit by the sky through the glass, a light from everywhere that casts no shadow map: books
+   stood in their cells as if pasted on, the sofa's cushions and the floor's edges were as bright as an open floor. A book
+   between two others, the back of a cell under its board, the floor under a seat see less of that sky.
+   Ground-truth AO (J. Jimenez, X. Wu, A. Pesce, A. Jarabo, "Practical Realtime Strategies for Accurate Indirect
+   Occlusion", Activision 2016; as in Intel's XeGTAO): for each pixel of the room's picture at half size, from its depth
+   alone (its normal made from the depth round it, the nearer of each side's steps: J. Turánszki 2019), two slices of the
+   view hemisphere turned by a 4 x 4 pattern; along each, both ways, the highest horizon in 6 steps within AO.radius
+   metres (fading out from 40 % of it, so a far wall does not hide a near cup), and the cosine-weighted sky between the
+   two horizons integrated exactly. A 4 x 4 blur that keeps to its own depth takes the pattern out; the tone pass and
+   the sharp twins of the room's things (world/gardenbook.js) darken by it. Only in the room (its box, R): the garden is
+   lit by the open sky, and its leaves took a speckle of it through the glass; nor past 12 m, nor on the sky. */
+const AO = { k: { value: 1 }, power: { value: 1.6 }, radius: 0.36, maxPx: 48, rt: null, out: null, q: null, bq: null, tex: { value: null } };
+function buildAO() {
+  const o = { depthBuffer: false };
+  AO.rt = new THREE.WebGLRenderTarget(4, 4, o); AO.out = new THREE.WebGLRenderTarget(4, 4, o); AO.tex.value = AO.out.texture;
+  const depthGLSL = /* glsl */`uniform sampler2D tDepth; uniform mat4 uProjInv; uniform vec2 uFull;
+    vec3 viewAt(vec2 uv){ vec4 p = uProjInv * vec4(uv * 2.0 - 1.0, texture2D(tDepth, uv).r * 2.0 - 1.0, 1.0); return p.xyz / p.w; }
+    vec2 fullUv(vec2 fc){ return (floor(fc) * 2.0 + 0.5) / uFull; }`;   // (a half-size pixel's own pixel of the full-size depth)
+  const common = () => ({ tDepth: { value: null }, uProjInv: { value: new THREE.Matrix4() }, uFull: { value: new THREE.Vector2(1, 1) } });
+  const f = v => v.toFixed(3);
+  AO.q = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { ...common(), uProjScale: { value: 1 }, uRadius: { value: AO.radius }, uMaxPx: { value: AO.maxPx }, uPower: AO.power, uCamWorld: { value: new THREE.Matrix4() } },
+    vertexShader: QUAD_VS, depthTest: false, depthWrite: false, fragmentShader: /* glsl */`
+    precision highp float; ${depthGLSL} uniform float uProjScale, uRadius, uMaxPx, uPower; uniform mat4 uCamWorld; varying vec2 vUv;
+    const float HALF_PI = 1.5707963; const vec3 ROOM0 = vec3(${f(R.xL)}, -0.5, ${f(R.zB)}), ROOM1 = vec3(${f(R.xW)}, ${f(R.H)}, ${f(R.zF)});
+    void main(){
+      vec2 tx = 1.0 / uFull, uv = fullUv(gl_FragCoord.xy); float d = texture2D(tDepth, uv).r;
+      if (d >= 0.99999) { gl_FragColor = vec4(1.0); return; }   // (the sky)
+      vec3 P = viewAt(uv); float z = -P.z;
+      vec3 W = (uCamWorld * vec4(P, 1.0)).xyz, o = max(ROOM0 - W, W - ROOM1);
+      float far = max(smoothstep(9.0, 14.0, z), smoothstep(0.05, 0.4, max(max(o.x, o.y), o.z)));   // (far off, or out of the room)
+      if (far >= 1.0) { gl_FragColor = vec4(1.0); return; }
+      vec3 pr = viewAt(uv + vec2(tx.x, 0.0)), pl = viewAt(uv - vec2(tx.x, 0.0)), pu = viewAt(uv + vec2(0.0, tx.y)), pd = viewAt(uv - vec2(0.0, tx.y));
+      vec3 dx = abs(pr.z - P.z) < abs(P.z - pl.z) ? pr - P : P - pl, dy = abs(pu.z - P.z) < abs(P.z - pd.z) ? pu - P : P - pd;
+      vec3 N = normalize(cross(dx, dy)), V = normalize(-P);
+      float rPx = min(uRadius * uProjScale / z, uMaxPx);   // (the radius on the half-size picture, in its pixels)
+      if (rPx < 1.0) { gl_FragColor = vec4(1.0); return; }
+      // the 4 x 4 pattern (Bayer's: each 2 x 2 step of it spread over the next) turns the slices and moves the steps along
+      vec2 c = mod(floor(gl_FragCoord.xy), 4.0), c1 = mod(c, 2.0), c2 = floor(c / 2.0);
+      float n0 = (4.0 * mod(2.0 * c1.x + 3.0 * c1.y, 4.0) + mod(2.0 * c2.x + 3.0 * c2.y, 4.0) + 0.5) / 16.0, jit = fract(n0 * 5.0 + 0.1875);
+      float fRange = 0.6 * uRadius, fMul = -1.0 / fRange, fAdd = (uRadius - fRange) / fRange + 1.0;
+      vec2 tHalf = 2.0 * tx; float vis = 0.0;
+      for (int s = 0; s < 2; s++) {
+        float phi = (float(s) + n0) * HALF_PI; vec2 om = vec2(cos(phi), sin(phi));
+        vec3 dir = vec3(om, 0.0), ortho = dir - dot(dir, V) * V, axis = normalize(cross(ortho, V)), pn = N - axis * dot(N, axis);
+        float pnl = length(pn), cosN = clamp(dot(pn, V) / max(pnl, 1e-4), 0.0, 1.0), n = sign(dot(ortho, pn)) * acos(cosN);
+        float lo0 = cos(n + HALF_PI), lo1 = cos(n - HALF_PI), h0 = lo0, h1 = lo1;
+        for (int j = 0; j < 6; j++) {
+          float t = (float(j) + jit) / 6.0; vec2 off = om * (t * t * rPx + 1.0) * tHalf;
+          vec3 s0 = viewAt(uv + off) - P, s1 = viewAt(uv - off) - P; float l0 = length(s0), l1 = length(s1);
+          h0 = max(h0, mix(lo0, dot(s0, V) / max(l0, 1e-5), clamp(l0 * fMul + fAdd, 0.0, 1.0)));
+          h1 = max(h1, mix(lo1, dot(s1, V) / max(l1, 1e-5), clamp(l1 * fMul + fAdd, 0.0, 1.0)));
+        }
+        float a0 = -acos(clamp(h1, -1.0, 1.0)), a1 = acos(clamp(h0, -1.0, 1.0));
+        a0 = n + clamp(a0 - n, -HALF_PI, HALF_PI); a1 = n + clamp(a1 - n, -HALF_PI, HALF_PI);
+        float sn = sin(n);
+        vis += mix(pnl, 1.0, 0.05) * ((cosN + 2.0 * a0 * sn - cos(2.0 * a0 - n)) + (cosN + 2.0 * a1 * sn - cos(2.0 * a1 - n))) * 0.25;
+      }
+      vis = pow(clamp(vis * 0.5, 0.03, 1.0), uPower);   // (a little deeper than the integral: XeGTAO's final power, 2.2 there)
+      gl_FragColor = vec4(mix(vis, 1.0, far), 1.0, 1.0, 1.0);
+    }` }));
+  // the 4 x 4 blur: each of the pattern's turns once, weighted by how near its depth is to this pixel's (an edge is kept)
+  AO.bq = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { ...common(), tAOraw: { value: AO.rt.texture }, uHalf: { value: new THREE.Vector2(1, 1) } },
+    vertexShader: QUAD_VS, depthTest: false, depthWrite: false, fragmentShader: /* glsl */`
+    precision highp float; ${depthGLSL} uniform sampler2D tAOraw; uniform vec2 uHalf; varying vec2 vUv;
+    float zAt(vec2 fc){ return -viewAt(fullUv(fc)).z; }
+    void main(){
+      float zc = zAt(gl_FragCoord.xy), s = 0.0, w = 0.0;
+      for (int j = -2; j <= 1; j++) for (int i = -2; i <= 1; i++) {
+        vec2 fc = gl_FragCoord.xy + vec2(float(i), float(j)); float zs = zAt(fc);
+        float k = exp(-abs(zs - zc) / max(zc, 0.05) * 30.0); s += texture2D(tAOraw, fc / uHalf).r * k; w += k; }
+      gl_FragColor = vec4(s / max(w, 1e-4), 1.0, 1.0, 1.0);
+    }` }));
+}
+function drawAO(camera, depth) {   // (after the room is drawn: core/loop.js draw)
+  if (!AO.k.value) return;
+  const fw = POST.rt.width, fh = POST.rt.height, w = Math.max(1, Math.round(fw / 2)), h = Math.max(1, Math.round(fh / 2));
+  if (AO.rt.width !== w || AO.rt.height !== h) { AO.rt.setSize(w, h); AO.out.setSize(w, h); }
+  for (const q of [AO.q, AO.bq]) { const U = q.material.uniforms; U.tDepth.value = depth; U.uProjInv.value.copy(camera.projectionMatrixInverse); U.uFull.value.set(fw, fh); }
+  AO.q.material.uniforms.uProjScale.value = camera.projectionMatrix.elements[5] * h / 2;   // (a metre at 1 m off, in pixels of the half-size picture)
+  AO.q.material.uniforms.uCamWorld.value.copy(camera.matrixWorld);
+  AO.bq.material.uniforms.uHalf.value.set(w, h);
+  renderer.setRenderTarget(AO.rt); AO.q.render(renderer); renderer.setRenderTarget(AO.out); AO.bq.render(renderer);
+}
+/* ---- depth of field: the lens on what is looked at (G, 06/11/2026, as AO above). A book shown or opened in front of the
+   camera, or the clock, the camera, the 747 or the ISS out of its shelf, stood against a room as sharp as itself: one flat
+   picture. A lens set on a near thing blurs what lies behind it by a circle (1 - focus / depth) times its widest (the
+   thin lens: Potmesil & Chakravarty 1981): the nearer the thing, the softer the room behind (a book read at half a metre
+   more than one shown at 1.2 m). Made as D. Gustafsson's single-pass bokeh (2018), a scatter-as-gather (J. Jimenez,
+   "Next generation post processing in Call of Duty: Advanced Warfare", SIGGRAPH 2014): for each pixel of the room's
+   picture at half size, 32 taps on a golden-angle spiral out to the widest circle there is; a tap counts where its own
+   circle reaches this pixel, and one behind this pixel no further than twice its circle (a sharper thing behind does not
+   spread over a blurrier one). The AO goes in with each tap (its crisp nooks would stay on a blurred room). The tone pass
+   takes the blurred picture where the circle is wider than about a pixel; the paint's ink lets go there; the shelves'
+   titles fade, the fireflies open into soft discs, and the sharp layers over the picture blur as far as they are
+   (world/pets.js crispPass). Off in the room's own views (G wants its sofa and shelves crisp there): core/loop.js stepFocus.
+   focus: x the depth in focus (m), y the circle's radius far off (CSS px), z CSS px to the room's picture's px. */
+const DOF = { far: 12, focus: { value: new THREE.Vector4(1, 0, 1, 0) }, nf: { value: new THREE.Vector2(0.05, 400) }, on: { value: 0 }, rt: null, q: null, tex: { value: null }, used: 0 };
+const DOF_GLSL = 'uniform vec4 uFocus; float dofCoc(float z){ return uFocus.y * max(0.0, 1.0 - uFocus.x / max(z, 1e-3)); }';   // (the circle's radius at z metres, CSS px)
+const dofPx = z => DOF.focus.value.y * Math.max(0, 1 - DOF.focus.value.x / Math.max(z, 1e-3));   // (the same in JS: pets.js crispPass)
+function buildDof() {
+  DOF.rt = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false, type: THREE.HalfFloatType }); DOF.tex.value = DOF.rt.texture;
+  DOF.q = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { tColor: { value: null }, tDepth: { value: null }, tAO: AO.tex, uAOk: AO.k, uHalf: { value: new THREE.Vector2(1, 1) }, uFocus: DOF.focus, uNF: DOF.nf },
+    vertexShader: QUAD_VS, depthTest: false, depthWrite: false, fragmentShader: /* glsl */`
+    precision highp float; uniform sampler2D tColor, tDepth, tAO; uniform float uAOk; uniform vec2 uHalf, uNF; varying vec2 vUv; ${DOF_GLSL}
+    float zAt(vec2 uv){ return uNF.x * uNF.y / (uNF.y - texture2D(tDepth, uv).r * (uNF.y - uNF.x)); }
+    vec3 tap(vec2 uv){ return texture2D(tColor, uv).rgb * mix(1.0, texture2D(tAO, uv).r, uAOk); }
+    void main(){
+      float px = uFocus.z * 0.5, zc = zAt(vUv), cc = dofCoc(zc) * px, R = uFocus.y * px;   // (circles in this picture's pixels)
+      vec3 sum = tap(vUv); float n = 1.0, turn = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      for (int i = 0; i < 32; i++) {
+        float r = R * sqrt((float(i) + 0.5) / 32.0), a = float(i) * 2.39996323 + turn; vec2 uv = vUv + vec2(cos(a), sin(a)) * r / uHalf;
+        float zs = zAt(uv), cs = dofCoc(zs) * px;
+        if (zs > zc) cs = min(cs, cc * 2.0);
+        sum += mix(sum / n, tap(uv), smoothstep(r - 0.5, r + 0.5, cs)); n += 1.0;
+      }
+      gl_FragColor = vec4(sum / n, cc);   // (alpha: this pixel's circle, for the tone pass)
+    }` }));
+}
+function drawDof(camera, depth) {   // (after the AO, while a focus is on: core/loop.js draw)
+  if (!DOF.on.value) return;
+  const w = Math.max(1, Math.round(POST.rt.width / 2)), h = Math.max(1, Math.round(POST.rt.height / 2));
+  if (DOF.rt.width !== w || DOF.rt.height !== h) DOF.rt.setSize(w, h);
+  const U = DOF.q.material.uniforms; U.tColor.value = POST.rt.texture; U.tDepth.value = depth; U.uHalf.value.set(w, h);
+  renderer.setRenderTarget(DOF.rt); DOF.q.render(renderer); DOF.used = performance.now();
+}
+// the lens eased to a focus (zf metres) and a far circle (CSS px; 0: off); true while it changes. Its half-size picture
+// let go 5 s after it was last used (~1.8 MB)
+function setFocus(zf, far, dt, camera) {
+  const F = DOF.focus.value, k = 1 - Math.exp(-dt * 10), y = F.y;
+  if (zf > 0) F.x = F.y < 0.05 ? zf : F.x + (zf - F.x) * k;
+  F.y += (far - F.y) * k; if (Math.abs(F.y - far) < 0.02) F.y = far;
+  F.z = POST.rt.height / Math.max(1, innerHeight); DOF.nf.value.set(camera.near, camera.far);
+  DOF.on.value = F.y > 0.02 ? 1 : 0;
+  if (!DOF.on.value && DOF.rt.width > 4 && performance.now() - DOF.used > 5000) DOF.rt.setSize(4, 4);
+  return F.y !== y;
+}
 function buildPost() {
   POST.rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, samples: 2, depthTexture: new THREE.DepthTexture(4, 4) });   // (2 samples: let go on 21/10/2026 for ~19 MB, back on 24/10/2026: with the books' watercolour mostly gone their edges crawled as the view moved, G "glitching ở tủ sách và sofa"; measured, crawl ÷2–4)
   const exposure = { value: 0.87 }, quad = (uniforms, fragmentShader) => new FullScreenQuad(new THREE.ShaderMaterial({ uniforms, vertexShader: QUAD_VS, fragmentShader, depthTest: false, depthWrite: false }));
   POST.tone = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });
   // toned through FXAA (as POST.blit is): the room is drawn without multisampling (G, 21/10/2026: its 14 MB), and the paint's
   // ink had taken up the stairs left on thin slanted edges (the coffee table's legs)
-  POST.toneQuad = quad({ tColor: { value: null }, exposure, px: { value: new THREE.Vector2(1, 1) } }, /* glsl */`
-    precision highp float; uniform sampler2D tColor; uniform float exposure; uniform vec2 px; varying vec2 vUv;
+  buildAO(); buildDof();
+  POST.toneQuad = quad({ tColor: { value: null }, exposure, px: { value: new THREE.Vector2(1, 1) }, tAO: AO.tex, uAOk: AO.k, tDof: DOF.tex, uDof: DOF.on }, /* glsl */`
+    precision highp float; uniform sampler2D tColor, tAO, tDof; uniform float exposure, uAOk, uDof; uniform vec2 px; varying vec2 vUv;
     vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
     vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
-    vec3 tm(vec2 uv){ return toS(aces(texture2D(tColor, uv).rgb*exposure*0.85)); }
+    vec3 tm(vec2 uv){ vec3 c = texture2D(tColor, uv).rgb*mix(1.0, texture2D(tAO, uv).r, uAOk);   // (the light the room's own nooks keep out: AO above)
+      if (uDof > 0.5) { vec4 b = texture2D(tDof, uv); c = mix(c, b.rgb, smoothstep(0.25, 1.0, b.a)); }   // (out of focus: DOF above)
+      return toS(aces(c*exposure*0.85)); }
     float L(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
     vec3 fxaa(){
       vec3 nw = tm(vUv + vec2(-1.0, -1.0) * px), ne = tm(vUv + vec2(1.0, -1.0) * px), sw = tm(vUv + vec2(-1.0, 1.0) * px), se = tm(vUv + vec2(1.0, 1.0) * px), m = tm(vUv);
@@ -63,8 +203,8 @@ function buildPost() {
   POST.quad = quad({ tTone: { value: POST.tone.texture }, tDepth: { value: null }, tN1: { value: POST.n1.texture }, tN2: { value: POST.n2.texture }, uPaper: POST.paper,
     res: { value: new THREE.Vector2(1, 1) }, near: { value: 0.05 }, far: { value: 400 }, exposure, lift: { value: 0.88 }, veil: { value: 0.06 },
     uInvVP: { value: new THREE.Matrix4() }, uRoom: { value: new THREE.Vector4(R.xL, R.xW, R.zB, R.zF) }, uFloorK: { value: 0.62 }, uLightK: POST.light.k,
-    uInkMin: { value: [0, 1, 2, 3].map(() => new THREE.Vector3(1e9, 1e9, 1e9)) }, uInkMax: { value: [0, 1, 2, 3].map(() => new THREE.Vector3(-1e9, -1e9, -1e9)) } }, /* glsl */`
-    precision highp float;
+    uInkMin: { value: [0, 1, 2, 3].map(() => new THREE.Vector3(1e9, 1e9, 1e9)) }, uInkMax: { value: [0, 1, 2, 3].map(() => new THREE.Vector3(-1e9, -1e9, -1e9)) }, uFocus: DOF.focus }, /* glsl */`
+    precision highp float; ${DOF_GLSL}
     uniform sampler2D tTone, tDepth, tN1, tN2; uniform vec4 uPaper; uniform vec2 res; uniform float near, far, lift, veil, uFloorK, uLightK; uniform mat4 uInvVP; uniform vec4 uRoom; uniform vec3 uInkMin[4], uInkMax[4];
     varying vec2 vUv;
     float ld(float d){ float z=d*2.0-1.0; return 2.0*near*far/(far+near-z*(far-near)); }
@@ -102,7 +242,8 @@ function buildPost() {
       // wet-in-wet: in a mass of leaves the strokes run into each other, no cut-out edges (the four quarters' plain mean:
       // a soft 7×7 wash)
       col = mix(col, (m[0] + m[1] + m[2] + m[3]) / 64.0, leafy * 0.6);
-      float ink = max(de*0.85*(1.0 - 0.7*busy), smoothstep(0.25,0.65,ce)*0.38*(1.0 - 0.5*busy)) * (0.55 + 0.6*n1.z) * smoothstep(16.0, 8.5, d11) * (1.0 - 0.8*fl);
+      float sharp = 1.0 - smoothstep(1.0, 3.0, dofCoc(min(d11, min(min(d01, d21), min(d10, d12)))));   // (out of focus: no line; the nearest side's)
+      float ink = max(de*0.85*(1.0 - 0.7*busy), smoothstep(0.25,0.65,ce)*0.38*(1.0 - 0.5*busy)) * (0.55 + 0.6*n1.z) * smoothstep(16.0, 8.5, d11) * (1.0 - 0.8*fl) * sharp;
       col = mix(col, samp(vUv), fl);   // (on the floor: the wood's grain and seams as drawn, under a lighter wash)
       // --- watercolour transparency: lift + slight desaturation, pigment granulation, edge darkening
       float lum = dot(col, vec3(0.299,0.587,0.114));
@@ -129,7 +270,7 @@ function buildPost() {
         float e01=ld(texture2D(tDepth,vUv+vec2(-1,0)*tx).r), e11=ld(texture2D(tDepth,vUv).r), e21=ld(texture2D(tDepth,vUv+vec2(1,0)*tx).r);
         float e02=ld(texture2D(tDepth,vUv+vec2(-1,1)*tx).r), e12=ld(texture2D(tDepth,vUv+vec2(0,1)*tx).r), e22=ld(texture2D(tDepth,vUv+vec2(1,1)*tx).r);
         float hx = (e20+2.0*e21+e22)-(e00+2.0*e01+e02), hy = (e02+2.0*e12+e22)-(e00+2.0*e10+e20);
-        inkL = smoothstep(0.03, 0.12, length(vec2(hx,hy))/max(e11,0.3)) * 0.9;   // (a softer ramp than the watercolour's: its steps showed: G, 24/10/2026, "mờ nhẹ viền răng cưa")
+        inkL = smoothstep(0.03, 0.12, length(vec2(hx,hy))/max(e11,0.3)) * 0.9 * sharp;   // (a softer ramp than the watercolour's: its steps showed: G, 24/10/2026, "mờ nhẹ viền răng cưa")
         col = mix(col, col*vec3(0.3,0.26,0.22), inkL*0.85);
       }
       gl_FragColor = vec4(col*(1.0-veil), 1.0 - inkL);
@@ -229,7 +370,11 @@ function bakePaper(w, h, ow = w, oh = h) {   // the paint pass's paper for this 
    (edge darkening, from a difference of the wash and its blur), settles in the paper's valleys the more the darker it
    is (granulation), and a dry brush leaves the paper's tops bare along a wash's edge. And from painters: "lost and found"
    edges, the busiest detail kept crisper and the plain washes let go (paintAt's detail: how busy the place is). */
-const PAINT_GLSL = `uniform sampler2D tN1, tN2; uniform vec4 uPaper; uniform vec2 uCanvas, uTexel; uniform float uStep; vec4 shadeAt(vec2 uv);
+const PAINT_GLSL = `uniform sampler2D tN1, tN2; uniform vec4 uPaper; uniform vec2 uCanvas, uTexel; uniform float uStep, uBlur; vec4 shadeAt(vec2 uv);
+  vec4 blurAt(vec2 uv) {   // out of focus (DOF): a disc's mean, uBlur the target's pixels across its radius (pets.js crispPass)
+    vec4 s = vec4(0.0); for (int i = 0; i < 24; i++) { float r = uBlur * sqrt((float(i) + 0.5) / 24.0), a = float(i) * 2.39996323; vec4 c = shadeAt(uv + vec2(cos(a), sin(a)) * r * uTexel); s += vec4(c.rgb * c.a, c.a); }
+    s /= 24.0; return s.a > 0.002 ? vec4(s.rgb / s.a, s.a) : vec4(0.0);
+  }
   vec4 paintAt(vec2 uv, out float detail) {
     vec2 sp = gl_FragCoord.xy / uCanvas; vec4 n1 = texture2D(tN1, sp * uPaper.xy), n2 = texture2D(tN2, sp * uPaper.zw);
     vec2 d = uTexel * uStep, uvw = uv + (n1.xy - 0.5) * d * 2.8;
@@ -262,7 +407,7 @@ const PAINT_GLSL = `uniform sampler2D tN1, tN2; uniform vec4 uPaper; uniform vec
     return vec4(col, max(a, ink * 0.5 * step(0.05, max(max(a1.a, a2.a), max(a3.a, a4.a)))));   // (the ink may run just past the edge)
   }`;
 // the uniforms PAINT_GLSL reads, and their values for a target of w x h device pixels on a canvas of W x H
-function paintUniforms() { return { tN1: { value: POST.n1.texture }, tN2: { value: POST.n2.texture }, uPaper: POST.paper, uCanvas: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1, 1) }, uStep: { value: 1 } }; }
+function paintUniforms() { return { tN1: { value: POST.n1.texture }, tN2: { value: POST.n2.texture }, uPaper: POST.paper, uCanvas: { value: new THREE.Vector2(1, 1) }, uTexel: { value: new THREE.Vector2(1, 1) }, uStep: { value: 1 }, uBlur: { value: 0 } }; }
 function setPaint(u, rt, W, H, k = 1) {   // (k: the target's pixels per device pixel, when it is drawn smaller)
   u.uCanvas.value.set(W, H); u.uTexel.value.set(1 / rt.width, 1 / rt.height);
   u.uStep.value = 1.875 * H / 1000 * k;   // the picture's strokes (radius 3 at 1.25 px a step, per 1000 px of height), as radius 2 here, in device pixels
@@ -270,4 +415,5 @@ function setPaint(u, rt, W, H, k = 1) {   // (k: the target's pixels per device 
 
 // a box (world, min and max) the ink lines are drawn in (up to four: POST.quad)
 function inkBox(i, min, max) { const U = POST.mat.uniforms; U.uInkMin.value[i].copy(min); U.uInkMax.value[i].copy(max); }
-export { inkBox, bakePaper, buildPost, drawLight, endFades, fadePicture, PAINT_GLSL, paintLightly, paintUniforms, POST, QUAD_VS, setPaint, stepFade };
+POST.ao = AO; POST.dof = DOF;   // (for tests: __lib3d.POST.ao, .dof)
+export { AO, DOF, DOF_GLSL, dofPx, inkBox, bakePaper, buildPost, drawAO, drawDof, drawLight, endFades, fadePicture, PAINT_GLSL, paintLightly, paintUniforms, POST, QUAD_VS, setFocus, setPaint, stepFade };

@@ -70,7 +70,7 @@ function drawSpines(g, m, o) {
   // the plain cloth (tinted), and the page block (as drawn, its rims tinted where the boards meet it)
   const px = o.n * cw; weave(px, cw);
   const tx = o.titled * cw; weave(tx, cw); for (const y of [22, 30, H - 34, H - 26]) { g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(tx + 3, y, cw - 6, 3); }   // (pressed in, no foil)
-  const pg = (o.n + 1) * cw; g.fillStyle = '#efe7d3'; g.fillRect(pg, 0, 2 * cw, H); m.fillStyle = '#000'; m.fillRect(pg, 0, 2 * cw, H);
+  const pg = (o.n + 1) * cw; g.fillStyle = '#e2d6c0'; g.fillRect(pg, 0, 2 * cw, H); m.fillStyle = '#000'; m.fillRect(pg, 0, 2 * cw, H);
   for (let k = 0; k < 360; k++) { g.fillStyle = `rgba(110,90,60,${.04 + r() * .12})`; g.fillRect(pg + 6 + r() * (2 * cw - 12), 0, 1, H); }
   const yel = g.createLinearGradient(pg, 0, pg + 2 * cw, 0); yel.addColorStop(0, 'rgba(170,140,80,.18)'); yel.addColorStop(.5, 'rgba(170,140,80,0)'); yel.addColorStop(1, 'rgba(170,140,80,.18)'); g.fillStyle = yel; g.fillRect(pg, 0, 2 * cw, H);
   g.fillStyle = '#fff'; g.fillRect(pg, 0, 6, H); g.fillRect(pg + 2 * cw - 6, 0, 6, H); m.fillStyle = '#fff'; m.fillRect(pg, 0, 6, H); m.fillRect(pg + 2 * cw - 6, 0, 6, H);

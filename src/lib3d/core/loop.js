@@ -5,9 +5,10 @@ import { RT_SCALE, camera, renderer, scene, setRtScale, setShadowsDirty, shadows
 import { LIGHTS } from '../world/lights.js';
 import { outside } from '../world/outside.js';
 import { WIND } from '../world/wind.js';
-import { POST, drawLight, endFades, fadePicture, stepFade } from '../fx/post.js';
+import { DOF, POST, drawAO, drawDof, drawLight, endFades, fadePicture, setFocus, stepFade } from '../fx/post.js';
 import { applyRefCamera, resize, stepCam } from './views.js';
 import { booksMesh, buildDisplays, buildGarden, main, motes } from './build.js';
+import { HERO } from '../ui/hero-books.js';
 import { NIGHT, buildNightLights } from '../fx/night.js';
 import { HOUR, applyHour, hourTarget, stepHour } from '../fx/hour.js';
 import { GLASS, stepGlass } from '../fx/glass.js';
@@ -24,7 +25,7 @@ import { PLANE, buildPlane, stepPlane } from '../world/b747.js';
 import { CLOCK, buildClock, stepClock } from '../world/clock.js';
 import { ISS, buildIss, stepIss } from '../world/iss.js';
 import { VCAM, buildCamera, stepCamera } from '../world/camera.js';
-import { stepShows } from '../world/showcase.js';
+import { SHOWS, stepShows } from '../world/showcase.js';
 import { GBOOK, PBOOK, RUGS, TBOOK, buildGardenBook, stepGardenBook } from '../world/gardenbook.js';
 import { RAIN, readWeather } from '../fx/rain.js';
 
@@ -62,12 +63,29 @@ function draw() {
   if (shadowsDirty) { roomLightsFirst(); renderer.shadowMap.needsUpdate = true; setShadowsDirty(false); }
   stepGlass();   // (the room seen again in the glass if its light has changed)
   renderer.setRenderTarget(POST.rt); renderer.render(scene, camera); drawLight(camera);   // (and the parts painted lightly: post.js)
+  drawAO(camera, POST.rt.depthTexture);   // (the nooks' shade, from the room's depth: post.js)
+  drawDof(camera, POST.rt.depthTexture);   // (the room behind what the lens is on, blurred: post.js, stepFocus below)
   POST.toneQuad.material.uniforms.tColor.value = POST.rt.texture; renderer.setRenderTarget(POST.tone); POST.toneQuad.render(renderer);
   const U = POST.mat.uniforms; U.tDepth.value = POST.rt.depthTexture; U.near.value = camera.near; U.far.value = camera.far;
   U.uInvVP.value.multiplyMatrices(camera.matrixWorld, camera.projectionMatrixInverse);   // (the floor's lighter wash: post.js)
   renderer.setRenderTarget(POST.out); POST.quad.render(renderer); renderer.setRenderTarget(null); POST.blit.render(renderer);
   drawWords();
   layoutOverlay();
+}
+/* the lens's focus (fx/post.js DOF): on a book opened in front of the camera, to be read or an atlas (the room behind
+   softens as it opens; the nearer the book, the more), on the clock, the camera, the 747 or the ISS out of its shelf.
+   None in the room's own views, nor for a book only shown (its shelf stays sharp: its titles are read to pick another) */
+const FOCUS = { v: new THREE.Vector3(), inspect: 0.4 };   // (inspect: the depth taken for a thing out of its shelf, drawn over the room)
+function stepFocus(dt) {
+  let zf = 0, far = 0;
+  for (const bk of HERO.list) {
+    const h = bk.hero; if (!h || !h.visible || !bk.out || bk.goal !== 'present') continue;
+    const k = Math.min(1, bk.openK || 0), f = DOF.far * k * k * (3 - 2 * k);
+    if (f > far) { far = f; zf = -FOCUS.v.setFromMatrixPosition(h.matrixWorld).applyMatrix4(camera.matrixWorldInverse).z; }
+  }
+  let ins = Math.max(CLOCK.view ? CLOCK.view.k : 0, VCAM.view ? VCAM.view.k : 0); for (const k in SHOWS) if (SHOWS[k].view) ins = Math.max(ins, SHOWS[k].view.k);
+  const fi = DOF.far * ins * ins * (3 - 2 * ins); if (fi > far) { far = fi; zf = FOCUS.inspect; }
+  return setFocus(zf, far, dt, camera);
 }
 function drawSharp() { renderer.setRenderTarget(null); POST.blit.render(renderer); drawWords(); }   // the last picture, the sharp layer anew
 function loop(now) {
@@ -77,7 +95,7 @@ function loop(now) {
   if (!on) return;
   const t = clock.getElapsedTime();
   const books = stepBooks(dt, t); if (books) setShadowsDirty(true);
-  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepCamera(dt) | stepShows(dt) | stepFade(dt) | sharpFading() | stepIss(dt) | stepGardenBook(dt) | (GLASS.face >= 0) | stepBulb(dt);      // motion that needs every frame
+  const smooth = stepCam(dt) | books | stepGlow(dt) | lit | stepDeck(dt) | stepPlane(dt) | stepClock(dt) | stepCamera(dt) | stepShows(dt) | stepFade(dt) | sharpFading() | stepIss(dt) | stepGardenBook(dt) | (GLASS.face >= 0) | stepBulb(dt) | stepFocus(dt);      // motion that needs every frame
   if (!smooth && !needs) {
     const still = reduceMotion || body.classList.contains('is-idle') || now - lastInput > STILL_AFTER;
     // the record turning or fireflies about: the sharp layer is redrawn over the last picture (fireflies at 30 a second,

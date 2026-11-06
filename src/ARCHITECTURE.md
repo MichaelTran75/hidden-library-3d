@@ -781,6 +781,14 @@ G: "em đo xem có thể giảm ram xuống đc ko?".
   - Ngân Hà (`milkyWayParts`, `ui/words.js`): lớp này chỉ vẽ lần đầu khi trời tối. Mở trang ban ngày rồi chuyển sang đêm thì khựng 359 ms; nay không khựng.
   - Đo: không còn shader mới khi chuyển; khung chậm nhất 74 ms (ngày → đêm), 35 ms (đêm → ngày).
 
+### Giấy sách #E2D6C0 (29/10/2026)
+
+- G: "em cho toàn bộ trang giấy sách sang màu E2D6C0". Đổi mọi màu giấy về #E2D6C0:
+  - trang sách và trang trắng (`ui/leaves.js`), trang tên sách;
+  - trang atlas và giấy lót bìa (`ui/hero-books.js`, `ui/atlas.js`);
+  - khối trang trên kệ (`world/books.js`), mặt trang của sách bay ra;
+  - mép trang vẽ bằng shader: tuyến tính 0,761 / 0,672 / 0,527.
+
 ### Thanh cuộn dọc: xem trọn khung cảnh (`core/views.js` LIFT, 19/10/2026)
 
 - G: "add vertical scroll bar để xem được hết khung cảnh". Góc nhìn ở nhà cắt khung như ảnh nền cover, nên trên cửa sổ rộng bị mất phần trên và phần dưới.
@@ -833,6 +841,51 @@ G: "em đo xem có thể giảm ram xuống đc ko?".
   - Bản Pages ra một tệp `lib3d.js?v=băm`; bản Wix ra một tệp HTML tự chứa.
   - Lý do ghép: tải một tệp nhanh hơn 41 tệp nối chuỗi.
 - `build.py --pages DIR --dev`: thêm `DIR/dev.html` chạy thẳng 41 mô-đun, không ghép, để sửa và gỡ lỗi.
+- Mã ra trang được nén (`tools/minify`, xem mục dưới); `--no-minify` để nguyên như viết. `dev.html` không bao giờ nén.
+
+### Nén mã (`tools/minify`, 05/11/2026)
+
+- G: "Node js có giúp được gì cho library ko?" … "Ok em làm và tối ưu đi".
+- `build.py` gửi mô-đun 3D đã ghép và các script, style của trang (không gồm dữ liệu JSON, mô hình, import map) qua `node tools/minify/minify.mjs`. Bỏ chú thích và khoảng trắng, không đổi tên gì, không viết lại câu lệnh:
+  - Các worker (`painterSource` ở `world/textures.js`, `spineAtlas` ở `world/books.js`) được viết từ chính mã nguồn của các hàm và gọi nhau bằng tên. Đổi tên thì worker gọi tên không có.
+  - esbuild in hàm khai báo trong khối thành `let f = function`, mà cả lib3d nằm trong `if (LIB) { … }`. Mã nguồn của hàm khi đó mất tên. Vì vậy JS dùng terser (`compress: false`, `mangle: false`); esbuild chỉ dùng cho CSS.
+  - Worker hỏng thì âm thầm vẽ trên luồng chính, phòng chỉ giật lúc mở. Thử đổi tên có chừa các tên trong chuỗi chỉ được thêm 7 KB gzip, không đáng rủi ro.
+  - three.js nhận diện shader theo mã nguồn của `onBeforeCompile`. `minify.mjs` ghép từng hàm với bản nén của nó; nếu hai hàm đụng shader viết khác nhau mà nén ra giống nhau thì giữ nguyên mô-đun và báo.
+- Gói npm (`package.json`, `package-lock.json` ở đây: acorn, esbuild, terser) cài ở `~/.cache/hidden-library-3d`, ngoài iCloud. Thiếu thì `build.py` tự `npm ci`; không chạy được thì in cảnh báo và để nguyên.
+- Kết quả (gzip là cỡ GitHub Pages gửi đi):
+  - `lib3d.js` 963 → 639 KB (gzip 353 → 248 KB);
+  - `index.html` 403 → 351 KB (gzip 169 → 157 KB). Phần lớn còn lại là mô hình máy hát `tt-asset` (168 KB) của trang Wix.
+  - Mô hình GLB đã nén meshopt và webp sẵn, Pages còn gzip thêm: không còn gì để bớt.
+- Kiểm tra: `node tools/minify/check.cjs URL_THƯỜNG URL_NÉN [thư mục ảnh]`, hai bản dựng `--no-minify` và bình thường.
+  - Hai bản phải ra giống nhau: lỗi trang, worker (4 tạo, 8 trả lời, 0 hỏng), atlas gáy sách, bố cục tóm tắt mọi cuốn sách, ảnh ngày/đêm qua công tắc thật.
+  - Số shader dao động giữa các lần chạy ngay trong một bản (367 hoặc 391), nên chỉ để xem.
+
+### Bóng nắng mềm theo khoảng cách, bóng khuất, mờ hậu cảnh (06/11/2026)
+
+- G: "Em do research n study and improve blur, shadow, texture effect".
+- **Bóng nắng (PCSS)**, `core/renderer.js` `SUN_SHADOW`, `pcssShadow`:
+  - PCF mềm của three làm mọi mép bóng mờ như nhau (~2 texel): bóng song cửa cách sàn 3 m sắc như bóng chân mèo.
+  - Mặt trời là một cái đĩa: bóng sắc ở chỗ vật chạm và nhoè dần theo khoảng cách tới vật (vùng nửa tối = khoảng cách × góc của đĩa). Percentage-closer soft shadows (R. Fernando, NVIDIA 2005): tìm độ sâu trung bình của các vật che quanh điểm, rồi lọc PCF rộng đúng bằng vùng nửa tối đó. Góc đĩa lấy 1° (ánh qua kính, mềm hơn mặt trời thật 0,5°).
+  - Bản gọn: 5 mẫu tìm vật che, 8 mẫu PCF, mỗi bộ là một đĩa Vogel xoay theo từng điểm ảnh bằng interleaved gradient noise (J. Jimenez 2014), viết thẳng, không vòng lặp. Bản vòng lặp 16 + 24 mẫu làm mọi shader có ánh sáng trong phòng chậm ~2,4 lần, kể cả chỗ không dùng tới (khung nhìn chính 70 ms so với 29 ms).
+  - Chỉ cho bóng có `shadow.radius` > 1,5: mặt trời (`world/lights.js` đặt 2). Bóng của đèn cây vẫn là PCF mềm.
+- **Bóng khuất (GTAO)**, `fx/post.js` `AO`, `drawAO`:
+  - Ground-truth ambient occlusion (Jimenez và cộng sự 2016; bản XeGTAO của Intel): nửa độ phân giải, chỉ đọc độ sâu, mẫu Bayer 4×4, lọc 4×4 theo độ sâu.
+  - Nhân vào màu ở bước tone map và vào các lớp sắc nét (`sharpQuad` ở `world/pets.js`; `ao: true` cho sách, tạp chí, thảm trên pouf ở `world/gardenbook.js`).
+  - Chỉ trong hộp phòng (`R`), không quá 12 m, không trên bầu trời: vườn có trời rọi, lá ngoài kính từng bị lấm tấm.
+  - Bổ sung cho `groundAO` (24/10), không thay: các mảng tối dưới chân đồ vẫn giữ.
+- **Mờ hậu cảnh (DOF)**, `fx/post.js` `DOF`, `drawDof`, `setFocus`; `core/loop.js` `stepFocus`:
+  - Bật khi một cuốn sách đang mở trước mặt (theo `openK`), hoặc khi đồng hồ, máy ảnh, 747, ISS bay ra để xem. Tắt ở các góc nhìn phòng và với cuốn sách mới đưa ra, chưa mở: tên sách trên kệ vẫn phải đọc được.
+  - Vòng nhoè theo thấu kính mỏng (Potmesil & Chakravarty 1981): `far × max(0, 1 − zf/z)`, tính bằng px CSS, chỉ phía sau tiêu điểm. Lấy mẫu một lượt kiểu bokeh của D. Gustafsson (2018) / scatter-as-gather của Jimenez (2014): 32 mẫu theo góc vàng, nửa độ phân giải, AO gộp vào từng mẫu. Bước tone map trộn theo `smoothstep(0.25, 1.0, cocHalfPx)`.
+  - Nét mực màu nước nhạt đi theo vòng nhoè. Các lớp sắc nét (sách, máy hát) mờ theo cả lớp (`blurAt`, 24 mẫu, `PAINT_GLSL`). Tên gáy sách mờ bằng mip bias `log2(max(1, 2r))`. Đom đóm thành đốm bokeh.
+  - Vật đang xem có `focus: true` (`SHARP.book`, `VCAM.PI`, `CLOCK.PI`, showcase `S.PI`) nên luôn rõ.
+  - Target nửa độ phân giải (HalfFloat) chỉ cấp khi dùng, trả lại 5 s sau khi tắt.
+- **Texture**: đã thử cho sàn gỗ nhận phản chiếu của ba mảng cửa kính (`RECT_SPEC`), độ nhám 0,55 / 0,4 / 0,3. Không tốn thời gian khung hình, nhưng dải sàn sát cửa ngả xám bạc, còn ở góc nhìn chính gần như không khác. Không giữ. Lọc dị hướng (anisotropy 8) đã có sẵn trên mọi texture (`ctex`).
+- Đo (M4, Chrome headless, 1512 × 945, DPR 2, bản build nén, trung bình hai lần chạy):
+  - ms một khung hình: góc chính 29,7 → 29,2; nhìn thấp 34,8 → 36,3; Research 24,1 → 24,5; xem đồng hồ 27,1 → 28,6; đọc sách 18,2 → 18,6. Hai lần đo cùng một bản chênh nhau tới ~1,7 ms.
+  - Biên dịch shader chạy nền 8,9 → 9,0 s; khung hình đầu 1,3 → 1,4 s; 399 → 402 chương trình shader.
+  - Bộ nhớ đồ hoạ: texture +2,4 MB theo `memab.cjs` (hai target AO; công cụ cộng thêm 1/3 cho mip, thực tế ~1,8 MB); DOF +1,8 MB chỉ lúc dùng. Heap JS và bộ nhớ tiến trình như cũ.
+  - `lib3d.js` 639 → 652 KB.
+- Kiểm tra: `tools/minify/check.cjs` với `?shaders` trên cả hai URL: bản thường và bản nén ra giống nhau, không có lỗi shader.
 
 ### Thêm một tính năng
 
