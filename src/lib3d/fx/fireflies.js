@@ -4,6 +4,7 @@ import { R } from '../core/base.js';
 import { rng } from '../core/utils.js';
 import { lerp } from './night.js';
 import { OVER } from '../ui/words.js';
+import { DOF, DOF_GLSL } from './post.js';
 
 /* ---- fireflies: from dusk on, three drift through the room and seven through the garden outside, and flash, drawn sharp over the picture like the stars
    (the paint pass would smear points this small) and hidden behind whatever the room puts in front of them. Each one
@@ -36,19 +37,22 @@ function buildFireflies() {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pick(home, 3), 3)); g.setAttribute('aSway', new THREE.BufferAttribute(pick(sway, 4), 4)); g.setAttribute('aBeat', new THREE.BufferAttribute(pick(beat, 3), 3));
   const pts = new THREE.Points(g, new THREE.ShaderMaterial({
-    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uTime: FLY.t, uOn: FLY.u, uRain: FLY.rain },
-    vertexShader: `attribute vec4 aSway; attribute vec3 aBeat; uniform float uTime, uOn, uRain; uniform vec2 uRes; varying float vB;
+    uniforms: { uDepth: OVER.u.uDepth, uRes: OVER.u.uRes, uPR: OVER.u.uPR, uTime: FLY.t, uOn: FLY.u, uRain: FLY.rain, uFocus: DOF.focus },
+    vertexShader: `attribute vec4 aSway; attribute vec3 aBeat; uniform float uTime, uOn, uRain, uPR; uniform vec2 uRes; varying float vB, vBl; ${DOF_GLSL}
       void main(){ float t = uTime + aSway.w, k = 0.6 + 0.4 * fract(aSway.w * 7.13);
         vec3 p = position + vec3(sin(t * 0.23 * k) + 0.45 * sin(t * 0.61 + 1.3), sin(t * 0.37 * k + 2.0) + 0.35 * sin(t * 1.7), sin(t * 0.17 * k + 4.0) + 0.4 * cos(t * 0.53)) * aSway.xyz;
         vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
         float ph = fract((uTime + aBeat.y) / aBeat.x), flash = smoothstep(0.0, 0.05, ph) * (1.0 - smoothstep(0.05, 0.05 + 0.7 / aBeat.x, ph));
         vB = (0.3 + 0.9 * flash) * uOn * (1.0 - uRain * (1.0 - step(-1.25, position.x) * step(-8.6, position.z)));   // (out in the rain: none)
-        gl_PointSize = clamp(0.22 * aBeat.z * projectionMatrix[1][1] * 0.5 * uRes.y / -mv.z, 6.0, 90.0); }`,
-    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; varying float vB;
+        float s = clamp(0.22 * aBeat.z * projectionMatrix[1][1] * 0.5 * uRes.y / -mv.z, 6.0, 90.0), b = 2.0 * dofCoc(-mv.z) * uPR, S = min(s + b, 160.0);
+        // out of focus (fx/post.js DOF): a disc as wide as the lens's circle, its light spread over it (a little kept: a bright point's disc stays in sight)
+        vBl = smoothstep(0.0, 1.0, b / s); vB *= mix(1.0, 0.75 * s / S, vBl); gl_PointSize = S; }`,
+    fragmentShader: `uniform sampler2D uDepth; uniform vec2 uRes; varying float vB, vBl;
       void main(){ if (gl_FragCoord.z > texture2D(uDepth, gl_FragCoord.xy / uRes).r + 4e-6) discard;
         float d = length(gl_PointCoord - 0.5) * 2.0, core = smoothstep(0.16, 0.03, d), halo = pow(max(1.0 - d, 0.0), 3.0);
-        float a = (core + 0.7 * halo) * vB; if (a < 0.004) discard;
-        gl_FragColor = vec4(mix(vec3(0.62, 0.95, 0.22), vec3(1.0, 1.0, 0.78), core) * a, 1.0); }`,
+        float disc = smoothstep(1.0, 0.84, d) * (0.8 + 0.2 * smoothstep(0.5, 0.95, d));   // (a soft disc, a touch brighter at its rim, as a lens draws one)
+        float a = mix(core + 0.7 * halo, disc, vBl) * vB; if (a < 0.004) discard;
+        gl_FragColor = vec4(mix(mix(vec3(0.62, 0.95, 0.22), vec3(1.0, 1.0, 0.78), core), vec3(0.78, 0.97, 0.45), vBl) * a, 1.0); }`,
     transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false }));
   pts.frustumCulled = false; pts.visible = false; OVER.scene.add(pts); FLY.pts = pts;
 }

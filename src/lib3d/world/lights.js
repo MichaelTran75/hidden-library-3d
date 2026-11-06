@@ -1,14 +1,15 @@
 import './outside.js';   // build order: the module before this one runs first
 import * as THREE from 'three';
 import { R } from '../core/base.js';
-import { renderer, scene } from '../core/renderer.js';
+import { SUN_SHADOW, renderer, scene } from '../core/renderer.js';
 
 /* ---------------------------------------------------------------- lights */
 const LIGHTS = {};
 function buildLights() {
   const hemi = new THREE.HemisphereLight(0xeef3e4, 0x8a6a48, 0.5); scene.add(hemi); LIGHTS.hemi = hemi;
   const sun = new THREE.DirectionalLight(0xfff0d6, 3.6); sun.position.set(-8, 6.2, 3.2); sun.target.position.set(0.5, 0, -3.6);
-  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);   /* (2048, then 1536: G, 19/10/2026; 1024: G, 21/10/2026, the page's memory; 2048 again: G, 24/10/2026, "shadow ... rõ hơn") */ const sc = sun.shadow.camera; sc.left = -8; sc.right = 8; sc.top = 8; sc.bottom = -8; sc.near = 1; sc.far = 40; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 4;
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);   /* (2048, then 1536: G, 19/10/2026; 1024: G, 21/10/2026, the page's memory; 2048 again: G, 24/10/2026, "shadow ... rõ hơn") */ const sc = sun.shadow.camera, SS = SUN_SHADOW; sc.left = sc.bottom = -SS.half; sc.right = sc.top = SS.half; sc.near = SS.near; sc.far = SS.far; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+  sun.shadow.radius = 2;   // (above 1.5: soft as far as the caster is, core/renderer.js SUN_SHADOW; G, 06/11/2026)
   scene.add(sun, sun.target); LIGHTS.sun = sun;
   const left = new THREE.RectAreaLight(0xf3f6ea, 1.15, R.zF - R.zB, R.H); left.position.set(R.xL - 0.05, R.H / 2, (R.zB + R.zF) / 2); left.lookAt(R.xL + 5, R.H / 2, (R.zB + R.zF) / 2); scene.add(left);
   const back = new THREE.RectAreaLight(0xf3f6ea, 1.2, R.xS - R.xL, R.H - R.caseTop); back.position.set((R.xL + R.xS) / 2, (R.caseTop + R.H) / 2, R.zB - 0.05); back.lookAt((R.xL + R.xS) / 2, (R.caseTop + R.H) / 2, 0); scene.add(back);

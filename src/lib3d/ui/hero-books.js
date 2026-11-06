@@ -286,6 +286,7 @@ function heroFace(bk, W, H, cloth, layout, ink) {
    as in Apodaca & Gritz, "Advanced RenderMan", ch. 11, and Inigo Quilez's "filtering procedurals"): a line finer than a
    pixel fades into its average instead of breaking into moiré, and the folds, a few pixels apart on the screen, stay
    crisp. */
+// (the paper #E2D6C0 everywhere, its edges too: 0.761, 0.672, 0.527 linear; G, 29/10/2026)
 const HERO_PAGE_GLSL = `
   float hpg(float n) { return fract(sin(n * 127.1 + uSeed * 311.7) * 43758.5453); }
   float pulseI(float t, float a) { float s = t + 0.5 * a; return floor(s) * a + min(fract(s), a); }
@@ -302,7 +303,7 @@ const HERO_PAGE_MAIN = `
     float lf = (hpg(floor(x) + 17.0) - 0.5) * (1.0 - smoothstep(0.35, 1.0, w)), sf = (hpg(floor(xs) + 59.0) - 0.5) * (1.0 - smoothstep(0.5, 1.2, ws));
     float ao = smoothstep(0.0, 0.07, pu.x) * smoothstep(0.0, 0.07, 1.0 - pu.x);
     float k = (1.0 - 0.3 * seam) * (1.0 - 0.75 * fold * (0.55 + 0.9 * hpg(floor(xs + 0.5) + 3.0))) * mix(0.76, 1.0, bulge) * (1.0 + 0.1 * lf + 0.2 * sf);
-    diffuseColor.rgb = vec3(0.86, 0.77, 0.58) * k * mix(0.5, 1.0, ao) * (1.0 - 0.07 * smoothstep(0.86, 1.0, abs(pu.y * 2.0 - 1.0)));
+    diffuseColor.rgb = vec3(0.761, 0.672, 0.527) * k * mix(0.5, 1.0, ao) * (1.0 - 0.07 * smoothstep(0.86, 1.0, abs(pu.y * 2.0 - 1.0)));
   }
 `;
 function heroPagesMat(bk, base) {
@@ -326,10 +327,10 @@ function heroBand(bk) {   // the headband: silk wound on its core, two colours
 // shelf (some 50 to 150 ms), or as it starts to open if it has not been yet, and again in the other language
 function heroAtlasPage(bk, shape, base) {
   const pg = shape.page, W = 1024, H = Math.round(W * (pg.y1 - pg.y0) / (pg.z0 - pg.z1)), c = canvas(W, H), g = c.getContext('2d'), info = bookInfo(bk.it);
-  g.fillStyle = '#f1e8d2'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#e2d6c0'; g.fillRect(0, 0, W, H);
   // and its endpaper, inside the front board: a printed pattern of compass roses, a bookplate, and a word on what the
   // map does
-  const EW = 768, EH = Math.round(EW * bk.h / shape.endW), ce = canvas(EW, EH), ge = ce.getContext('2d'); ge.fillStyle = '#ece4d0'; ge.fillRect(0, 0, EW, EH);
+  const EW = 768, EH = Math.round(EW * bk.h / shape.endW), ce = canvas(EW, EH), ge = ce.getContext('2d'); ge.fillStyle = '#e2d6c0'; ge.fillRect(0, 0, EW, EH);
   const tex = heroCanvasTex(c, true), etex = heroCanvasTex(ce, true), page = { done: false, frame: null, tex, etex,
     paint: () => { page.frame = drawAtlas(c, info.map, pageLang()); drawEndpaper(ce, info.map, pageLang(), titleIn(bk.it)); page.done = true; tex.needsUpdate = etex.needsUpdate = true; setNeeds(true); } };
   (window.requestIdleCallback || (f => setTimeout(f, 200)))(() => { if (!page.done && bk.hero) page.paint(); }, { timeout: 700 });
@@ -352,7 +353,7 @@ function heroMaterials(bk, shape) {
     clothMat(front, img ? { sheen: 0, clearcoat: 0.5, clearcoatRoughness: 0.26 } : {}),
     clothMat(spine),
     heroSharp(new THREE.MeshPhysicalMaterial({ ...base, map: ct, emissiveMap: ct, bumpMap: ct, bumpScale: 1.6, roughness: 0.84, metalness: 0, sheen: 0.4, sheenRoughness: 0.72, sheenColor }), bk.flapU),
-    heroSharp(new THREE.MeshStandardMaterial({ ...base, color: _hc.set(0xebe1c8).lerp(bk.color, 0.18).clone(), emissive: _hc.clone(), roughness: 0.92, metalness: 0 }), bk.flapU),
+    heroSharp(new THREE.MeshStandardMaterial({ ...base, color: _hc.set(0xe2d6c0).lerp(bk.color, 0.18).clone(), emissive: _hc.clone(), roughness: 0.92, metalness: 0 }), bk.flapU),
     null, null, null, null];
   mats[4] = heroPagesMat(bk, base);
   const bt = heroBand(bk); mats[5] = heroSharp(new THREE.MeshStandardMaterial({ ...base, map: bt, emissiveMap: bt, roughness: 0.55, metalness: 0 }), bk.flapU);

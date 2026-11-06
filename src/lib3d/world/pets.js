@@ -9,7 +9,7 @@ import { camera, renderer, scene, setShadowsDirty } from '../core/renderer.js';
 import { room } from './room.js';
 import { LIGHTS } from './lights.js';
 import { outside } from './outside.js';
-import { PAINT_GLSL, POST, QUAD_VS, paintUniforms, setPaint } from '../fx/post.js';
+import { AO, DOF, PAINT_GLSL, POST, QUAD_VS, dofPx, paintUniforms, setPaint } from '../fx/post.js';
 import { HOUR } from '../fx/hour.js';
 import { OVER } from '../ui/words.js';
 import { HERO, heroKey } from '../ui/hero-books.js';
@@ -91,17 +91,18 @@ function contactShadow(w, d) {
 function sharpQuad(P) {
   const out = !!P.outline;   // (the 747 on the shelf: its selection outline when the pointer is on it, and its fade in: b747.js)
   P.quad = new FullScreenQuad(new THREE.ShaderMaterial({ uniforms: { t: { value: null }, uScale: { value: new THREE.Vector2(1, 1) }, uPaint: { value: P.paint }, uWash: { value: P.wash || 0 }, uToneK: { value: P.toneK }, ...SHARP.u, ...paintUniforms(),
-      uBorn: { value: 1 }, ...(out ? { uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, uFade: { value: 1 }, uRk: { value: 1 } } : {}) },
+      uBorn: { value: 1 }, tAO: AO.tex, uAOk: P.ao ? AO.k : { value: 0 }, ...(out ? { uOut: { value: 0 }, uOutW: { value: 4 }, uHalo: { value: 3 }, uFade: { value: 1 }, uRk: { value: 1 } } : {}) },
     transparent: true, premultipliedAlpha: true, depthTest: false, depthWrite: false, vertexShader: QUAD_VS,
-    fragmentShader: `uniform sampler2D t; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK, uBorn; varying vec2 vUv;${out ? ' uniform float uOut, uOutW, uHalo, uFade, uRk;' : ''}
+    fragmentShader: `uniform sampler2D t, tAO; uniform vec2 uScale; uniform float uExp, uLift, uVeil, uPaint, uWash, uToneK, uBorn, uAOk; varying vec2 vUv;${out ? ' uniform float uOut, uOutW, uHalo, uFade, uRk;' : ''}
       ${PAINT_GLSL}
+      float gAO = 1.0;   // (a twin of the room's things: the room's AO where it lies, post.js; set in main)
       vec3 aces(vec3 x){ const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14; return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
       vec3 toS(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
       vec3 tone(vec3 c){ vec3 col = toS(aces(c * uExp * 0.85));
         col = mix(vec3(dot(col, vec3(0.299,0.587,0.114))), col, mix(1.0, 0.97, uToneK));
         col = 1.0 - (1.0 - col) * mix(1.0, uLift, 0.75 * uToneK);   // most of the paper's lift: blacks as deep as the painting's
         return mix(col, col * vec3(1.02,1.0,0.95), 0.6 * uToneK) * (1.0 - uVeil * uToneK); }
-      vec4 shadeAt(vec2 uv){ vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(tone(c.rgb / c.a), c.a); }
+      vec4 shadeAt(vec2 uv){ vec4 c = texture2D(t, clamp(uv, uTexel * 0.5, uScale - uTexel * 0.5)); return c.a < 0.002 ? vec4(0.0) : vec4(tone(c.rgb / c.a * gAO), c.a); }
       vec4 washAt(vec2 uv, vec4 o){   // the crisp picture with a watercolour's surface, its detail kept
         vec2 sp = gl_FragCoord.xy / uCanvas, d = uTexel * uStep; vec4 n1 = texture2D(tN1, sp * uPaper.xy), n2 = texture2D(tN2, sp * uPaper.zw);
         vec4 b = vec4(0.0); for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) { vec4 c = shadeAt(uv + vec2(float(i), float(j)) * d * 1.6); b += vec4(c.rgb * c.a, c.a); } b /= 9.0;
@@ -115,7 +116,8 @@ function sharpQuad(P) {
         return vec4(col, a);
       }
       ${out ? `float aAt(vec2 p){ return (p.x < 0.0 || p.y < 0.0 || p.x > uScale.x || p.y > uScale.y) ? 0.0 : texture2D(t, p).a; }` : ''}
-      void main(){ vec2 uv = vUv * uScale; vec4 o = shadeAt(uv); if (uWash > 0.001) o = mix(o, washAt(uv, o), uWash); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); }   // (busy detail kept crisper)
+      void main(){ vec2 uv = vUv * uScale; if (uAOk > 0.0) gAO = mix(1.0, texture2D(tAO, gl_FragCoord.xy / uCanvas).r, uAOk); vec4 o;
+        if (uBlur > 0.3) o = blurAt(uv); else { o = shadeAt(uv); if (uWash > 0.001) o = mix(o, washAt(uv, o), uWash); if (uPaint > 0.001) { float det; vec4 pt = paintAt(uv, det); o = mix(o, pt, uPaint * (1.0 - 0.45 * smoothstep(0.004, 0.04, det))); } }   // (busy detail kept crisper; out of focus: post.js DOF)
         ${out ? `vec4 res = vec4(o.rgb * o.a, o.a);
         if (uOut > 0.001) {   // the outline: where the picture is near (within uOutW pixels) but not here, white; just beyond that a soft dark edge
           float near = 0.0, far = 0.0, here = aAt(uv);
@@ -128,7 +130,7 @@ function sharpQuad(P) {
 }
 const SHARP = { cam: new THREE.Camera(), v: new THREE.Vector3(), u: { uExp: { value: 1 }, uLift: { value: 0.88 }, uVeil: { value: 0.06 } },
   cat: { rt: null, quad: null, paint: 0, layer: 1, toneK: 1, dpr: 1 }, hen: { rt: null, quad: null, paint: 0.045, wash: 0.3, layer: 1, toneK: 1, dpr: 0.8 },   // (resolution: the cat 1 px a CSS px, the chicken 0.4: G, 20/10/2026, twice; then 0.8 for its jagged edges, and 70 % less watercolour: G, 22/10/2026)   // (each its own target; the chicken 15 % painted over a watercolour's surface: G, 15/10/2026)
-  book: { rt: null, quad: null, paint: 0, layer: 3, toneK: 0.35, dpr: 2 } };   // (a book's words and pages: at the canvas's full 2 px a CSS px)   // the book out of the shelf: sharp, its colours nearly as printed (G, 15/10/2026)
+  book: { rt: null, quad: null, paint: 0, layer: 3, toneK: 0.35, dpr: 2, focus: true } };   // (focus: what the lens is on, never blurred: crispPass)   // (a book's words and pages: at the canvas's full 2 px a CSS px)   // the book out of the shelf: sharp, its colours nearly as printed (G, 15/10/2026)
 PETS.sharp = SHARP;   // (for tests)
 function crispPatch(sh) {
   sh.uniforms.uDepth = DECKR.u.uDepth; sh.uniforms.uFull = DECKR.u.uFull; sh.uniforms.uOff = DECKR.u.uOff;
@@ -924,7 +926,10 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
   for (let i = 0; i < 8; i++) { const v = SHARP.v.set(bx + (i & 1 ? rx : -rx), by + (i & 2 ? ry : 0), bz + (i & 4 ? rz : -rz)).project(camera); if (v.z > 1 || v.z < -1) continue;
     any = true; const px = (v.x + 1) / 2 * W_, py = (v.y + 1) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
   if (!any) return false;
-  const pad = P.pad || 8;
+  // out of focus (a book read in front of it, the clock out: fx/post.js DOF), as far as its middle is: blurred by its circle,
+  // the target that much wider
+  const bl = P.focus || !DOF.on.value ? 0 : dofPx(-SHARP.v.set(bx, by + ry / 2, bz).applyMatrix4(camera.matrixWorldInverse).z);
+  const pad = (P.pad || 8) + Math.ceil(bl * pr);
   x0 = Math.max(0, Math.floor(x0) - pad); y0 = Math.max(0, Math.floor(y0) - pad); x1 = Math.min(W_, Math.ceil(x1) + pad); y1 = Math.min(H, Math.ceil(y1) + pad);   // (room for the paint's strokes, and an outline's)
   const w = x1 - x0, h = y1 - y0; if (w < 2 || h < 2) return false;
   // drawn at 1.5 px a CSS px, laid over the canvas's 2 (P.dpr: a book's words keep the canvas's): G, 19/10/2026, "giảm tất
@@ -953,7 +958,7 @@ function crispPass(P, [bx, by, bz, rx, ry, rz], before) {   // (true if it drew)
     renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); scene.background = bg;
     P.frt = P.rt; P.frame = ROOMF.n; P.fk = tw + ',' + th + ',' + x0 + ',' + y0;
   }
-  const Q = P.quad.material.uniforms; Q.uScale.value.set(tw / P.rt.width, th / P.rt.height); setPaint(Q, P.rt, W_, H); if (Q.uRk) Q.uRk.value = k;
+  const Q = P.quad.material.uniforms; Q.uScale.value.set(tw / P.rt.width, th / P.rt.height); setPaint(Q, P.rt, W_, H); if (Q.uRk) Q.uRk.value = k; Q.uBlur.value = bl * pr * k;
   if (!P.born) P.born = performance.now(); const fb = Math.min(1, (performance.now() - P.born) / 700); Q.uBorn.value = fb * fb * (3 - 2 * fb); if (fb < 1) setNeeds(true);   // (the first time it shows: faded in over 0.7 s)
   renderer.autoClear = false; renderer.setViewport(x0 / pr, y0 / pr, w / pr, h / pr); P.quad.render(renderer);   // over the picture: no clear
   renderer.setViewport(0, 0, W_ / pr, H / pr); renderer.autoClear = true; P.seen = performance.now();

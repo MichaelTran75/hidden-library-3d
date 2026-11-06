@@ -1,10 +1,12 @@
 """Hidden Library as a 3D library (ver 01) -> one self-contained HTML.
 
-    python3 build.py [path/to/Hidden Library.html] [--pages DIR [--dev]]
+    python3 build.py [path/to/Hidden Library.html] [--pages DIR [--dev]] [--no-minify]
 
 With --pages DIR it also writes DIR/index.html for GitHub Pages, with the 3D module in DIR/lib3d.js and the models in
 DIR/lib.glb next to it instead of inline (a smaller page; phones fetch neither; each is cached on its own). --dev also
 copies the modules to DIR/lib3d and writes DIR/dev.html, which runs them unjoined (for working on them).
+The 3D module and the page's scripts and styles go out minified, their comments and whitespace dropped (tools/minify);
+--no-minify leaves them as written. dev.html is never minified.
 
 Without an argument it uses the live Hidden Library file in WATCHLIST/WIX, falling back to the snapshot
 src/hidden-library.base.html. The page's own markup and script are left as they are, except small patches to its
@@ -14,7 +16,7 @@ of from 6:22 to 17:30: a capability check (which also drops the old painted back
 before </head>, the record-player model is copied for the 3D deck, and the three.js import map, the GLB (base64) and
 the 3D module (src/lib3d/, its ES modules joined in build order: see bundle_lib3d) go in before </body>.
 """
-import base64, os, sys
+import base64, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 args = sys.argv[1:]
@@ -23,6 +25,8 @@ if '--pages' in args:
     k = args.index('--pages'); pages_dir = os.path.abspath(args[k + 1]); del args[k:k + 2]
 dev = '--dev' in args
 if dev: args.remove('--dev')
+minifying = '--no-minify' not in args
+if not minifying: args.remove('--no-minify')
 sys.argv = sys.argv[:1] + args
 LIVE = os.path.expanduser('~/Desktop/B. Ebook & Audio Book/⭕/Nexus Antigravity/CORE FILES (ROOT)/JADE/WATCHLIST/WIX/Hidden Library.html')
 base_path = sys.argv[1] if len(sys.argv) > 1 else (LIVE if os.path.exists(LIVE) else os.path.join(HERE, 'hidden-library.base.html'))
@@ -87,8 +91,54 @@ def bundle_lib3d():
     return out
 
 
+# Minifying: tools/minify/minify.mjs (comments and whitespace only, nothing renamed: why is written there). Its packages
+# live out of iCloud, in ~/.cache/hidden-library-3d, installed from tools/minify/package-lock.json when missing. Where
+# they cannot run, the page goes out as written, with a warning.
+MIN_TOOL = os.path.join(HERE, 'tools', 'minify')
+MIN_PKGS = os.path.expanduser('~/.cache/hidden-library-3d')
+
+
+def minify(jobs):
+    """[{kind: 'js' or 'css', code, module}] -> their codes minified (one that would not parse comes back as written);
+    None if the minifier cannot run."""
+    import json, shutil, subprocess
+    try:
+        if not all(os.path.isdir(os.path.join(MIN_PKGS, 'node_modules', p)) for p in ('terser', 'esbuild', 'acorn')):
+            os.makedirs(MIN_PKGS, exist_ok=True)
+            for f in ('package.json', 'package-lock.json'): shutil.copyfile(os.path.join(MIN_TOOL, f), os.path.join(MIN_PKGS, f))
+            r = subprocess.run(['npm', 'ci', '--no-audit', '--no-fund'], cwd=MIN_PKGS, capture_output=True, text=True)
+            if r.returncode: print('minify: SKIPPED, its packages would not install (npm ci in ' + MIN_PKGS + '):', r.stderr[-300:]); return None
+        r = subprocess.run(['node', os.path.join(MIN_TOOL, 'minify.mjs'), MIN_PKGS], input=json.dumps(jobs), capture_output=True, text=True, encoding='utf-8')
+    except OSError as e:
+        print('minify: SKIPPED,', e); return None
+    if r.returncode: print('minify: SKIPPED, the minifier failed:', r.stderr[-500:]); return None
+    out = []
+    for j, o in zip(jobs, json.loads(r.stdout)):
+        if 'error' in o: print('minify: kept as written (' + j['kind'] + ': ' + ' '.join(j['code'][:60].split()) + ' …):', o['error'])
+        out.append(o.get('code', j['code']))
+    return out
+
+
+PAGE_BLOCK = re.compile(r'(<(script|style)\b([^>]*)>)(.*?)</\2>', re.S)
+
+
+def minify_page(html):
+    """The page's classic scripts and its styles minified; its data (JSON, the models), the import map and the 3D
+    module (minified on its own) left as they are."""
+    if not minifying: return html
+    blocks = [m for m in PAGE_BLOCK.finditer(html) if m.group(4).strip() and (m.group(2) == 'style' or not re.search(r'\b(type|src)=', m.group(3)))]
+    codes = minify([{'kind': 'css' if m.group(2) == 'style' else 'js', 'code': m.group(4)} for m in blocks])
+    if codes is None: return html
+    parts, at = [], 0
+    for m, c in zip(blocks, codes): parts += [html[at:m.start(4)], c]; at = m.end(4)
+    return ''.join(parts) + html[at:]
+
+
 module = bundle_lib3d()
-glb = base64.b64encode(open(os.path.join(HERE, 'lib.glb'), 'rb').read()).decode()
+if minifying:
+    small = minify([{'kind': 'js', 'code': module, 'module': True}])
+    if small: print('lib3d:', round(len(module.encode()) / 1e3), '->', round(len(small[0].encode()) / 1e3), 'KB minified'); module = small[0]
+glb =base64.b64encode(open(os.path.join(HERE, 'lib.glb'), 'rb').read()).decode()
 cat_bin = base64.b64encode(open(os.path.join(HERE, 'cat.bin'), 'rb').read()).decode()   # the cat (tools/pets: rig_cat.py, pack.mjs)
 hen = base64.b64encode(open(os.path.join(HERE, 'hen.glb'), 'rb').read()).decode()   # the chicken (tools/pets/pack.mjs)
 clock = base64.b64encode(open(os.path.join(HERE, 'clock.glb'), 'rb').read()).decode()   # the medieval clock, its moving parts apart (tools/clock)
@@ -485,7 +535,7 @@ BAR_PATCH = ("  let barHolder = null, barDismissed = false;", "  let barHolder =
 assert page.count(BAR_PATCH[0]) == 1, 'now-playing bar code not found'
 page = page.replace(*BAR_PATCH, 1)
 page = page.replace('</body>', SCRIPTS + '</body>', 1)
-open(out_path, 'w', encoding='utf-8').write(page)
+open(out_path, 'w', encoding='utf-8').write(minify_page(page))
 if pages_dir:   # the same page with the models as a separate file
     import shutil
     inline = f'<script id="lib-glb" type="application/octet-stream">{glb}</script>'
@@ -522,7 +572,7 @@ if pages_dir:   # the same page with the models as a separate file
                .replace(covers_el, f'<script id="book-covers" type="application/json">{covers_files}</script>', 1)
                .replace(sums_el, '<script id="book-summaries" type="application/json" data-src="summaries.json"></script>', 1)
                .replace('/*GLB_PRELOAD*/', preload, 1).replace(mod_inline, loader, 1))
-    open(os.path.join(pages_dir, 'index.html'), 'w', encoding='utf-8').write(out)
+    open(os.path.join(pages_dir, 'index.html'), 'w', encoding='utf-8').write(minify_page(out))
     open(os.path.join(pages_dir, 'lib3d.js'), 'w', encoding='utf-8').write(module)
     if dev:   # for working on the modules: DIR/dev.html runs DIR/lib3d/main.js and its modules as they are, unjoined
         shutil.rmtree(os.path.join(pages_dir, 'lib3d'), ignore_errors=True)

@@ -142,7 +142,7 @@ function scaleBar(g, x, y, P, lang, k) {   // 0 to 300 km, in hundreds
   g.textAlign = 'left'; g.fillText('km', x + w + 26 * k, y - 7 * k);
 }
 function paper(g, W, H, seed) {   // cream paper: a little uneven, flecked, darker toward the gutter (the left: the spine)
-  g.fillStyle = '#f1e8d2'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#e2d6c0'; g.fillRect(0, 0, W, H);
   const r = rng(seed);
   for (let i = 0; i < 26; i++) {
     const x = r() * W, y = r() * H, rr = W * (0.1 + 0.25 * r()), m = g.createRadialGradient(x, y, 0, x, y, rr);

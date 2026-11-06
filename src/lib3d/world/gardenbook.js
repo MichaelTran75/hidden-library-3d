@@ -15,11 +15,11 @@ import { setNeeds } from '../core/loop.js';
    cuốn sách remove water color": with no watercolour left on them they were still soft, the room's picture is drawn smaller
    than the screen): a twin of each of their meshes on a layer of their own (9), its material patched as the sharp layers'
    are, drawn before the magazine so it lies over them. The books themselves stay in the room (their shadow, their depth). */
-const PBOOK = { ok: false, layer: 9, twins: [], box: null, P: { rt: null, quad: null, paint: 0, wash: 0, layer: 9, toneK: 1, pad: 10, still: true } };
+const PBOOK = { ok: false, layer: 9, twins: [], box: null, P: { rt: null, quad: null, paint: 0, wash: 0, layer: 9, toneK: 1, pad: 10, still: true, ao: true } };   // (ao: the room's nooks' shade on them, as on their originals: fx/post.js AO)
 // and so the two on the table, and the rug with the pouf's shade on it (G, 24/10/2026: "em cho thảm dưới sàn 100% visible, sách
 // cũng visible"); the rug drawn first of the sharp layers, under the deck and the cat (ui/words.js)
-const TBOOK = { ok: false, layer: 10, twins: [], box: null, P: { rt: null, quad: null, paint: 0, wash: 0, layer: 10, toneK: 1, pad: 10, still: true } };
-const RUGS = { ok: false, layer: 11, twins: [], box: null, P: { rt: null, quad: null, paint: 0, wash: 0, layer: 11, toneK: 1, pad: 8, still: true, dpr: 1 } };
+const TBOOK = { ok: false, layer: 10, twins: [], box: null, P: { rt: null, quad: null, paint: 0, wash: 0, layer: 10, toneK: 1, pad: 10, still: true, ao: true } };
+const RUGS = { ok: false, layer: 11, twins: [], box: null, P: { rt: null, quad: null, paint: 0, wash: 0, layer: 11, toneK: 1, pad: 8, still: true, dpr: 1, ao: true } };
 // a material for a sharp twin: the room's own (its own shader changes kept), the crisp layers' depth test added
 const sharpTwinMat = (m, fix, own) => { const o = m.onBeforeCompile, key = m.customProgramCacheKey, c = m.clone(); c.fog = false;
   c.onBeforeCompile = (sh, r) => { if (o) o.call(c, sh, r); if (fix) fix(sh); if (!own) crispPatch(sh, r); };   // (own: its pass's own depth only)

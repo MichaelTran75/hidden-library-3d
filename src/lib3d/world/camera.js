@@ -32,7 +32,7 @@ import { setNeeds } from '../core/loop.js';
 const VCAM = { ok: false, layer: 8, bodyW: 0.24, turn: 0.42, big: 3, tilt: 0.32, group: null, hover: false, out: 0, home: null, local: null, box: null,
   parts: {}, span: null, key: null, fill: null, view: { on: false, k: 0, e: 0, eT: 0, yaw: 0, sway: 0, ph: 0, held: 0, drag: null, el: null, labels: null, rects: null },
   P: { rt: null, quad: null, paint: 0.1, wash: 0, layer: 8, toneK: 1, pad: 12, outline: true },   // on its shelf (a tenth of the watercolour; its outline)
-  PI: { rt: null, quad: null, paint: 0, wash: 0, layer: 8, toneK: 1, pad: 6, dpr: 1.25 } };     // out, in front of the room (large on the screen: 1.25 px a CSS px)
+  PI: { rt: null, quad: null, paint: 0, wash: 0, layer: 8, toneK: 1, pad: 6, dpr: 1.25, focus: true } };     // out, in front of the room (large on the screen: 1.25 px a CSS px)
 const VCU = { uRoomDepth: { value: 1 } };   // 1: hidden where the room is nearer (on its shelf); 0: out in front of it
 // its parts apart: the model's pieces, the way they go (its own frame: x to the right of one facing it, y up, z toward
 // one facing it; metres at its size on the shelf) and their names

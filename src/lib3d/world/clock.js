@@ -45,7 +45,7 @@ import { setNeeds } from '../core/loop.js';
 const CLOCK = { ok: false, layer: 5, nodes: {}, pivots: {}, holder: null, root: null, box: null, ctx: null, strikes: null, lastHour: -1, hover: false, out: 0,
   local: null, home: null, key: null, fill: null, view: { on: false, k: 0, e: 0, eT: 0, yaw: 0, sway: 0, ph: 0, held: 0, drag: null, el: null, labels: null },
   P: { rt: null, quad: null, paint: 0, wash: 0, layer: 5, toneK: 1, pad: 12, outline: true },    // on its shelf (the outline under the pointer)
-  PI: { rt: null, quad: null, paint: 0, wash: 0, layer: 5, toneK: 1, pad: 6 } };                // out, in front of the room
+  PI: { rt: null, quad: null, paint: 0, wash: 0, layer: 5, toneK: 1, pad: 6, focus: true } };                // out, in front of the room
 const CKU = { uRoomDepth: { value: 1 } };   // 1: hidden where the room is nearer (on its shelf); 0: out in front of it
 const CK = {
   height: 0.748,                    // the clock's height in the room (m; 10 % larger than its first 0.68: G, 17/10/2026): the model is 33.35 of its units

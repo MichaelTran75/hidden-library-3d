@@ -1,0 +1,10 @@
+{
+  "name": "hidden-library-3d-minify",
+  "private": true,
+  "description": "build.py's minifier (minify.mjs): installed in ~/.cache/hidden-library-3d, out of iCloud",
+  "dependencies": {
+    "acorn": "8.19.0",
+    "esbuild": "0.28.2",
+    "terser": "5.51.2"
+  }
+}

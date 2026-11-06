@@ -29,7 +29,7 @@ function showInit(S) {   // once, on its first time out: its box in its own fram
   S.local = new THREE.Box3().setFromObject(H, true);
   H.position.copy(pos); H.quaternion.copy(q); H.scale.copy(s); H.updateMatrixWorld(true);
   S.home = { pos, q, s }; S.view = { on: false, k: 0, yaw: 0, pitch: 0, spin: 0, drag: null, rect: null };
-  S.PI = { rt: null, quad: null, paint: 0, wash: 0, layer: S.obj.layer, toneK: 1, pad: 6, dpr: 1 }; sharpQuad(S.PI);   // (large on the screen: 1 px a CSS px, G 22/10/2026)
+  S.PI = { rt: null, quad: null, paint: 0, wash: 0, layer: S.obj.layer, toneK: 1, pad: 6, dpr: 1, focus: true }; sharpQuad(S.PI);   // (large on the screen: 1 px a CSS px, G 22/10/2026)
   const ui = document.getElementById('l3-ui') || document.body, el = document.createElement('div'); el.className = 'ck-out-ui';
   el.innerHTML = `<div class="ck-head"><b><span class="en">${S.name[0]}</span><span class="vi">${S.name[1]}</span></b>`
     + '<small><span class="en">drag to turn · click it: open its page · Esc to close</span><span class="vi">kéo để xoay · bấm vào: mở trang · Esc để đóng</span></small>'
