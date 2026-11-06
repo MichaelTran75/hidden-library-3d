@@ -13,8 +13,16 @@ function poufGeometry(W = 1.4, D = 1.22, H = 0.52, seed = 31) {
   const tSeam = 0.6;
   const prof = t => {   // t: 0 top pole → 1 bottom pole ; returns [radial factor, height]
     if (t <= tSeam) { const phi = (1 - t / tSeam) * Math.PI / 2; return [Math.pow(Math.cos(phi), 2 / m1), ye + (H - ye) * Math.pow(Math.sin(phi), 2 / m1)]; }
-    const psi = (t - tSeam) / (1 - tSeam) * Math.PI / 2; return [Math.pow(Math.cos(psi), 2 / m2) * (1 - 0.05 * Math.sin(psi)), ye * (1 - Math.sin(psi)) + 0.004];
+    const psi = (t - tSeam) / (1 - tSeam) * Math.PI / 2; return [Math.pow(Math.cos(psi), 2 / m2) * (1 - 0.05 * Math.sin(psi) ** 2), (ye - 0.004) * (1 - Math.sin(psi)) + 0.004];
   };
+  // the rings evenly spaced along the profile's length, not in t: the top's curve races through its last steps to the seam,
+  // where one ring was 3.3 cm from the next, a flat strip ending in a crease all round (and the lower half began 4 mm above
+  // where the top one ended, the cover folding back on itself there, and its tuck, sin ψ, met it at 11°; now sin² ψ: the two
+  // halves meet upright) (G, 06/11/2026: "có cách nào làm mất vết cắt ko?")
+  const tRing = (() => { const K = 60000, L = new Float64Array(K + 1), rs = (W + D) / 4; let [r0, y0] = prof(0);
+    for (let k = 1; k <= K; k++) { const [r1, y1] = prof(k / K); L[k] = L[k - 1] + Math.hypot((r1 - r0) * rs, y1 - y0); r0 = r1; y0 = y1; }
+    return j => { const want = L[K] * j / rings; let lo = 0, hi = K; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (L[mid] < want) lo = mid; else hi = mid; }
+      return (lo + (want - L[lo]) / ((L[hi] - L[lo]) || 1)) / K; }; })();
   const r = rng(seed), dent = { x: 0.05, z: 0.02, depth: 0.03, w: 0.36 };
   // ---- fold field (plan coordinates, metres): radial folds from the dent, edge folds, random crumples
   const folds = [];
@@ -56,7 +64,7 @@ function poufGeometry(W = 1.4, D = 1.22, H = 0.52, seed = 31) {
   const pos = [], base = []; const ringStart = [];
   const push = (x, y, z) => { pos.push(x, y, z); };
   push(0, H, 0); base.push([0, H, 0, 0]);
-  for (let j = 1; j < rings; j++) { const t = j / rings, [rf, y] = prof(t); ringStart.push(pos.length / 3);
+  for (let j = 1; j < rings; j++) { const t = tRing(j), [rf, y] = prof(t); ringStart.push(pos.length / 3);
     for (let i = 0; i < seg; i++) { const a = i / seg * Math.PI * 2, s = sup(a); push(Math.cos(a) * s * rf * W / 2, y, Math.sin(a) * s * rf * D / 2); base.push([0, 0, 0, t]); } }
   push(0, 0.004, 0); base.push([0, 0, 0, 1]);
   const nv = pos.length / 3, idx = [];
@@ -70,7 +78,7 @@ function poufGeometry(W = 1.4, D = 1.22, H = 0.52, seed = 31) {
   for (let v = 0; v < nv; v++) {
     const t = base[v][3]; let x = P.getX(v), y = P.getY(v), z = P.getZ(v);
     const nx = N.getX(v), ny = N.getY(v), nz = N.getZ(v);
-    const topW = t < tSeam ? 1 : Math.max(0, 1 - (t - tSeam) / 0.12);
+    const tu = Math.min(1, Math.max(0, (t - tSeam) / 0.12)), topW = 1 - tu * tu * (3 - 2 * tu);   // (eased out, not cut off at the seam: a crease all round there)
     const dd = Math.exp(-((x - dent.x) ** 2 + (z - dent.z) ** 2) / (dent.w * dent.w)) * Math.max(0, (y - ye) / (H - ye));
     const lump = (fbm(x * 2.2 + 4, z * 2.2 + 9, 3) - 0.5) * 0.03 * topW;
     let disp = foldH(x, z) * Math.pow(topW, 1.5) + lump;
@@ -104,7 +112,7 @@ function poufGeometry(W = 1.4, D = 1.22, H = 0.52, seed = 31) {
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   }
   // bottom seam loop (welt cord) on the ring nearest 7 cm height
-  let js = 1, best = 1e9; for (let j = 1; j < rings; j++) { const yy = prof(j / rings)[1]; if (j / rings > tSeam && Math.abs(yy - 0.07) < best) { best = Math.abs(yy - 0.07); js = j; } }
+  let js = 1, best = 1e9; for (let j = 1; j < rings; j++) { const yy = prof(tRing(j))[1]; if (tRing(j) > tSeam && Math.abs(yy - 0.07) < best) { best = Math.abs(yy - 0.07); js = j; } }
   const seam = []; for (let i = 0; i < seg; i += 2) { const k = ring(js, i); seam.push(new THREE.Vector3(P.getX(k) + N.getX(k) * 0.004, P.getY(k) + N.getY(k) * 0.004, P.getZ(k) + N.getZ(k) * 0.004)); }
   g.userData.seam = seam; g.computeBoundingSphere();
   return g;
