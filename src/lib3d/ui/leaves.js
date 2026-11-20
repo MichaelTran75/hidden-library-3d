@@ -1,0 +1,680 @@
+import './atlas.js';   // build order: the module before this one runs first
+import * as THREE from 'three';
+import { reduceMotion } from '../core/base.js';
+import { CANVAS } from '../core/base.js';
+import { camera } from '../core/renderer.js';
+import { canvas } from '../core/utils.js';
+import { setNeeds } from '../core/loop.js';
+import { DECKR } from './deck.js';
+import { HERO_LAYER, heroCanvasTex } from './hero-books.js';
+import { bookInfo, byOf, pageLang, printTitle } from './book-data.js';
+
+/* ---- a book read in the room (it opens with its list of countries in place
+   of a popup; a click on one turns to its page). An item whose notes are the
+   page's dialogs (its chips: the economic models of Korea, Japan, Singapore, China and Taiwan) becomes a book of them.
+   - Taken out, it opens as the atlases do: on its title page (inside the front board) and its contents (on the right).
+     Each note is a chapter on a spread of its own: its title, its picture and its words, set as a book is (a serif at
+     the largest size that lets the chapter fill its two pages, ~25 to 35 px on a page 1024 px across).
+   - The pages are leaves. Each turns on the front board's hinge, so a turned leaf lies on the endpaper and closes with
+     the board. Its fore-edge lifts first and the leaf bows as it goes over (~0.75 s); several in a row are riffled one
+     after another.
+   - A click on a chapter in the contents, or on its name in the card (which no longer opens the dialog), turns to it.
+     A click on the right page turns to the next spread, on the left page to the one before, on a page's "Contents"
+     back to the contents.
+   - Its pictures are the page's (Wix's, which allows them to be drawn here). Its pages are painted while the book is
+     out (in the browser's idle time, the title page and the contents first) and let go when it is back on the shelf. */
+/* ---- a book being listened to, read too (a further click opens it on a detailed summary, the next
+   turns the page; only a pause stops it and puts it back on its shelf). The book
+   out of the shelf while its audio plays opens, on a click, as a book of notes does, on its summary (summaries/books.json,
+   in English and Vietnamese, each book's own words: what it argues, its ideas, its lessons): the title page inside the
+   front board (with its author), the overview on the first page, then a spread for each part of the summary, and the
+   page's own notes on it after those. Its leaves turn as a book of notes' do; a click on its board, or past its last
+   page, closes it again (it plays on); pausing puts it back on its shelf (flight.js). An item with no summary and no
+   notes opens on a page of its name, author and pages. */
+const READ = { stagger: 0.12, dur: 0.75, gap: 0.00003, turn: 2.7 };   // (turn: as far as the board opens: flight.js OPEN_TURN)
+const SERIF = `Georgia, 'Times New Roman', serif`, INK = '#2c241b', MUTED = '#7d6c56', ACCENT = '#8a3b2a';
+const NAMES_EN = { 'Hàn Quốc': 'South Korea', 'Nhật Bản': 'Japan', 'Singapore': 'Singapore', 'Trung Quốc': 'China', 'Đài Loan': 'Taiwan' };
+const WORDS = { contents: ['Contents', 'Mục lục'], hint: ['Click a country to turn to its pages', 'Bấm tên một nước để lật tới trang'], end: ['The end', 'Hết'],
+  back: ['‹ Contents', '‹ Mục lục'], from: ['From the notes of Hidden Library', 'Từ các ghi chép của Hidden Library'],
+  backOver: ['‹ Overview', '‹ Tổng quan'], over: ['Overview', 'Tổng quan'], fromSum: ['A summary by Hidden Library', 'Tóm tắt của Hidden Library'],
+  turnOn: ['Click to turn the page', 'Bấm để lật trang'], notes: ['Notes', 'Ghi chú'], hintAny: ['Click a chapter to turn to its pages', 'Bấm tên một mục để lật tới trang'] };
+const say = (k, lang) => WORDS[k][lang === 'vi' ? 1 : 0];
+const fontOf = (fs, b, i) => `${i ? 'italic ' : ''}${b ? 700 : 400} ${Math.round(fs)}px ${SERIF}`;
+
+/* ---- the chapters: the page's dialogs, read into blocks (a title, a picture, paragraphs of runs of plain or bold
+   words, bulleted lists, boxes of them) */
+function runsOf(el, bold = false, out = [], href = '') {   // (a link's words keep where it goes, and end in an arrow)
+  for (const n of el.childNodes) {
+    if (n.nodeType === 3) out.push({ t: n.textContent, b: bold, h: href });
+    else if (n.nodeType === 1) {
+      if (n.tagName === 'BR') { out.push({ br: true }); continue; }
+      const a = n.tagName === 'A' && n.getAttribute('href'); runsOf(n, bold || n.tagName === 'STRONG' || n.tagName === 'B', out, a || href);
+      if (a) out.push({ t: ' ↗', b: bold, h: a });
+    }
+  }
+  return out;
+}
+function blocksOf(root) {
+  const out = [];
+  for (const el of root.children) {
+    const tg = el.tagName;
+    if (/^H[1-6]$/.test(tg)) out.push({ k: 'h', text: el.textContent.replace(/\s+/g, ' ').trim() });
+    else if (tg === 'IMG') out.push({ k: 'img', src: el.getAttribute('src'), ar: (+el.getAttribute('width') || 16) / (+el.getAttribute('height') || 9) });
+    else if (tg === 'UL' || tg === 'OL') out.push({ k: 'ul', items: [...el.children].map(li => runsOf(li)) });
+    else if (el.classList.contains('info-box')) out.push({ k: 'box', blocks: blocksOf(el) });
+    else if (tg === 'DIV') out.push(...blocksOf(el));
+    else if (tg !== 'BUTTON') out.push({ k: 'p', runs: runsOf(el) });
+  }
+  return out;
+}
+function chaptersOf(it) {
+  const out = [];
+  for (const c of it.chips || []) {
+    const id = c.el && c.el.dataset ? c.el.dataset.dialog : '', dlg = id ? document.getElementById(id) : null; if (!dlg) continue;
+    const blocks = blocksOf(dlg.querySelector('.sheet-body') || dlg), h = blocks.find(b => b.k === 'h');
+    out.push({ name: c.label, en: NAMES_EN[c.label] || c.label, title: h ? h.text : c.label, blocks: blocks.filter(b => b !== h) });
+  }
+  return out;
+}
+const isReadable = it => chaptersOf(it).length > 0;
+// the summaries (summaries/books.json, by a book's English title): inline in the one-file page, a file next to it on
+// Pages, fetched the first time a book is opened
+const SUMS = { data: null, p: null };
+function loadSummaries() {
+  if (SUMS.p) return SUMS.p;
+  const el = document.getElementById('book-summaries');
+  SUMS.p = (async () => {
+    try { if (!el) return {}; if (el.dataset.src) { const r = await fetch(el.dataset.src); return r.ok ? await r.json() : {}; } return JSON.parse(el.textContent || '{}'); }
+    catch (e) { return {}; }
+  })().then(d => (SUMS.data = d || {}));
+  return SUMS.p;
+}
+const summaryOf = it => { const b = bookInfo(it); return (SUMS.data && b && SUMS.data[b.en]) || null; };
+// a summary's words: paragraphs a blank line apart, lines starting "- " a list, **words** bold
+function sumRuns(s) {   // (**bold**, *italic*)
+  const out = [];
+  for (const p of String(s).split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/)) if (p) out.push(/^\*\*[^*]+\*\*$/.test(p) ? { t: p.slice(2, -2), b: true } : /^\*[^*]+\*$/.test(p) ? { t: p.slice(1, -1), b: false, i: true } : { t: p, b: false });
+  return out;
+}
+function sumBlocks(s) {
+  const out = [];
+  for (const para of String(s || '').split(/\n\s*\n/)) {
+    let list = null, words = [];
+    const flush = () => { if (words.length) { out.push({ k: 'p', runs: sumRuns(words.join(' ')) }); words = []; } };
+    for (const ln of para.split('\n').map(l => l.trim()).filter(Boolean)) {
+      if (/^[-•] /.test(ln)) { flush(); if (!list) { list = { k: 'ul', items: [] }; out.push(list); } list.items.push(sumRuns(ln.slice(2))); }
+      else { list = null; words.push(ln); }
+    }
+    flush();
+  }
+  return out;
+}
+// the book's line under its title: its author and year, its pages (in the page's language), in italics
+function bylineOf(it, lang) { const b = bookInfo(it), n = b && b.pages; return [byOf(it), n ? (lang === 'vi' ? `${n} trang` : `${n} pages`) : ''].filter(Boolean).join(' · '); }
+function overviewOf(it, words) {   // the first page: the book's title, its line, then its overview (in each language)
+  const side = lang => ({ title: printTitle(it, lang), blocks: [{ k: 'p', runs: [{ t: bylineOf(it, lang), b: false, i: true }], muted: true }, ...sumBlocks(words ? words[lang] : '')] });
+  return { name: WORDS.over[1], en: WORDS.over[0], by: { en: side('en'), vi: side('vi') } };
+}
+function summaryChapters(S) {   // [label, title, words] for each part, the two languages side by side
+  const n = Math.min(S.en.ch.length, S.vi.ch.length), out = [];
+  for (let k = 0; k < n; k++) { const e = S.en.ch[k], v = S.vi.ch[k]; out.push({ name: v[0], en: e[0], by: { en: { title: e[1], blocks: sumBlocks(e[2]) }, vi: { title: v[1], blocks: sumBlocks(v[2]) } } }); }
+  return out;
+}
+
+/* ---- setting type: runs broken into lines (justified, the last line of a paragraph left as it is), a chapter's
+   blocks flowed down its pages */
+function wordsOf(runs) {   // words with their weight, and whether a space follows (a word with none before it is kept with the one before)
+  const ws = [];
+  for (const r of runs) {
+    if (r.br) { ws.push({ br: true }); continue; }
+    for (const part of r.t.split(/(\s+)/)) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) { if (ws.length) ws[ws.length - 1].sp = true; continue; }
+      const prev = ws[ws.length - 1]; ws.push({ t: part, b: r.b, i: r.i, h: r.h, glue: !!(prev && !prev.br && !prev.sp) });
+    }
+  }
+  return ws;
+}
+function setLines(g, runs, width, fs) {
+  const ws = wordsOf(runs), lines = []; let line = [], x = 0;
+  const space = b => { g.font = fontOf(fs, b); return g.measureText(' ').width; };
+  const end = last => { if (line.length) lines.push({ words: line, w: x, last }); line = []; x = 0; };
+  for (let i = 0; i < ws.length; i++) {
+    const w = ws[i]; if (w.br) { end(true); continue; }
+    // a word and those glued to it go together
+    let j = i, gw = 0; const grp = [];
+    do { const v = ws[j]; g.font = fontOf(fs, v.b, v.i); const vw = g.measureText(v.t).width; grp.push({ ...v, w: vw }); gw += vw; j++; } while (j < ws.length && ws[j].glue);
+    const sp = line.length ? space(line[line.length - 1].b) : 0;
+    if (line.length && x + sp + gw > width) end(false);
+    for (const v of grp) { v.x = x + (line.length && v === grp[0] ? space(line[line.length - 1].b) : 0); line.push(v); x = v.x + v.w; }
+    i = j - 1;
+  }
+  end(true);
+  return lines;
+}
+function drawLine(g, ln, x0, y, width, fs, color, lk) {   // (lk: where a link's words are, so a click there opens it)
+  let gaps = 0; for (let k = 1; k < ln.words.length; k++) if (!ln.words[k].glue) gaps++;
+  const extra = !ln.last && gaps ? Math.min((width - ln.w) / gaps, fs * 0.6) : 0;   // (justified; a line far too short is left ragged)
+  let add = 0; g.textBaseline = 'alphabetic';
+  ln.words.forEach((w, k) => {
+    if (k && !w.glue) add += extra; const x = x0 + w.x + add; g.font = fontOf(fs, w.b, w.i); g.fillStyle = w.h ? ACCENT : color || INK; g.fillText(w.t, x, y);
+    if (w.h) { g.fillRect(x, y + fs * 0.14, w.w + (k < ln.words.length - 1 && ln.words[k + 1].h === w.h ? extra + fs * 0.25 : 0), Math.max(1.5, fs * 0.05)); if (lk) lk(x - 2, y - fs * 0.85, x + w.w + 2, y + fs * 0.3, w.h); }
+  });
+}
+// a chapter flowed down pages: items of a height, drawn at their place; those of a box carry its number
+function flowChapter(g, ch, P, fs, lang) { return paginate(itemsOf(g, ch, P, fs, lang), P.y1 - P.y0, fs); }
+function itemsOf(g, ch, P, fs, lang) {
+  const items = [], LH = fs * 1.42, TW = P.tw, PAD = fs * 0.7, T = ch.by ? ch.by[lang] || ch.by.en : ch;   // (a summary's part: its words in the page's language)
+  const gap = (h, box = null) => items.push({ h, box, gap: true });
+  const text = (runs, x0, w, box, f = fs, lh = LH, color) => { for (const ln of setLines(g, runs, w, f)) items.push({ h: lh, box, draw: (g, x, y, lang, pic, lk) => drawLine(g, ln, x + x0, y + lh * 0.74, w, f, color, lk) }); };
+  // the chapter's country, small and spaced in the accent, over its title
+  items.push({ h: fs * 1.5, head: true, draw: (g, x, y, lang) => { g.font = `600 ${Math.round(fs * 0.62)}px ${SERIF}`; g.fillStyle = ACCENT; g.letterSpacing = `${(fs * 0.18).toFixed(1)}px`; g.fillText((lang === 'vi' ? ch.name : ch.en).toUpperCase(), x, y + fs * 0.75); g.letterSpacing = '0px'; } });
+  const TF = fs * 1.48; g.font = fontOf(TF, true);
+  for (const ln of setLines(g, [{ t: T.title, b: true }], TW, TF)) items.push({ h: TF * 1.2, draw: (g, x, y) => drawLine(g, { ...ln, last: true }, x, y + TF * 0.92, TW, TF) });
+  items.push({ h: fs * 0.55, draw: (g, x, y) => { g.fillStyle = ACCENT; g.fillRect(x, y + fs * 0.2, fs * 2.2, Math.max(2, fs * 0.08)); } });
+  gap(fs * 0.5);
+  const flow = (blocks, x0, w, box) => {
+    for (const b of blocks) {
+      if (b.k === 'img') { const h = w / b.ar; items.push({ h: h + fs * 0.8, img: b, draw: (g, x, y, lang, pic) => drawPicture(g, pic, x + x0, y, w, h) }); }
+      else if (b.k === 'p') { text(b.runs, x0, w, box, fs, LH, b.muted ? MUTED : undefined); gap(fs * 0.45, box); }
+      else if (b.k === 'ul') {
+        for (const li of b.items) {
+          const lines = setLines(g, li, w - fs * 1.25, fs);
+          lines.forEach((ln, k) => items.push({ h: LH, box, draw: (g, x, y, lang, pic, lk) => { if (!k) { g.fillStyle = ACCENT; g.beginPath(); g.arc(x + x0 + fs * 0.42, y + LH * 0.74 - fs * 0.3, fs * 0.13, 0, 7); g.fill(); } drawLine(g, ln, x + x0 + fs * 1.25, y + LH * 0.74, w - fs * 1.25, fs, null, lk); } }));
+        }
+        gap(fs * 0.35, box);
+      } else if (b.k === 'box') {
+        const id = items.length + 1; gap(PAD * 0.8, id); flow(b.blocks, x0 + PAD, w - 2 * PAD, id);
+        while (items.length && items[items.length - 1].gap && items[items.length - 1].box === id) items.pop();   // (the box ends at its last line)
+        gap(PAD * 0.8, id); gap(fs * 0.5);
+      }
+    }
+  };
+  flow(T.blocks, 0, TW, null);
+  for (const it of items) it.ch = ch;
+  return items;
+}
+// onto the pages: an item that does not fit goes over to the next (a gap at the top of a page is dropped); a part's
+// head goes over too if too little of its page is left for it and a few lines after it
+function paginate(items, room, fs) {
+  const pages = [[]]; let y = 0;
+  for (const it of items) {
+    if (y > 0 && (y + it.h > room || (it.head && y + fs * 8 > room))) { pages.push([]); y = 0; if (it.gap && it.box === null) continue; }
+    pages[pages.length - 1].push({ it, y }); y += it.h;
+  }
+  return pages;
+}
+// a summary's parts (and the page's notes after them) one after another down its pages, as a book's text runs on, at
+// one size of type; each page knows the part it opens in (its running head)
+function flowAll(R, lang) {
+  if (R.flows[lang]) return R.flows[lang];
+  const g = canvas(8, 8).getContext('2d'), P = frameOf(R.W, R.H, true), fs = R.W * 0.03, items = [];
+  R.ch.forEach((ch, k) => { if (k) items.push({ h: fs * 1.7, gap: true, box: null, ch }); items.push(...itemsOf(g, ch, P, fs, lang)); });
+  const pages = paginate(items, P.y1 - P.y0, fs).filter(p => p.length);
+  for (const pg of pages) pg.ch = pg[0].it.ch;
+  const lp = pages[pages.length - 1], la = lp && lp[lp.length - 1], endFits = !!la && la.y + la.it.h + fs * 2.2 < P.y1 - P.y0;   // (the end marked under the last line, or on a page of its own)
+  return (R.flows[lang] = { fs, pages, endFits });
+}
+const spreadsOf = R => R.over ? R.S : R.ch.length;   // (how far its leaves turn)
+function drawPicture(g, pic, x, y, w, h) {
+  g.save(); const r = Math.min(12, w * 0.012);
+  g.beginPath(); g.roundRect(x, y, w, h, r); g.clip();
+  if (pic && pic.complete && pic.naturalWidth) g.drawImage(pic, x, y, w, h);
+  else { g.fillStyle = 'rgba(120, 96, 60, 0.12)'; g.fillRect(x, y, w, h); }
+  g.restore(); g.strokeStyle = 'rgba(60, 44, 24, 0.18)'; g.lineWidth = 1.5; g.beginPath(); g.roundRect(x, y, w, h, r); g.stroke();
+}
+
+/* ---- the pages. A page's picture is drawn as it is read: the gutter (the spine side) toward the middle of the open book,
+   its edge shaded; the turned leaf's back is shown mirrored in the shader so it reads the right way round */
+function pagePaper(g, W, H, gutterLeft) {
+  g.fillStyle = '#e2d6c0'; g.fillRect(0, 0, W, H);
+  const gx = gutterLeft ? 0 : W, gr = g.createLinearGradient(gx, 0, gutterLeft ? W * 0.12 : W * 0.88, 0);
+  gr.addColorStop(0, 'rgba(96, 70, 36, 0.20)'); gr.addColorStop(0.35, 'rgba(96, 70, 36, 0.06)'); gr.addColorStop(1, 'rgba(96, 70, 36, 0)');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  const ex = gutterLeft ? W : 0, er = g.createLinearGradient(ex, 0, gutterLeft ? W * 0.96 : W * 0.04, 0);
+  er.addColorStop(0, 'rgba(96, 70, 36, 0.07)'); er.addColorStop(1, 'rgba(96, 70, 36, 0)'); g.fillStyle = er; g.fillRect(0, 0, W, H);
+}
+function frameOf(W, H, gutterLeft) {   // a page's text block
+  const inner = W * 0.1, outer = W * 0.075, x0 = gutterLeft ? inner : outer;
+  return { x0, tw: W - inner - outer, y0: H * 0.088, y1: H - H * 0.082, head: H * 0.05, foot: H - H * 0.04 };
+}
+function runningHead(g, P, W, left, right, fs, leftColor) {
+  g.font = `500 ${Math.round(fs * 0.6)}px ${SERIF}`; g.fillStyle = leftColor || MUTED; g.letterSpacing = `${(fs * 0.12).toFixed(1)}px`;
+  if (left) { g.textAlign = 'left'; g.fillText(left.toUpperCase(), P.x0, P.head); } g.fillStyle = MUTED;
+  if (right) { g.textAlign = 'right'; g.fillText(right.toUpperCase(), P.x0 + P.tw, P.head); }
+  g.letterSpacing = '0px'; g.textAlign = 'left';
+  g.fillStyle = 'rgba(125, 108, 86, 0.45)'; g.fillRect(P.x0, P.head + fs * 0.42, P.tw, 1.5);
+}
+function folio(g, P, n, rightPage, fs) {
+  g.font = `400 ${Math.round(fs * 0.68)}px ${SERIF}`; g.fillStyle = MUTED; g.textAlign = rightPage ? 'right' : 'left';
+  g.fillText(String(n), rightPage ? P.x0 + P.tw : P.x0, P.foot); g.textAlign = 'left';
+}
+/* ---- the words as HTML (a book lying open, still: ui/flight.js). The two pages in view are painted again without their
+   words, which are set instead as the page's own text in a layer over the canvas, each word where the canvas would
+   have drawn it (same font, size, colour, spacing, baseline), the layer projected onto the page (matrix3d), so they
+   read as sharp as the page's other text. Turning, closing or moving: the words go back into the pictures. */
+const TXT = { bare: false, rec: null, halo: null };
+function textual(c) {   // a page's canvas: its words written down as they are drawn (where, in what, turned how), and left out of a bare picture
+  const g = c.getContext('2d'), fill = g.fillText.bind(g), stroke = g.strokeText.bind(g);
+  g.strokeText = (t, x, y, mw) => {   // (a halo round a name on a map: kept with the fill that follows it)
+    if (TXT.rec) TXT.halo = { t, x, y, color: typeof g.strokeStyle === 'string' ? g.strokeStyle : '#e2d6c0', lw: g.lineWidth };
+    if (!TXT.bare) mw === undefined ? stroke(t, x, y) : stroke(t, x, y, mw);
+  };
+  g.fillText = (t, x, y, mw) => {
+    if (TXT.rec) {
+      const m = g.measureText(t), M = g.getTransform(), h = TXT.halo && TXT.halo.t === t && TXT.halo.x === x && TXT.halo.y === y ? TXT.halo : null; TXT.halo = null;
+      TXT.rec.push({ t, x, y, font: g.font, color: typeof g.fillStyle === 'string' ? g.fillStyle : INK, align: g.textAlign, ls: g.letterSpacing, asc: m.fontBoundingBoxAscent, desc: m.fontBoundingBoxDescent,
+        alpha: g.globalAlpha, M: M.isIdentity ? null : [M.a, M.b, M.c, M.d, M.e, M.f], halo: h });
+    }
+    if (!TXT.bare) mw === undefined ? fill(t, x, y) : fill(t, x, y, mw);
+  };
+  return c;
+}
+// a page painted by paint() with its words left out (bare) or in; left out, they are kept for the HTML layer
+function textPaint(doc, key, paint) {
+  const bare = doc.bare.has(key); TXT.bare = bare; TXT.rec = bare ? [] : null; TXT.halo = null;
+  try { paint(); } finally { if (bare) { doc.words.set(key, TXT.rec); if (RDHT.doc === doc) RDHT.dirty = true; } TXT.bare = false; TXT.rec = null; TXT.halo = null; }
+  return bare;
+}
+const RDHT = { el: null, doc: null, keys: '', sheets: [], last: null, still: 0, dirty: false };
+function sheetOf(words, W, H, k) {
+  const d = document.createElement('div'); d.style.cssText = `position:absolute;left:0;top:0;width:${W * k}px;height:${H * k}px;transform-origin:0 0;will-change:transform`;
+  for (const w of words) {
+    if (!w.t || !w.t.trim()) continue;
+    const px = w.font.match(/([\d.]+)px/), fs = px ? +px[1] : 16, lh = (w.asc + w.desc) * k, ls = parseFloat(w.ls) || 0;
+    const at = (w.M ? `matrix(${w.M.slice(0, 4).join(',')},${(w.M[4] * k).toFixed(3)},${(w.M[5] * k).toFixed(3)}) ` : '') + `translate(${(w.x * k).toFixed(3)}px,${((w.y - w.asc) * k).toFixed(3)}px)`
+      + (w.align === 'right' || w.align === 'end' ? ' translateX(-100%)' : w.align === 'center' ? ' translateX(-50%)' : '');
+    const span = extra => {
+      const e = document.createElement('span'); e.textContent = w.t; e.style.font = w.font.replace(/([\d.]+)px/, (fs * k).toFixed(3) + 'px');
+      e.style.cssText += `;position:absolute;left:0;top:0;white-space:pre;color:${w.color};line-height:${lh.toFixed(3)}px;letter-spacing:${(ls * k).toFixed(3)}px;font-kerning:normal;transform-origin:0 0;transform:${at}`
+        + (w.alpha < 1 ? `;opacity:${w.alpha}` : '') + extra;
+      d.appendChild(e);
+    };
+    if (w.halo) span(`;color:transparent;-webkit-text-stroke:${(w.halo.lw * k).toFixed(3)}px ${w.halo.color};stroke-linejoin:round`);   // (the halo under the letters, as the canvas strokes before it fills)
+    span('');
+  }
+  return d;
+}
+function homography(w, h, q) {   // the CSS matrix taking a w × h box onto the screen quad q (its corners: top left, top right, bottom right, bottom left)
+  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q, dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3, dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3;
+  const det = dx1 * dy2 - dx2 * dy1, g = (dx3 * dy2 - dx2 * dy3) / det, hh = (dx1 * dy3 - dx3 * dy1) / det;
+  const a = x1 - x0 + g * x1, b = x3 - x0 + hh * x3, d = y1 - y0 + g * y1, e = y3 - y0 + hh * y3;
+  return `matrix3d(${[a / w, d / w, 0, g / w, b / h, e / h, 0, hh / h, 0, 0, 1, 0, x0, y0, 0, 1].map(v => +v.toFixed(8)).join(',')})`;
+}
+const _rdv = new THREE.Vector3();
+// where a page's picture lies on the screen (CSS pixels): its four corners. 'title': the endpaper inside the front board;
+// an even key: a right-hand page; an odd one: the back of a leaf turned over, on the left
+function quadOf(bk, doc, key) {
+  const S = doc.S, pg = S.page, a = bk.flapU.uOpen.value, Hn = S.hinge, c = Math.cos(a), s = Math.sin(a), sc = bk.hero.scale, rc = CANVAS.getBoundingClientRect(), [W, H] = doc.size(key);
+  const turn = (x, z) => [Hn.x + c * (x - Hn.x) - s * (z - Hn.y), Hn.y + s * (x - Hn.x) + c * (z - Hn.y)];
+  return [[0, 0], [W, 0], [W, H], [0, H]].map(([px, py]) => {
+    let x, y, z;
+    if (key === 'title') { y = bk.h * (1 - py / H); [x, z] = turn(S.endX, S.endZ0 + px / W * S.endW); }
+    else if (key % 2 === 0) { x = pg.x; y = pg.y0 + (1 - py / H) * (pg.y1 - pg.y0); z = pg.z0 - px / W * (pg.z0 - pg.z1); }
+    else { y = pg.y0 + (1 - py / H) * (pg.y1 - pg.y0); [x, z] = turn(pg.x, pg.z0 - (1 - px / W) * (pg.z0 - pg.z1)); }
+    _rdv.set(x / sc.x, y / sc.y, z / sc.z).applyMatrix4(bk.hero.matrixWorld).project(camera);
+    return [rc.left + (_rdv.x + 1) / 2 * rc.width, rc.top + (1 - _rdv.y) / 2 * rc.height];
+  });
+}
+// the pages of an open book the layer can take the words of: a book of notes (or one being listened to) by its leaves;
+// an atlas (ui/hero-books.js) by its map and its endpaper
+function docOf(bk) {
+  if (!bk) return null;
+  return bk.read ? leafDoc(bk.read) : bk.atlas && bk.atlas.doc || null;
+}
+function leafDoc(R) {
+  const bk = R.bk;
+  return R.doc || (R.doc = { S: R.shape, words: R.words, bare: R.bare,
+    ok: () => R.open && R.painting && !readTurning(bk),
+    keys: () => { const k = R.spread ? [2 * R.spread - 1, 2 * R.spread] : ['title', 0]; return R.faces[k[1]] ? k : null; },
+    size: k => k === 'title' ? [R.title_.W, R.title_.H] : [R.W, R.H],
+    paint: k => { if (k === 'title') { if (R.titleDone) titlePaint(R); } else if (R.faces[k] && R.faces[k].c) facePaint(R, k); } });
+}
+function readPlain(doc) {   // the words back into the pictures, the layer emptied
+  if (RDHT.doc === doc) { RDHT.doc = null; RDHT.keys = ''; RDHT.last = null; RDHT.still = 0; if (RDHT.el) RDHT.el.replaceChildren(); }
+  if (!doc || !doc.bare.size) return;
+  const keys = [...doc.bare]; doc.bare.clear(); for (const k of keys) doc.paint(k);
+}
+// each frame (ui/flight.js): the open book and whether it lies still in view; the layer shown, moved or taken away
+function readText(bk, want) {
+  const doc = docOf(bk);
+  if (RDHT.doc && RDHT.doc !== doc) readPlain(RDHT.doc);
+  const keys = doc && want && bk.hero && bk.hero.visible && innerWidth > 768 && doc.ok() ? doc.keys() : null;
+  if (!keys) { if (doc) readPlain(doc); return; }
+  const quads = keys.map(k => quadOf(bk, doc, k)), flat = quads.flat(2);
+  // (shown once the page has lain still for a few frames)
+  const still = RDHT.last && RDHT.last.length === flat.length && flat.every((v, i) => Math.abs(v - RDHT.last[i]) < 0.25); RDHT.last = flat;
+  if (RDHT.doc !== doc || RDHT.keys !== keys.join()) {
+    if (!still) { RDHT.still = 0; if (RDHT.doc === doc && RDHT.keys) readPlain(doc); return; }
+    if (++RDHT.still < 3) return;
+    if (!RDHT.el) { RDHT.el = document.createElement('div'); RDHT.el.id = 'l3-read'; RDHT.el.setAttribute('aria-hidden', 'true'); RDHT.el.style.cssText = 'position:fixed;inset:0;z-index:1;pointer-events:none;overflow:hidden'; document.body.appendChild(RDHT.el); }
+    readPlain(doc); for (const k of keys) doc.bare.add(k);
+    RDHT.doc = doc; RDHT.keys = keys.join();
+    for (const k of keys) doc.paint(k);
+    RDHT.dirty = true;
+  }
+  if (RDHT.dirty) {
+    RDHT.dirty = false; RDHT.el.replaceChildren(); RDHT.sheets = keys.map((k, i) => {
+      const [W, H] = doc.size(k), q = quads[i], kk = Math.max(0.2, Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) / W);
+      const d = sheetOf(doc.words.get(k) || [], W, H, kk); d.dataset.k = kk; RDHT.el.appendChild(d); return d;
+    });
+  }
+  keys.forEach((k, i) => { const d = RDHT.sheets[i]; if (!d) return; const kk = +d.dataset.k, [W, H] = doc.size(k), m = homography(W * kk, H * kk, quads[i]); if (d.style.transform !== m) d.style.transform = m; });
+}
+
+// a link on a page: where (in the page's pixels) and where it leads
+const linkAt = (face, x0, y0, x1, y1, go) => face.links.push({ x0, y0, x1, y1, go });
+
+function paintOverview(face, R, lang) {   // a summary's first page: the book's title and line, its overview, a way on
+  const { c, W, H } = face, g = c.getContext('2d'), P = frameOf(W, H, true), fsH = W * 0.03; face.links = [];
+  pagePaper(g, W, H, true);
+  const lay = layoutOf(R, R.over, P, g, lang, 1);
+  runningHead(g, P, W, '', R.title, fsH);
+  for (const { it, y } of lay.pages[0] || []) if (it.draw) it.draw(g, P.x0, P.y0 + y, lang, null, null);
+  g.font = `400 ${Math.round(fsH * 0.95)}px ${SERIF}`; g.fillStyle = MUTED; g.textAlign = 'right';
+  if (spreadsOf(R)) g.fillText('›', P.x0 + P.tw - fsH * 1.6, P.foot);
+  g.textAlign = 'left'; folio(g, P, 1, true, fsH);
+}
+function paintContents(face, R, lang) {
+  if (R.over) return paintOverview(face, R, lang);
+  const { c, W, H } = face, g = c.getContext('2d'), P = frameOf(W, H, true), fs = W * 0.034; face.links = [];
+  pagePaper(g, W, H, true);
+  g.textAlign = 'center'; g.fillStyle = ACCENT; g.font = `600 ${Math.round(fs * 0.7)}px ${SERIF}`; g.letterSpacing = `${(fs * 0.3).toFixed(1)}px`;
+  g.fillText(say('contents', lang).toUpperCase(), P.x0 + P.tw / 2, P.y0 + fs * 0.6); g.letterSpacing = '0px';
+  g.fillStyle = 'rgba(138, 59, 42, 0.5)'; g.fillRect(P.x0 + P.tw / 2 - fs * 1.4, P.y0 + fs * 1.15, fs * 2.8, 2);
+  g.font = `italic 400 ${Math.round(fs * 1.25)}px ${SERIF}`; g.fillStyle = INK; g.fillText(R.title, P.x0 + P.tw / 2, P.y0 + fs * 3.0);
+  g.textAlign = 'left';
+  // the chapters: number, country, its title in italics under it, a leader of dots to its first page
+  let y = P.y0 + fs * 5.2; const step = Math.min(fs * 3.5, (P.y1 - fs * 3 - y) / Math.max(1, R.ch.length));
+  R.ch.forEach((ch, k) => {
+    const name = lang === 'vi' ? ch.name : ch.en, pg = String(2 * (k + 1)), top = y;
+    g.font = `400 ${Math.round(fs * 0.9)}px ${SERIF}`; g.fillStyle = ACCENT; g.fillText(String(k + 1).padStart(2, '0'), P.x0, y + fs);
+    g.font = fontOf(fs * 1.12, true); g.fillStyle = INK; const nx = P.x0 + fs * 1.9; g.fillText(name, nx, y + fs);
+    const nw = g.measureText(name).width; g.font = fontOf(fs, false); g.textAlign = 'right'; g.fillText(pg, P.x0 + P.tw, y + fs); const pw = g.measureText(pg).width; g.textAlign = 'left';
+    g.fillStyle = 'rgba(125, 108, 86, 0.65)'; for (let x = nx + nw + fs * 0.5; x < P.x0 + P.tw - pw - fs * 0.5; x += fs * 0.45) { g.beginPath(); g.arc(x, y + fs * 0.92, fs * 0.05, 0, 7); g.fill(); }
+    g.font = fontOf(fs * 0.78, false, true); g.fillStyle = MUTED; let t = ch.title; while (g.measureText(t).width > P.tw - fs * 1.9 && t.length > 8) t = t.slice(0, -2).trimEnd() + '…';
+    g.fillText(t, nx, y + fs * 2.05);
+    linkAt(face, P.x0 - fs * 0.4, top - fs * 0.25, P.x0 + P.tw + fs * 0.4, top + step - fs * 0.3, k + 1);
+    y += step;
+  });
+  const lands = R.ch.every(ch => NAMES_EN[ch.name]);   // (a book of countries' notes, or of any notes)
+  g.font = fontOf(fs * 0.72, false, true); g.fillStyle = MUTED; g.textAlign = 'center'; g.fillText(say(lands ? 'hint' : 'hintAny', lang) + ' →', P.x0 + P.tw / 2, P.y1 - fs * 0.4); g.textAlign = 'left';
+  folio(g, P, 1, true, fs);
+}
+function paintChapter(face, R, lang) {
+  const { c, W, H, ch, part } = face, g = c.getContext('2d'), right = part === 1, P = frameOf(W, H, right), k = R.ch.indexOf(ch);
+  const lay = layoutOf(R, ch, P, g, lang), pics = R.pics, fs = lay.fs, back = R.over ? 'backOver' : 'back'; face.links = [];
+  pagePaper(g, W, H, right);
+  const name = lang === 'vi' ? ch.name : ch.en, fsH = W * 0.03;
+  if (right) runningHead(g, P, W, '', R.title, fsH); else runningHead(g, P, W, say(back, lang), name, fsH, ACCENT);   // (the way back to the contents, or a summary's overview, in the accent)
+  if (!right) { g.font = `500 ${Math.round(fsH * 0.6)}px ${SERIF}`; g.letterSpacing = `${(fsH * 0.12).toFixed(1)}px`; linkAt(face, P.x0 - fsH * 0.5, P.head - fsH * 1.2, P.x0 + g.measureText(say(back, lang).toUpperCase()).width + fsH * 0.6, P.head + fsH * 0.6, 0); g.letterSpacing = '0px'; }
+  // the boxes behind their lines, then the lines
+  const placed = lay.pages[part] || [];
+  for (let i = 0; i < placed.length;) {
+    const b = placed[i].it.box; if (!b) { i++; continue; }
+    let j = i; while (j + 1 < placed.length && placed[j + 1].it.box === b) j++;
+    const y0 = P.y0 + placed[i].y, y1 = P.y0 + placed[j].y + placed[j].it.h;
+    g.fillStyle = 'rgba(150, 112, 58, 0.085)'; g.beginPath(); g.roundRect(P.x0 - fs * 0.15, y0, P.tw + fs * 0.3, y1 - y0, fs * 0.35); g.fill();
+    g.fillStyle = 'rgba(138, 59, 42, 0.55)'; g.fillRect(P.x0 - fs * 0.15, y0 + fs * 0.25, Math.max(3, fs * 0.1), y1 - y0 - fs * 0.5);
+    i = j + 1;
+  }
+  const lk = (x0, y0, x1, y1, href) => face.links.push({ x0, y0, x1, y1, href });
+  for (const { it, y } of placed) if (it.draw) it.draw(g, P.x0, P.y0 + y, lang, it.img ? pics.get(it.img.src) : null, lk);
+  const n = 2 * (k + 1) + part; folio(g, P, n, right, fsH);
+  // the corners turn the page: drawn as a quiet arrow by the folio
+  g.font = `400 ${Math.round(fsH * 0.95)}px ${SERIF}`; g.fillStyle = MUTED; g.textAlign = right ? 'right' : 'left';
+  if (right && k < R.ch.length - 1) g.fillText('›', P.x0 + P.tw - fsH * 1.6, P.foot);
+  if (!right) g.fillText('‹', P.x0 + fsH * 1.6, P.foot);
+  g.textAlign = 'left';
+}
+function paintFlow(face, R, lang) {   // a page of a summary's running text (or, past its end, the end)
+  const { c, W, H, f } = face, g = c.getContext('2d'), right = f % 2 === 0, P = frameOf(W, H, right), fsH = W * 0.03, fl = flowAll(R, lang), pg = fl.pages[f - 1]; face.links = [];
+  if (!pg) { if (f - 1 === fl.pages.length && !fl.endFits) paintEnd(face, R, lang); else pagePaper(g, W, H, right); return; }
+  pagePaper(g, W, H, right);
+  const name = lang === 'vi' ? pg.ch.name : pg.ch.en;
+  if (right) runningHead(g, P, W, '', R.title, fsH);
+  else {
+    runningHead(g, P, W, say('backOver', lang), name, fsH, ACCENT);   // (the way back to the overview, in the accent)
+    g.font = `500 ${Math.round(fsH * 0.6)}px ${SERIF}`; g.letterSpacing = `${(fsH * 0.12).toFixed(1)}px`; linkAt(face, P.x0 - fsH * 0.5, P.head - fsH * 1.2, P.x0 + g.measureText(say('backOver', lang).toUpperCase()).width + fsH * 0.6, P.head + fsH * 0.6, 0); g.letterSpacing = '0px';
+  }
+  const lk = (x0, y0, x1, y1, href) => face.links.push({ x0, y0, x1, y1, href });
+  for (const { it, y } of pg) if (it.draw) it.draw(g, P.x0, P.y0 + y, lang, it.img ? R.pics.get(it.img.src) : null, lk);
+  if (f === fl.pages.length && fl.endFits) { const last = pg[pg.length - 1], y = P.y0 + last.y + last.it.h + fl.fs * 1.2; { g.font = fontOf(fl.fs * 0.8, false, true); g.fillStyle = MUTED; g.textAlign = 'center'; g.fillText('— ' + say('end', lang) + ' —', P.x0 + P.tw / 2, y); g.textAlign = 'left'; } }
+  folio(g, P, f + 1, right, fsH);
+  g.font = `400 ${Math.round(fsH * 0.95)}px ${SERIF}`; g.fillStyle = MUTED; g.textAlign = right ? 'right' : 'left';
+  if (right && f / 2 < R.S && f < fl.pages.length) g.fillText('›', P.x0 + P.tw - fsH * 1.6, P.foot);
+  if (!right) g.fillText('‹', P.x0 + fsH * 1.6, P.foot);
+  g.textAlign = 'left';
+}
+function paintEnd(face, R, lang) {
+  const { c, W, H } = face, g = c.getContext('2d'), fs = W * 0.034; face.links = [];
+  pagePaper(g, W, H, false);
+  g.textAlign = 'center'; g.fillStyle = MUTED; g.font = fontOf(fs * 0.9, false, true); g.fillText('— ' + say('end', lang) + ' —', W * 0.46, H * 0.48); g.textAlign = 'left';
+}
+// the title page, printed on the endpaper inside the front board: a double rule, the book's name, its chapters
+function paintTitlePage(R, lang) {
+  const { c, W, H } = R.title_, g = c.getContext('2d'), fs = W * 0.042;
+  g.fillStyle = '#e2d6c0'; g.fillRect(0, 0, W, H);
+  const gr = g.createLinearGradient(W, 0, W * 0.86, 0); gr.addColorStop(0, 'rgba(96, 70, 36, 0.22)'); gr.addColorStop(1, 'rgba(96, 70, 36, 0)'); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  const m = W * 0.09; g.strokeStyle = 'rgba(138, 59, 42, 0.6)'; g.lineWidth = 3; g.strokeRect(m, m, W - 2 * m - W * 0.03, H - 2 * m); g.lineWidth = 1.2; g.strokeRect(m + 12, m + 12, W - 2 * m - W * 0.03 - 24, H - 2 * m - 24);
+  const cx = (W - W * 0.03) / 2; g.textAlign = 'center';
+  g.fillStyle = MUTED; g.font = `600 ${Math.round(fs * 0.55)}px ${SERIF}`; g.letterSpacing = `${(fs * 0.3).toFixed(1)}px`; g.fillText('HIDDEN LIBRARY', cx, H * 0.2); g.letterSpacing = '0px';
+  g.fillStyle = INK; let size = fs * 1.9; g.font = fontOf(size, true); while (g.measureText(R.title).width > W * 0.68 && size > fs) { size -= 2; g.font = fontOf(size, true); }
+  g.fillText(R.title, cx, H * 0.36);
+  const by = R.over ? bylineOf(R.bk.it, lang) : '';
+  if (by) { g.font = fontOf(fs * 0.6, false, true); g.fillStyle = MUTED; let t = by; while (g.measureText(t).width > W * 0.7 && t.length > 8) t = t.slice(0, -2).trimEnd() + '…'; g.fillText(t, cx, H * 0.455); }
+  g.fillStyle = ACCENT; g.beginPath(); for (const [dx, s] of [[-fs * 1.1, 0.5], [0, 1], [fs * 1.1, 0.5]]) { g.moveTo(cx + dx, H * 0.41 - fs * 0.22 * s); g.lineTo(cx + dx + fs * 0.22 * s, H * 0.41); g.lineTo(cx + dx, H * 0.41 + fs * 0.22 * s); g.lineTo(cx + dx - fs * 0.22 * s, H * 0.41); } g.fill();
+  g.font = fontOf(fs * 0.82, false, true); g.fillStyle = INK; const y0 = H * (by ? 0.53 : 0.5), dy = Math.min(fs * 1.35, (H * 0.8 - y0) / Math.max(1, R.ch.length));
+  R.ch.forEach((ch, k) => g.fillText(lang === 'vi' ? ch.name : ch.en, cx, y0 + k * dy));
+  g.font = fontOf(fs * 0.55, false, true); g.fillStyle = MUTED; g.fillText(say(R.over ? 'fromSum' : 'from', lang), cx, H * 0.86);
+  g.textAlign = 'left';
+}
+// a chapter's type size: the largest (35 px to a page 1024 across, down to 20) at which it fills no more than its two pages
+function layoutOf(R, ch, P, g, lang, most = 2) {
+  const key = `${R.W}|${lang}|${most}`; if (ch.lay && ch.lay.key === key) return ch.lay;
+  let lay = null;
+  for (let fs = R.W * 0.034; fs >= R.W * 0.0195; fs -= R.W * 0.001) { const pages = flowChapter(g, ch, P, fs, lang); lay = { key, fs, pages }; if (pages.length <= most) break; }
+  ch.lay = lay; return lay;
+}
+
+/* ---- the leaves: a strip from the gutter to the fore-edge, turned in the shader about the board's hinge (in metres:
+   uSize), by uPhi, the fore-edge ahead or behind by uBend (it bows), never past the board (uMax); their front shows
+   the page on the right, their back (mirrored) the one on the left */
+const LEAF_VS = `attribute float aU; uniform float uPhi, uBend, uMax; uniform vec2 uHinge; uniform vec3 uSize;
+  vec2 leafTurn(vec2 v, float a) { float c = cos(a), s = sin(a); return vec2(c * v.x - s * v.y, s * v.x + c * v.y); }
+  float leafAngle() { return clamp(uPhi + uBend * pow(aU, 1.5), 0.0, uMax); }\n`;
+function leafMaterial(R, L, base) {
+  const m = new THREE.MeshStandardMaterial({ ...base, map: R.blank, emissiveIntensity: 0.14, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
+  m.customProgramCacheKey = () => 'hero-leaf';
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, L.u, { uHinge: R.flapU.uHinge, uSize: R.flapU.uSize, uDepth: DECKR.u.uDepth, uFull: DECKR.u.uFull, uOff: DECKR.u.uOff });
+    sh.vertexShader = LEAF_VS + sh.vertexShader
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  { vec3 fn = objectNormal / uSize; fn.xz = leafTurn(fn.xz, leafAngle()); objectNormal = normalize(fn * uSize); }')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  { vec3 fp = transformed * uSize; fp.xz = uHinge + leafTurn(fp.xz - uHinge, leafAngle()); transformed = fp / uSize; }');
+    sh.fragmentShader = 'uniform sampler2D uDepth, uVerso; uniform vec2 uFull, uOff;\n' + sh.fragmentShader
+      .replace('void main() {', 'void main() {\n  if (gl_FragCoord.z > texture2D(uDepth, (gl_FragCoord.xy + uOff) / uFull).r + 2e-6) discard;')
+      .replace('#include <map_fragment>', 'diffuseColor *= gl_FrontFacing ? texture2D(map, vMapUv) : texture2D(uVerso, vec2(1.0 - vMapUv.x, vMapUv.y));')
+      .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance *= diffuseColor.rgb;');
+  };
+  return m;
+}
+function leafStrip(bk, pg, x) {   // in the unit box (the hero is scaled by the book's size), facing +x (its front)
+  const n = 30, pos = [], nor = [], uv = [], au = [], idx = [];
+  for (let i = 0; i <= n; i++) {
+    const u = i / n, z = pg.z0 + (pg.z1 - pg.z0) * u;
+    for (const [y, v] of [[pg.y0, 0], [pg.y1, 1]]) { pos.push(x / bk.t, y / bk.h, z / bk.d); nor.push(1, 0, 0); uv.push(u, v); au.push(u); }
+  }
+  for (let i = 0; i < n; i++) { const a = 2 * i; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  const geo = new THREE.BufferGeometry(); geo.setIndex(idx);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setAttribute('aU', new THREE.Float32BufferAttribute(au, 1));
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0.5, 0.5, -0.5), 2);   // (it turns out of its box in the shader)
+  return geo;
+}
+
+/* ---- the book: its chapters, faces (0: the contents; 2k−1 and 2k: chapter k's two pages; the last: the end), leaves
+   (leaf i shows face 2(i−1) on its front and 2i−1 on its back) and title page */
+function buildRead(bk, shape, mesh, base) {
+  const notes = chaptersOf(bk.it), S = summaryOf(bk.it);
+  let ch = notes, over = null;
+  if (S) { ch = [...summaryChapters(S), ...notes]; over = overviewOf(bk.it, { en: S.en.over, vi: S.vi.over }); }
+  else if (bk.it.src && !notes.length) over = overviewOf(bk.it, null);   // (something to listen to with nothing to read: its name, author and pages)
+  if (!ch.length && !over) return null;
+  const pg = shape.page, W = 1024, H = Math.round(W * (pg.y1 - pg.y0) / (pg.z0 - pg.z1));
+  const blank = canvas(8, 8), bg = blank.getContext('2d'); bg.fillStyle = '#e2d6c0'; bg.fillRect(0, 0, 8, 8);
+  const R = { bk, ch, over, W, H, shape, spread: 0, pending: null, open: false, flapU: bk.flapU, title: printTitle(bk.it), faces: [], leaves: [], pics: new Map(), flows: {}, blank: heroCanvasTex(blank, true) };
+  // (a summary: its overview on the first page, then its running pages, as many leaves as the longer language needs)
+  if (over) R.S = Math.ceil(Math.max(flowAll(R, 'en').pages.length, flowAll(R, 'vi').pages.length) / 2);
+  const nf = over ? 2 * R.S + 2 : 2 * ch.length + 2;
+  for (let f = 0; f < nf; f++) R.faces.push({ f, W, H, c: null, tex: null, links: [], done: '', ch: !over && f && f < nf - 1 ? ch[Math.ceil(f / 2) - 1] : null, part: !over && f && f < nf - 1 ? (f % 2 ? 0 : 1) : -1, flow: !!over && f > 0 });
+  // the leaves, stacked on the page block (the first on top); turned, the same offsets put them on the endpaper in the
+  // reverse order (the first underneath)
+  const nl = nf / 2;
+  for (let i = 0; i < nl; i++) {
+    const L = { i, phi: 0, bend: 0, from: 0, to: 0, t0: null, dur: 1, dir: 1, u: { uPhi: { value: 0 }, uBend: { value: 0 }, uMax: { value: 0 }, uVerso: { value: R.blank } } };
+    L.mat = leafMaterial(R, L, base);
+    L.mesh = new THREE.Mesh(leafStrip(bk, pg, pg.x + (nl - i) * READ.gap), L.mat); L.mesh.layers.set(HERO_LAYER); L.mesh.frustumCulled = false;
+    mesh.add(L.mesh); R.leaves.push(L);
+  }
+  // the title page on the endpaper (its picture from the fore-edge to the joint, up from the foot)
+  const EW = 768, EH = Math.round(EW * bk.h / shape.endW); R.title_ = { c: textual(canvas(EW, EH)), W: EW, H: EH }; R.bare = new Set(); R.words = new Map();
+  R.endTex = heroCanvasTex(R.title_.c, true);
+  R.endMat = new THREE.MeshStandardMaterial({ ...base, map: R.endTex, emissiveMap: R.endTex, emissiveIntensity: 0.1, roughness: 0.9, metalness: 0 });
+  R.pending = bk.readWant !== undefined && bk.readWant !== null ? bk.readWant : null; bk.readWant = null;   // (a chapter asked for before the book was made)
+  bk.read = R; return R;
+}
+function facePaint(R, f) {   // a face painted (again if the language changed), its texture given to its leaf
+  const F = R.faces[f], lang = pageLang(), bare = R.bare.has(f), key = lang + (bare ? '·' : ''); if (!F || F.done === key) return;
+  if (!F.c) { F.c = textual(canvas(F.W, F.H)); F.tex = heroCanvasTex(F.c, true); F.tex.generateMipmaps = false; F.tex.minFilter = THREE.LinearFilter; }
+  textPaint(leafDoc(R), f, () => { if (f === 0) paintContents(F, R, lang); else if (F.flow) paintFlow(F, R, lang); else if (F.ch) paintChapter(F, R, lang); else paintEnd(F, R, lang); });
+  F.done = key; F.tex.needsUpdate = true;
+  const L = R.leaves[f % 2 ? (f + 1) / 2 - 1 : f / 2];
+  if (f % 2) L.u.uVerso.value = F.tex; else { L.mat.map = F.tex; L.mat.needsUpdate = true; }
+  // its pictures, once loaded, paint it again
+  const chs = F.flow ? R.ch : F.ch ? [F.ch] : [];   // (a running page: any of its parts' pictures)
+  for (const ch of chs) for (const b of ch.by ? Object.values(ch.by).flatMap(T => T.blocks) : ch.blocks) if (b.k === 'img' && !R.pics.has(b.src)) {
+    const im = new Image(); im.crossOrigin = 'anonymous'; R.pics.set(b.src, im);
+    im.onload = () => { for (const G of R.faces) if ((G.flow || G.ch === ch) && G.done) { G.done = ''; facePaint(R, G.f); } setNeeds(true); };
+    im.src = b.src.replace(/w_\d+,h_\d+/, `w_1000,h_${Math.round(1000 / b.ar)}`);
+  }
+  setNeeds(true);
+}
+function titlePaint(R) {
+  const lang = pageLang(), bare = R.bare.has('title'), key = lang + (bare ? '·' : ''); if (R.titleDone === key) return;
+  textPaint(leafDoc(R), 'title', () => paintTitlePage(R, lang));
+  R.titleDone = key; R.endTex.needsUpdate = true; setNeeds(true);
+}
+// as the book starts to open: its title page and contents now, the rest in the browser's idle time
+function readOpening(bk) {
+  const R = bk.read; if (!R || R.painting) return; R.painting = true;
+  titlePaint(R); facePaint(R, 0); facePaint(R, 1); facePaint(R, 2);
+  const next = () => { if (!bk.read || !R.painting) return; const F = R.faces.find(F => F.done !== pageLang()); if (!F) return; facePaint(R, F.f); (window.requestIdleCallback || (f => setTimeout(f, 60)))(next, { timeout: 400 }); };
+  next();
+}
+// back on its shelf: its pages let go (painted again when it next comes out), closed on its contents
+function readRelease(bk) {
+  const R = bk.read; if (!R) return; readPlain(R.doc); R.painting = false; R.open = false; R.pending = null; R.spread = 0;
+  for (const F of R.faces) { if (F.tex) F.tex.dispose(); if (F.c) { F.c.width = F.c.height = 0; } F.c = F.tex = null; F.done = ''; }
+  for (const L of R.leaves) { L.phi = L.from = L.to = L.bend = 0; L.t0 = null; L.u.uPhi.value = L.u.uBend.value = 0; L.u.uVerso.value = R.blank; L.mat.map = R.blank; L.mat.needsUpdate = true; }
+  for (const im of R.pics.values()) im.onload = null; R.pics.clear();
+}
+function readDispose(bk) {
+  const R = bk.read; if (!R) return; readRelease(bk);
+  for (const L of R.leaves) { L.mesh.geometry.dispose(); L.mat.dispose(); }
+  R.blank.dispose(); R.endTex.dispose(); R.endMat.dispose(); bk.read = null;
+}
+// turn to a spread (0: the contents; k: chapter k): the leaves between turn, one after another
+function readTurnTo(bk, s) {
+  const R = bk.read; if (!R) { bk.readWant = s; return; }
+  s = THREE.MathUtils.clamp(s, 0, spreadsOf(R)); if (!R.open) { R.pending = s; return; }
+  readPlain(R.doc);   // (the words back in the pictures before a leaf turns)
+  for (const f of [2 * s - 1, 2 * s]) if (f >= 0) facePaint(R, f);
+  const now = performance.now() / 1000, go = [];
+  R.leaves.forEach((L, i) => { const want = i < s ? READ.turn : 0; if (L.to !== want) go.push([L, want]); });
+  if (go.length && go[0][1] === 0) go.reverse();   // (turning back: the last turned goes first)
+  go.forEach(([L, want], k) => {
+    for (const f of [2 * L.i, 2 * L.i + 1]) facePaint(R, f);
+    L.from = L.phi; L.to = want; L.dir = Math.sign(want - L.phi) || 1; L.t0 = now + k * READ.stagger * (reduceMotion ? 0 : 1);
+    L.dur = reduceMotion ? 0.001 : READ.dur * Math.max(0.35, Math.abs(want - L.phi) / READ.turn);
+  });
+  R.spread = s; setNeeds(true);
+}
+// each frame: the leaves' turns; the board's angle (opening or closing) bounds them; true while any moves
+function stepRead(bk) {
+  const R = bk.read; if (!R) return false;
+  const now = performance.now() / 1000, open = bk.flapU.uOpen.value; let moving = false;
+  R.open = open >= READ.turn - 1e-3;
+  if (R.open && R.pending !== null) { const s = R.pending; R.pending = null; readTurnTo(bk, s); }
+  for (const L of R.leaves) {
+    if (L.t0 !== null) {
+      moving = true;
+      if (now >= L.t0) {
+        const p = Math.min(1, (now - L.t0) / L.dur), e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+        L.phi = L.from + (L.to - L.from) * e; L.bend = L.dir * 0.55 * Math.sin(Math.PI * p);
+        if (p >= 1) { L.phi = L.to; L.bend = 0; L.t0 = null; }
+      }
+    }
+    L.u.uPhi.value = L.phi; L.u.uBend.value = L.bend; L.u.uMax.value = open;
+  }
+  return moving;
+}
+const readTurning = bk => !!(bk.read && bk.read.leaves.some(L => L.t0 !== null));
+// where a ray (in the book's frame, metres) meets the open book: the right page (the top leaf not turned, or the block
+// under them), the left (the top leaf turned, or the title page on the board), or the board: and a link there
+function readHit(bk, o, d) {
+  const R = bk.read, S = R && R.shape; if (!S || bk.flapU.uOpen.value < 1.2) return null;
+  const pg = S.page, a = bk.flapU.uOpen.value, H = S.hinge, hits = [];
+  if (Math.abs(d.x) > 1e-9) {
+    const t = (pg.x - o.x) / d.x, y = o.y + d.y * t, z = o.z + d.z * t;
+    if (t > 0 && y > pg.y0 && y < pg.y1 && z < pg.z0 && z > pg.z1) hits.push({ side: 'right', t, u: (pg.z0 - z) / (pg.z0 - pg.z1), v: (y - pg.y0) / (pg.y1 - pg.y0) });
+  }
+  const nx = Math.cos(a), nz = Math.sin(a), den = d.x * nx + d.z * nz;
+  if (Math.abs(den) > 1e-9) {   // the board turned open, and what lies on it: the point turned back to where it was says where on the leaf
+    const t = ((H.x - o.x) * nx + (H.y - o.z) * nz + (pg.x - H.x)) / den, x = o.x + d.x * t, y = o.y + d.y * t, z = o.z + d.z * t;   // (the plane the turned leaves lie in)
+    const c = Math.cos(-a), s = Math.sin(-a), rx = c * (x - H.x) - s * (z - H.y), rz = s * (x - H.x) + c * (z - H.y), z0 = H.y + rz;
+    if (t > 0 && y > 0 && y < bk.h && z0 < 0.002 && z0 > -bk.d) {
+      const onLeaf = z0 < pg.z0 && z0 > pg.z1 && y > pg.y0 && y < pg.y1;
+      hits.push({ side: onLeaf && R.spread > 0 ? 'left' : 'cover', t, u: (pg.z0 - z0) / (pg.z0 - pg.z1), v: (y - pg.y0) / (pg.y1 - pg.y0), rx });
+    }
+  }
+  const h = hits.sort((p, q) => p.t - q.t)[0]; if (!h) return null;
+  if (h.side === 'cover') return h;
+  const f = h.side === 'right' ? 2 * R.spread : 2 * R.spread - 1, F = R.faces[f];
+  const px = (h.side === 'right' ? h.u : 1 - h.u) * R.W, py = (1 - h.v) * R.H;
+  h.face = f; h.link = F ? F.links.find(l => px >= l.x0 && px <= l.x1 && py >= l.y0 && py <= l.y1) || null : null;
+  return h;
+}
+// what a click there does: a link turns to its spread; the right page to the next, the left to the one before; the
+// board puts the book back (the caller)
+function readClick(bk, h) {
+  const R = bk.read; if (!R || readTurning(bk)) return true;
+  if (h.link) { if (h.link.href) window.open(h.link.href, '_blank', 'noopener'); else readTurnTo(bk, h.link.go); }
+  else if (h.side === 'right') { if (R.spread < spreadsOf(R)) readTurnTo(bk, R.spread + 1); else if (R.over) return false; }   // (past a summary's last page: it closes)
+  else if (h.side === 'left') readTurnTo(bk, R.spread - 1);
+  else return false;
+  return true;
+}
+// the words for the pointer's tip there
+function readHint(bk, h) {
+  const R = bk.read; if (!R || !h) return null;
+  if (h.link && h.link.href) return ['Open the link ↗', 'Mở liên kết ↗'];
+  if (h.link) { const s = h.link.go, ch = R.ch[s - 1]; return s ? ['Turn to ' + ch.en, 'Lật tới ' + ch.name] : R.over ? ['Back to the overview', 'Về trang tổng quan'] : ['Back to the contents', 'Về mục lục']; }
+  if (h.side === 'right') return R.spread < spreadsOf(R) ? ['Click to turn the page', 'Bấm để lật trang'] : R.over ? ['Click to close the book', 'Bấm để gập sách'] : null;
+  if (h.side === 'left') return ['Click to turn back', 'Bấm để lật lại'];
+  return R.over ? ['Click to close the book (pause puts it back)', 'Bấm để gập sách (pause để cất lên kệ)'] : ['Click to put it back', 'Bấm để cất sách'];
+}
+function relabelRead(bk) { const R = bk.read; if (!R || !R.painting) return; titlePaint(R); for (const f of [2 * R.spread - 1, 2 * R.spread]) if (f >= 0) facePaint(R, f); R.painting = false; readOpening(bk); }
+
+// (tests: each book with a summary made and laid out in both languages: its overview fits its first page, how many
+// spreads it runs to, its type size there)
+async function readCheck(books, make) {
+  await loadSummaries(); const out = [];
+  for (const bk of books) {
+    if (!summaryOf(bk.it) || !make(bk) || !bk.read) continue;
+    const R = bk.read, g = canvas(8, 8).getContext('2d'), P = frameOf(R.W, R.H, true), r = { t: printTitle(bk.it, 'en'), S: R.S };
+    for (const lang of ['en', 'vi']) { const lay = layoutOf(R, R.over, P, g, lang, 1); r[lang] = { over: lay.pages.length === 1, fs: Math.round(lay.fs), pages: flowAll(R, lang).pages.length }; }
+    out.push(r);
+  }
+  return out;
+}
+export { buildRead, readText, textual, textPaint, isReadable, loadSummaries, readCheck, readClick, readDispose, readHint, readHit, readOpening, readRelease, readTurning, relabelRead, stepRead, readTurnTo };
